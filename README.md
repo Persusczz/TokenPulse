@@ -6,7 +6,7 @@ TokenPulse 是一个 Windows 桌面工具，用于查看 Claude Code 和 Codex �
 
 在仓库的 Releases 页面下载 Windows x64 版本：
 
-- `TokenPulse Setup 2.10.0.exe`：安装版，可选择安装目录。
+- `TokenPulse.Setup.2.10.0.exe`：安装版，可选择安装目录。
 - `TokenPulse-2.10.0-portable.exe`：便携版，直接运行。
 
 应用会读取本机 Claude Code 与 Codex 的会话日志。运行任务需要对应的 CLI 已安装并登录；额度来源、额外日志目录和通知渠道可在设置中调整。
