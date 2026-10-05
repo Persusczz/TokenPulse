@@ -1,0 +1,337 @@
+/* ---------- refresh tasks: compaction, trial and error, editing, follow-ups, stats ---------- */
+
+/* where a task compacts: a mode, its value, and what it comes to */
+.compact-pick {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  min-width: 0;
+}
+.compact-range {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.compact-range input[type='range'] {
+  width: 150px;
+  height: 6px;
+  appearance: none;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent) 0 var(--p, 50%), var(--surface-2) var(--p, 50%));
+  outline: none;
+  cursor: pointer;
+}
+.compact-range input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--surface-solid, #fff);
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+  transition: transform 0.15s;
+}
+.compact-range input[type='range']:active::-webkit-slider-thumb {
+  transform: scale(1.18);
+}
+.compact-range b {
+  min-width: 38px;
+  color: var(--accent-strong);
+}
+.compact-tokens {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+}
+.compact-tokens .input {
+  width: 86px;
+}
+.compact-hint {
+  font-size: 12px;
+}
+
+.task-form-row > .input.mono.task-check {
+  flex: 1;
+  min-width: 200px;
+}
+.task-more {
+  margin-left: auto;
+}
+.task-budget {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.task-budget .input {
+  width: 84px;
+}
+
+/* the actions wrap instead of squeezing the prompt */
+.task-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 48%;
+}
+.task-actions .btn.on {
+  background: var(--surface-2);
+}
+.btn.danger {
+  color: var(--critical);
+}
+.accent-text {
+  color: var(--accent-strong);
+}
+.check-badge {
+  font-family: Consolas, 'Cascadia Mono', monospace;
+  font-size: 11px;
+}
+
+.task-item.retrying {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+
+.task-more-row {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.task-edit,
+.task-follow {
+  margin: 10px 0 0 44px;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.task-edit .input,
+.task-follow .input {
+  background: var(--surface);
+}
+.task-edit-why {
+  font-size: 12.5px;
+  color: var(--text-2);
+  padding: 6px 10px;
+  border-left: 3px solid var(--warning);
+  background: color-mix(in srgb, var(--warning) 9%, transparent);
+  border-radius: 4px;
+}
+.task-edit-btns {
+  display: inline-flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.task-follow > .muted {
+  font-size: 12px;
+}
+
+/* the tries of a run, as a trail */
+.try-trail {
+  margin: 10px 0 0 44px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 0;
+}
+.try-step {
+  display: inline-flex;
+  align-items: center;
+}
+.try-link {
+  width: 16px;
+  height: 2px;
+  background: var(--border-strong);
+}
+.try-link.dashed {
+  background: none;
+  border-top: 2px dashed var(--border-strong);
+  height: 0;
+}
+.try {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px 2px 3px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  background: var(--surface);
+  cursor: default;
+}
+.try b {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 10.5px;
+  background: var(--surface-2);
+  color: var(--text-3);
+}
+.try.ok {
+  border-color: color-mix(in srgb, var(--good) 45%, var(--border));
+  color: var(--good-text);
+}
+.try.ok b {
+  background: var(--good);
+  color: #fff;
+}
+.try.bad {
+  border-color: color-mix(in srgb, var(--critical) 40%, var(--border));
+  color: var(--critical);
+}
+.try.bad b {
+  background: var(--critical);
+  color: #fff;
+}
+.try.swap b {
+  background: var(--warning);
+  color: #fff;
+}
+.try.run {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+.try.run b {
+  background: var(--accent);
+  color: #fff;
+  animation: try-pulse 1.6s ease-in-out infinite;
+}
+.try.next {
+  border-style: dashed;
+  color: var(--text-3);
+}
+@keyframes try-pulse {
+  50% {
+    box-shadow: 0 0 0 4px var(--accent-soft);
+  }
+}
+.try-out {
+  margin-left: 8px;
+}
+.try-tail {
+  flex-basis: 100%;
+  margin: 6px 0 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font: 11.5px/1.5 Consolas, 'Cascadia Mono', monospace;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+/* the last 30 days in numbers, under the refresh rings */
+.task-side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.task-side > .task-hero {
+  flex: none;
+}
+.task-stats {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 14px;
+  padding: 16px 20px;
+}
+.task-stats-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.task-stats-ring {
+  position: relative;
+  width: 54px;
+  height: 54px;
+  flex: none;
+}
+.task-stats-ring svg {
+  width: 100%;
+  height: 100%;
+}
+.task-stats-ring b {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 12.5px;
+}
+.task-stats-note {
+  font-size: 12px;
+}
+.task-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px 14px;
+}
+.task-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.task-stat b {
+  font-family: var(--serif);
+  font-size: 19px;
+  font-weight: 450;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.task-stat b.bad-text {
+  color: var(--critical);
+}
+.task-stat b.accent-text {
+  color: var(--accent-strong);
+}
+.task-stat small {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.task-history-head {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.task-history-tools {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--sans);
+  font-size: 13px;
+}
+.task-search {
+  width: 210px;
+}
+.task-show-more {
+  display: block;
+  margin: 4px auto 12px;
+}
+
+@media (max-width: 900px) {
+  .task-actions {
+    max-width: none;
+  }
+  .task-item-head {
+    flex-wrap: wrap;
+  }
+}

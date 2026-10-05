@@ -1,0 +1,530 @@
+/* 2.6: lava lamp, crystal, digital rain, fireworks, sky lanterns, Bauhaus */
+
+/* ---------- palettes ---------- */
+html:root[data-pack='lava'][data-theme] {
+  color-scheme: dark;
+  --bg: #1a0b1e;
+  --bg-side: #160918;
+  --surface: #24112a;
+  --surface-solid: #24112a;
+  --surface-2: #2e1634;
+  --border: #3d1d42;
+  --border-strong: #55285a;
+  --text: #fbe9ee;
+  --text-2: #d9b8c4;
+  --text-3: #9c7f8c;
+  --grid: #2c1430;
+  --axis: #55285a;
+  --accent-rgb: 255, 106, 76;
+  --accent: #ff6a4c;
+  --accent-strong: #ff8a6a;
+  --accent-hi: #ffc2a8;
+  --accent-soft: rgba(255, 106, 76, 0.15);
+  --accent-wash: rgba(255, 106, 76, 0.07);
+  --s1: #ff6a4c;
+  --s2: #ff2d7a;
+  --s3: #ffb347;
+  --s4: #b07cff;
+  --q1: #2c1430;
+  --q2: #4c1e3e;
+  --q3: #8a2e4a;
+  --q4: #ff6a4c;
+  --q5: #ffc2a8;
+  --radius: 18px;
+}
+html:root[data-pack='lava'][data-glass] {
+  --surface: rgba(36, 17, 42, 0.58);
+  --surface-2: rgba(46, 22, 52, 0.52);
+  --border: rgba(255, 106, 76, 0.16);
+}
+:root[data-pack='lava'] .page-title,
+:root[data-pack='lava'] .hero-number {
+  text-shadow: 0 0 22px rgba(255, 90, 80, 0.45);
+}
+
+html:root[data-pack='crystal'][data-theme] {
+  color-scheme: dark;
+  --bg: #071428;
+  --bg-side: #06111f;
+  --surface: #0c1d36;
+  --surface-solid: #0c1d36;
+  --surface-2: #11264a;
+  --border: #1b3558;
+  --border-strong: #2a4e7a;
+  --text: #eaf6ff;
+  --text-2: #b4cce0;
+  --text-3: #7891aa;
+  --grid: #132a4a;
+  --axis: #2a4e7a;
+  --accent-rgb: 127, 216, 255;
+  --accent: #7fd8ff;
+  --accent-strong: #a6e6ff;
+  --accent-hi: #e6f7ff;
+  --accent-soft: rgba(127, 216, 255, 0.15);
+  --accent-wash: rgba(127, 216, 255, 0.07);
+  --s1: #7fd8ff;
+  --s2: #c3a6ff;
+  --s3: #7fffd4;
+  --s4: #ffd27a;
+  --q1: #0f2240;
+  --q2: #1d3d66;
+  --q3: #3a6fa0;
+  --q4: #7fd8ff;
+  --q5: #e6f7ff;
+  --radius: 8px;
+}
+html:root[data-pack='crystal'][data-glass] {
+  --surface: rgba(12, 29, 54, 0.55);
+  --surface-2: rgba(17, 38, 74, 0.5);
+  --border: rgba(180, 230, 255, 0.18);
+}
+:root[data-pack='crystal'] .card {
+  box-shadow: inset 0 1px 0 rgba(230, 247, 255, 0.12), 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+html:root[data-pack='matrix'][data-theme] {
+  color-scheme: dark;
+  --bg: #020a05;
+  --bg-side: #020804;
+  --surface: #06140b;
+  --surface-solid: #06140b;
+  --surface-2: #0a1f12;
+  --border: #11331d;
+  --border-strong: #1b4d2c;
+  --text: #d8ffe4;
+  --text-2: #9ad6ac;
+  --text-3: #5f9670;
+  --grid: #0b2414;
+  --axis: #1b4d2c;
+  --accent-rgb: 61, 255, 122;
+  --accent: #3dff7a;
+  --accent-strong: #7dffa6;
+  --accent-hi: #c8ffd8;
+  --accent-soft: rgba(61, 255, 122, 0.13);
+  --accent-wash: rgba(61, 255, 122, 0.06);
+  --s1: #3dff7a;
+  --s2: #a6ff3d;
+  --s3: #3dd6ff;
+  --s4: #ffe14d;
+  --q1: #08180e;
+  --q2: #10331c;
+  --q3: #1f6a38;
+  --q4: #3dff7a;
+  --q5: #c8ffd8;
+  --serif: 'Cascadia Code', Consolas, 'Microsoft YaHei UI', monospace;
+  --radius: 4px;
+  --radius-sm: 3px;
+}
+html:root[data-pack='matrix'][data-glass] {
+  --surface: rgba(4, 18, 9, 0.62);
+  --surface-2: rgba(8, 28, 15, 0.55);
+  --border: rgba(61, 255, 122, 0.18);
+}
+:root[data-pack='matrix'] .page-title,
+:root[data-pack='matrix'] .hero-number,
+:root[data-pack='matrix'] .card-title .serif {
+  text-shadow: 0 0 10px rgba(61, 255, 122, 0.55);
+}
+
+html:root[data-pack='fireworks'][data-theme] {
+  color-scheme: dark;
+  --bg: #070a1a;
+  --bg-side: #060816;
+  --surface: #0e1228;
+  --surface-solid: #0e1228;
+  --surface-2: #141a36;
+  --border: #222a4e;
+  --border-strong: #343f70;
+  --text: #f3f0ff;
+  --text-2: #c3bedc;
+  --text-3: #8580a6;
+  --grid: #161c3a;
+  --axis: #343f70;
+  --accent-rgb: 255, 179, 71;
+  --accent: #ffb347;
+  --accent-strong: #ffc66e;
+  --accent-hi: #ffe2b0;
+  --accent-soft: rgba(255, 179, 71, 0.15);
+  --accent-wash: rgba(255, 179, 71, 0.07);
+  --s1: #ffb347;
+  --s2: #ff4f8b;
+  --s3: #78c8ff;
+  --s4: #b478ff;
+  --q1: #141a36;
+  --q2: #3a2f55;
+  --q3: #8a5a4a;
+  --q4: #ffb347;
+  --q5: #ffe2b0;
+}
+html:root[data-pack='fireworks'][data-glass] {
+  --surface: rgba(14, 18, 40, 0.58);
+  --surface-2: rgba(20, 26, 54, 0.52);
+  --border: rgba(255, 200, 140, 0.14);
+}
+:root[data-pack='fireworks'] .hero-number {
+  text-shadow: 0 0 18px rgba(255, 180, 90, 0.4);
+}
+
+html:root[data-pack='lantern'][data-theme] {
+  color-scheme: dark;
+  --bg: #0b0f24;
+  --bg-side: #090c1e;
+  --surface: #121836;
+  --surface-solid: #121836;
+  --surface-2: #182044;
+  --border: #263058;
+  --border-strong: #3a4678;
+  --text: #fbf1de;
+  --text-2: #d6c8ad;
+  --text-3: #998f80;
+  --grid: #1a2148;
+  --axis: #3a4678;
+  --accent-rgb: 255, 179, 92;
+  --accent: #ffb35c;
+  --accent-strong: #ffc77e;
+  --accent-hi: #ffe1a8;
+  --accent-soft: rgba(255, 179, 92, 0.15);
+  --accent-wash: rgba(255, 179, 92, 0.07);
+  --s1: #ffb35c;
+  --s2: #ff7a5c;
+  --s3: #8fb6ff;
+  --s4: #ffd27a;
+  --q1: #182044;
+  --q2: #3a3550;
+  --q3: #8a6440;
+  --q4: #ffb35c;
+  --q5: #ffe1a8;
+  --serif: 'Source Serif 4 Variable', KaiTi, STKaiti, 'Noto Serif SC', serif;
+}
+html:root[data-pack='lantern'][data-glass] {
+  --surface: rgba(18, 24, 54, 0.58);
+  --surface-2: rgba(24, 32, 68, 0.52);
+  --border: rgba(255, 190, 120, 0.15);
+}
+:root[data-pack='lantern'] .page-title,
+:root[data-pack='lantern'] .hero-number {
+  text-shadow: 0 0 20px rgba(255, 170, 80, 0.4);
+}
+
+html:root[data-pack='bauhaus'][data-theme] {
+  color-scheme: light;
+  --bg: #f4efe4;
+  --bg-side: #ede6d6;
+  --surface: #fbf8f1;
+  --surface-solid: #fbf8f1;
+  --surface-2: #efe8da;
+  --border: #ddd3bf;
+  --border-strong: #c4b79d;
+  --text: #1a1a1a;
+  --text-2: #4a463f;
+  --text-3: #85806f;
+  --grid: #e6dfcf;
+  --axis: #c4b79d;
+  --accent-rgb: 214, 64, 46;
+  --accent: #d6402e;
+  --accent-strong: #b8321f;
+  --accent-hi: #f28a6e;
+  --accent-soft: rgba(214, 64, 46, 0.12);
+  --accent-wash: rgba(214, 64, 46, 0.06);
+  --s1: #d6402e;
+  --s2: #1f4e9c;
+  --s3: #f2b632;
+  --s4: #1a1a1a;
+  --q1: #efe8da;
+  --q2: #f2c9a8;
+  --q3: #e88a6a;
+  --q4: #d6402e;
+  --q5: #8a2414;
+  --serif: Bahnschrift, 'Segoe UI Variable Display', 'Microsoft YaHei UI', sans-serif;
+  --sans: Bahnschrift, 'Segoe UI Variable Text', 'Segoe UI', 'Microsoft YaHei UI', sans-serif;
+  --radius: 4px;
+  --radius-sm: 3px;
+}
+html:root[data-pack='bauhaus'][data-glass] {
+  --surface: rgba(251, 248, 241, 0.88);
+  --surface-2: rgba(239, 232, 218, 0.8);
+  --border: rgba(26, 26, 26, 0.14);
+}
+:root[data-pack='bauhaus'] .card {
+  border-width: 1.5px;
+  box-shadow: 4px 4px 0 rgba(26, 26, 26, 0.85);
+}
+:root[data-pack='bauhaus'] .page-title,
+:root[data-pack='bauhaus'] .card-title .serif {
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* ---------- previews: the backdrop tiles and the pack cards ---------- */
+.bd-lava .bd-prev,
+.pack-lava .pack-preview {
+  background-image:
+    radial-gradient(circle at 30% 70%, #ff7a4c 0 9px, rgba(255, 90, 80, 0.45) 13px, transparent 18px),
+    radial-gradient(circle at 62% 38%, #ff2d7a 0 7px, rgba(255, 45, 122, 0.4) 11px, transparent 15px),
+    radial-gradient(circle at 80% 78%, #ffb347 0 5px, rgba(255, 180, 70, 0.35) 8px, transparent 12px),
+    linear-gradient(#12061a, #341018);
+}
+.bd-crystal .bd-prev,
+.pack-crystal .pack-preview {
+  background-image:
+    linear-gradient(135deg, rgba(166, 230, 255, 0.35) 25%, transparent 25%),
+    linear-gradient(225deg, rgba(30, 80, 130, 0.6) 25%, transparent 25%),
+    linear-gradient(45deg, rgba(60, 120, 180, 0.55) 25%, transparent 25%),
+    linear-gradient(315deg, rgba(10, 40, 80, 0.7) 25%, #1b4a7a 25%);
+  background-size: 22px 22px;
+}
+.bd-matrix .bd-prev,
+.pack-matrix .pack-preview {
+  background-image:
+    repeating-linear-gradient(90deg, #020a05 0 5px, transparent 5px 9px),
+    repeating-linear-gradient(180deg, rgba(61, 255, 122, 0.65) 0 2px, transparent 2px 6px),
+    linear-gradient(#0a2a14, #020a05);
+}
+.bd-fireworks .bd-prev,
+.pack-fireworks .pack-preview {
+  background-image:
+    linear-gradient(transparent 78%, #05060f 78%),
+    radial-gradient(circle at 30% 36%, transparent 9px, rgba(255, 90, 120, 0.75) 10px 11px, transparent 13px),
+    radial-gradient(circle at 30% 36%, #fff 0 1.5px, transparent 2px),
+    radial-gradient(circle at 70% 28%, transparent 7px, rgba(255, 190, 80, 0.8) 8px 9px, transparent 11px),
+    radial-gradient(circle at 56% 60%, transparent 5px, rgba(120, 200, 255, 0.75) 6px 7px, transparent 9px),
+    linear-gradient(#04061a, #2a1838);
+}
+.bd-lantern .bd-prev,
+.pack-lantern .pack-preview {
+  background-image:
+    radial-gradient(3px 4px at 28% 42%, #ffe1a8 90%, transparent),
+    radial-gradient(circle at 28% 42%, rgba(255, 170, 80, 0.5) 0 6px, transparent 12px),
+    radial-gradient(2.5px 3.5px at 58% 26%, #ffe1a8 90%, transparent),
+    radial-gradient(circle at 58% 26%, rgba(255, 170, 80, 0.45) 0 5px, transparent 10px),
+    radial-gradient(2px 3px at 78% 52%, #ffe1a8 90%, transparent),
+    radial-gradient(circle at 78% 52%, rgba(255, 170, 80, 0.4) 0 4px, transparent 9px),
+    linear-gradient(transparent 76%, #141936 76%),
+    linear-gradient(#060a1f, #2b2346);
+}
+.bd-bauhaus .bd-prev,
+.pack-bauhaus .pack-preview {
+  background-image:
+    radial-gradient(circle at 26% 50%, #d6402e 0 12px, transparent 12.5px),
+    linear-gradient(90deg, transparent 48%, #1f4e9c 48% 62%, transparent 62%),
+    radial-gradient(circle at 86% 100%, #f2b632 0 17px, transparent 17.5px),
+    linear-gradient(transparent 18%, #1a1a1a 18% 24%, transparent 24%);
+}
+.bd-bauhaus .bd-prev {
+  background-color: #f4efe4;
+}
+.pack-lava .pack-fx,
+.pack-crystal .pack-fx,
+.pack-matrix .pack-fx,
+.pack-fireworks .pack-fx,
+.pack-lantern .pack-fx {
+  color: rgba(255, 255, 255, 0.82);
+}
+.pack-lava .pack-preview,
+.pack-crystal .pack-preview,
+.pack-matrix .pack-preview,
+.pack-fireworks .pack-preview,
+.pack-lantern .pack-preview,
+.pack-bauhaus .pack-preview {
+  background-repeat: no-repeat;
+}
+.pack-crystal .pack-preview {
+  background-repeat: repeat;
+}
+
+/* ---------- entrances ---------- */
+.tr-lava .tr-lava {
+  bottom: -20%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, #ffc2a8, #ff6a3c 45%, #ff2d7a 80%);
+  opacity: 0.85;
+  animation: tr-lava 1.3s cubic-bezier(0.4, 0, 0.6, 1) both;
+}
+@keyframes tr-lava {
+  0% {
+    transform: translateY(0) scale(0.6, 0.8);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.85;
+  }
+  60% {
+    transform: translateY(calc(var(--h) * -0.7)) scale(1.1, 0.9);
+  }
+  100% {
+    transform: translateY(calc(var(--h) * -1.15)) scale(0.8, 1.1);
+    opacity: 0;
+  }
+}
+.tr-crystal .tr-prism {
+  inset: 0;
+  background: linear-gradient(115deg, transparent 30%, rgba(255, 120, 200, 0.22) 42%, rgba(120, 200, 255, 0.3) 50%, rgba(160, 255, 200, 0.22) 58%, transparent 70%);
+  animation: tr-prism 1s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+@keyframes tr-prism {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+.tr-crystal .tr-shard {
+  clip-path: polygon(50% 0, 100% 100%, 0 70%);
+  background: linear-gradient(135deg, rgba(230, 247, 255, 0.95), rgba(127, 216, 255, 0.35));
+  animation: tr-shard 1s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes tr-shard {
+  0% {
+    transform: scale(0) rotate(var(--spin));
+    opacity: 0;
+  }
+  35% {
+    transform: scale(1) rotate(calc(var(--spin) + 40deg));
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(0.6) rotate(calc(var(--spin) + 90deg));
+    opacity: 0;
+  }
+}
+.tr-matrix .tr-code {
+  top: -60%;
+  white-space: pre;
+  font: 600 15px/17px 'Cascadia Code', 'MS Gothic', Consolas, monospace;
+  color: #3dff7a;
+  text-shadow: 0 0 8px rgba(61, 255, 122, 0.8);
+  animation: tr-code 1s linear both;
+}
+:root[data-theme='light'] .tr-matrix .tr-code {
+  color: #127a3a;
+  text-shadow: none;
+}
+@keyframes tr-code {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(calc(var(--h) * 1.6));
+    opacity: 0;
+  }
+}
+.tr-fireworks .tr-boom {
+  left: 50%;
+  top: 42%;
+  width: 40vmin;
+  height: 40vmin;
+  translate: -50% -50%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 240, 210, 0.7), rgba(255, 180, 90, 0.2) 40%, transparent 70%);
+  animation: tr-fade 1s ease-out both;
+}
+.tr-fireworks .tr-spark {
+  left: 50%;
+  top: 42%;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  box-shadow: 0 0 8px 2px currentColor;
+  animation: tr-spark 1.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes tr-spark {
+  0% {
+    transform: translate(0, 0) scale(1.4);
+    opacity: 1;
+  }
+  70% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate(var(--dx), calc(var(--dy) + 6vmin)) scale(0.4);
+    opacity: 0;
+  }
+}
+.tr-lantern .tr-lantern {
+  bottom: -8%;
+  border-radius: 34% 34% 42% 42%;
+  background: linear-gradient(#ffb35c, #ffe1a8);
+  box-shadow: 0 0 18px 6px rgba(255, 170, 80, 0.55);
+  animation: tr-lantern 1.5s ease-out both;
+}
+@keyframes tr-lantern {
+  0% {
+    transform: translate(0, 0);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  50% {
+    transform: translate(10px, calc(var(--h) * -0.45));
+  }
+  100% {
+    transform: translate(-6px, calc(var(--h) * -0.95));
+    opacity: 0;
+  }
+}
+.tr-bauhaus .tr-geo {
+  opacity: 0;
+  animation: tr-geo 1s cubic-bezier(0.7, 0, 0.2, 1) both;
+}
+.tr-geo.circle {
+  right: 12%;
+  top: 16%;
+  width: 22vmin;
+  height: 22vmin;
+  border-radius: 50%;
+  background: #d6402e;
+  --fx: 40vw;
+  --fy: 0;
+}
+.tr-geo.half {
+  left: 8%;
+  bottom: 12%;
+  width: 26vmin;
+  height: 13vmin;
+  border-radius: 13vmin 13vmin 0 0;
+  background: #1f4e9c;
+  --fx: -40vw;
+  --fy: 0;
+}
+.tr-geo.bar {
+  left: 30%;
+  top: 10%;
+  width: 40vmin;
+  height: 3.5vmin;
+  background: #1a1a1a;
+  --fx: 0;
+  --fy: -30vh;
+}
+.tr-geo.tri {
+  right: 22%;
+  bottom: 14%;
+  width: 18vmin;
+  height: 18vmin;
+  clip-path: polygon(0 100%, 100% 100%, 0 0);
+  background: #f2b632;
+  --fx: 0;
+  --fy: 40vh;
+}
+@keyframes tr-geo {
+  0% {
+    transform: translate(var(--fx), var(--fy)) rotate(-90deg);
+    opacity: 0;
+  }
+  40% {
+    transform: none;
+    opacity: 0.9;
+  }
+  75% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: none;
+    opacity: 0;
+  }
+}

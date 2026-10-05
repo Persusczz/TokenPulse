@@ -1,0 +1,273 @@
+/* ---------- quota meters: a surge on new usage, a tape-like rewind to zero on reset (QuotaMotion.tsx) ---------- */
+
+:root {
+  --rewind: #2fb6f0;
+}
+:root[data-theme='dark'] {
+  --rewind: #7fdcff;
+}
+
+/* the value is driven frame by frame: no CSS easing on top of it */
+.ring svg circle.q-arc,
+.stage-ring-svg circle.q-arc,
+svg circle.q-arc {
+  transition: stroke 0.35s !important;
+}
+.q-bar > :first-child,
+.isl-track.q-bar i {
+  transition: background 0.35s !important;
+}
+.ring svg,
+.stage-ring-svg svg {
+  overflow: visible;
+}
+
+/* ---- growing: a white-hot head with a fading tail leads the arc */
+.q-head {
+  fill: #fff;
+  filter: drop-shadow(0 0 3px #fff) drop-shadow(0 0 8px var(--accent));
+}
+.q-tail {
+  stroke: rgba(255, 255, 255, 0.6);
+  filter: blur(1.2px);
+}
+.ring.q-grow .q-arc,
+.ring.q-refill .q-arc,
+.stage-ring.q-grow .q-arc,
+.stage-ring.q-refill .q-arc {
+  filter: drop-shadow(0 0 6px var(--accent));
+}
+.q-delta {
+  position: absolute;
+  left: 50%;
+  top: -10px;
+  z-index: 3;
+  translate: -50% 0;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  background: color-mix(in srgb, var(--surface-solid, #fff) 70%, var(--accent) 30%);
+  color: var(--accent-strong);
+  font: 700 12px/1 var(--sans);
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 35%, transparent);
+  animation: q-delta 1.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.q-delta.big {
+  top: 2%;
+  font-size: 20px;
+  padding: 5px 12px;
+}
+@keyframes q-delta {
+  0% {
+    opacity: 0;
+    transform: translateY(14px) scale(0.6);
+  }
+  16% {
+    opacity: 1;
+    transform: translateY(0) scale(1.12);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(-8px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-22px) scale(0.96);
+  }
+}
+
+/* ---- rewinding: speed lines spin backwards, the number skips like a worn tape */
+.q-speed {
+  stroke: var(--rewind);
+  opacity: 0.8;
+  transform-box: view-box;
+  transform-origin: center;
+  animation: q-spin-back 0.42s linear infinite;
+}
+@keyframes q-spin-back {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+.ring.q-rewind .q-arc,
+.stage-ring.q-rewind .q-arc,
+svg.q-rewind .q-arc {
+  filter: drop-shadow(0 0 5px var(--rewind)) drop-shadow(0 0 12px var(--rewind));
+}
+.ring.q-rewind .ring-center,
+.stage-ring.q-rewind .stage-ring-center b {
+  color: var(--rewind);
+  text-shadow:
+    -2px 0 rgba(255, 70, 130, 0.65),
+    2px 0 rgba(70, 220, 255, 0.75);
+  animation: q-skip 0.12s steps(2) infinite;
+}
+@keyframes q-skip {
+  50% {
+    transform: translateX(1.5px) skewX(-8deg);
+  }
+}
+/* scanlines rolling over the dial while it rewinds */
+.ring-dial {
+  position: relative;
+}
+.ring.q-rewind .ring-dial::after,
+.stage-ring.q-rewind .stage-ring-svg::after {
+  content: '';
+  position: absolute;
+  inset: 6%;
+  z-index: 2;
+  border-radius: 50%;
+  pointer-events: none;
+  background: repeating-linear-gradient(180deg, rgba(127, 220, 255, 0.16) 0 1px, transparent 1px 4px);
+  mix-blend-mode: screen;
+  animation: q-scan 0.5s linear infinite;
+}
+@keyframes q-scan {
+  to {
+    background-position: 0 8px;
+  }
+}
+/* the moment it hits zero: a white flash in the middle */
+.ring.q-zero .ring-dial::before,
+.stage-ring.q-zero .stage-ring-svg::before {
+  content: '';
+  position: absolute;
+  inset: 12%;
+  z-index: 2;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.95), color-mix(in srgb, var(--rewind) 70%, transparent) 38%, transparent 70%);
+  animation: q-flash 0.32s ease-out both;
+}
+@keyframes q-flash {
+  from {
+    transform: scale(0.3);
+    opacity: 1;
+  }
+  to {
+    transform: scale(1.25);
+    opacity: 0;
+  }
+}
+.q-tag {
+  position: absolute;
+  left: 50%;
+  bottom: 17%;
+  z-index: 3;
+  translate: -50% 0;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font: 700 10px/1.5 var(--sans);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: q-tag 0.22s ease-out both;
+}
+.ring.compact .q-tag {
+  bottom: 10%;
+  font-size: 9px;
+}
+.stage-ring-center .q-tag {
+  bottom: 22%;
+  font-size: 14px;
+  padding: 2px 12px;
+}
+.q-tag.rw {
+  color: #04131c;
+  background: var(--rewind);
+  box-shadow: 0 0 14px var(--rewind);
+}
+.q-tag.fresh {
+  color: var(--good-text);
+  background: color-mix(in srgb, var(--good, #5e9b4a) 22%, var(--surface-solid, #fff));
+}
+@keyframes q-tag {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.8);
+  }
+}
+
+/* ---- bars (floating window, island) */
+.q-bar {
+  position: relative;
+}
+.q-bar.q-grow > :first-child,
+.q-bar.q-refill > :first-child {
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+/* a shine sweeping along the fill, and a white-hot leading edge */
+.q-bar.q-grow > :first-child::before,
+.q-bar.q-refill > :first-child::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.55) 50%, transparent 70%) 0 0 / 220% 100%;
+  animation: q-shine 0.8s linear infinite;
+}
+.q-bar.q-grow > :first-child::after,
+.q-bar.q-refill > :first-child::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 22px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.95));
+}
+@keyframes q-shine {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -120% 0;
+  }
+}
+/* rewinding: streaks race right to left across the track */
+.q-bar.q-rewind::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: repeating-linear-gradient(90deg, transparent 0 9px, color-mix(in srgb, var(--rewind) 70%, transparent) 9px 11px);
+  animation: q-streak 0.22s linear infinite;
+}
+.q-bar.q-rewind > :first-child {
+  box-shadow: 0 0 12px var(--rewind);
+}
+@keyframes q-streak {
+  to {
+    background-position: -22px 0;
+  }
+}
+.q-bar.q-zero::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(ellipse at left center, rgba(255, 255, 255, 0.95), color-mix(in srgb, var(--rewind) 60%, transparent) 30%, transparent 70%);
+  animation: q-flash 0.32s ease-out both;
+}
+.q-rw {
+  font-style: normal;
+  color: var(--rewind);
+  margin-right: 2px;
+  font-size: 0.9em;
+  animation: q-blink 0.3s steps(2) infinite;
+}
+@keyframes q-blink {
+  50% {
+    opacity: 0.35;
+  }
+}
+.mini-q-pct.q-rewind,
+.isl-bar em.q-rewind {
+  color: var(--rewind);
+}

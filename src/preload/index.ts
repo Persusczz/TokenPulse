@@ -1,0 +1,89 @@
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import type { TokenPulseApi } from '../shared/types'
+
+function on<T>(channel: string) {
+  return (cb: (v: T) => void) => {
+    const fn = (_e: IpcRendererEvent, v: T) => cb(v)
+    ipcRenderer.on(channel, fn)
+    return () => {
+      ipcRenderer.removeListener(channel, fn)
+    }
+  }
+}
+
+const api: TokenPulseApi = {
+  getSummary: (range) => ipcRenderer.invoke('summary', range),
+  getRanges: () => ipcRenderer.invoke('ranges'),
+  getRate: () => ipcRenderer.invoke('rate'),
+  getGuard: () => ipcRenderer.invoke('guard:get'),
+  installBridge: (on) => ipcRenderer.invoke('guard:bridge', on),
+  onGuard: on('guard:update'),
+  getLive: () => ipcRenderer.invoke('live'),
+  getSessions: () => ipcRenderer.invoke('sessions'),
+  getPricing: () => ipcRenderer.invoke('pricing:get'),
+  refreshPricing: () => ipcRenderer.invoke('pricing:refresh'),
+  getQuota: () => ipcRenderer.invoke('quota:get'),
+  refreshQuota: () => ipcRenderer.invoke('quota:refresh'),
+  getSettings: () => ipcRenderer.invoke('settings:get'),
+  setSettings: (patch) => ipcRenderer.invoke('settings:set', patch),
+  getLoadState: () => ipcRenderer.invoke('load:get'),
+  showMain: () => ipcRenderer.send('main:show'),
+  toggleMini: (show) => ipcRenderer.send('mini:toggle', show),
+  miniMenu: () => ipcRenderer.send('mini:menu'),
+  getValue: (source) => ipcRenderer.invoke('value', source),
+  getForecast: (source) => ipcRenderer.invoke('forecast', source),
+  getAchievements: () => ipcRenderer.invoke('achievements'),
+  getSign: () => ipcRenderer.invoke('sign'),
+  getPatterns: (range) => ipcRenderer.invoke('patterns', range),
+  getCosmos: () => ipcRenderer.invoke('cosmos'),
+  getRace: (kind) => ipcRenderer.invoke('race', kind),
+  getStarMap: (days) => ipcRenderer.invoke('starmap', days),
+  getQuotaRates: (days) => ipcRenderer.invoke('quota:rates', days),
+  bumpCounter: (name) => ipcRenderer.send('counter:bump', name),
+  onAchievement: on('achievement:new'),
+  savePoster: (dataUrl, name) => ipcRenderer.invoke('poster:save', dataUrl, name),
+  copyPoster: (dataUrl) => ipcRenderer.invoke('poster:copy', dataUrl),
+  telegramTest: () => ipcRenderer.invoke('telegram:test'),
+  telegramDetectChat: (token) => ipcRenderer.invoke('telegram:detect', token),
+  hotkeyStatus: () => ipcRenderer.invoke('hotkey:status'),
+  openStage: () => ipcRenderer.send('stage:open'),
+  closeStage: () => ipcRenderer.send('stage:close'),
+  setManualHold: (on) => ipcRenderer.invoke('guard:manual', on),
+  releaseSessions: (id) => ipcRenderer.invoke('guard:release', id),
+  holdSession: (id) => ipcRenderer.invoke('guard:hold', id),
+  getRunaway: () => ipcRenderer.invoke('runaway:get'),
+  dismissRunaway: (id) => ipcRenderer.send('runaway:dismiss', id),
+  onRunaway: on('runaway:update'),
+  onRemote: on('remote:command'),
+  islandInteractive: (v) => ipcRenderer.send('island:interactive', v),
+  islandMenu: () => ipcRenderer.send('island:menu'),
+  sendReport: () => ipcRenderer.invoke('report:send'),
+  getTasks: () => ipcRenderer.invoke('tasks:get'),
+  addTask: (input) => ipcRenderer.invoke('tasks:add', input),
+  taskAction: (id, action) => ipcRenderer.invoke('tasks:action', id, action),
+  moveTask: (id, target, how) => ipcRenderer.invoke('tasks:move', id, target, how),
+  updateTask: (id, patch, then) => ipcRenderer.invoke('tasks:update', id, patch, then),
+  clearTaskHistory: (tool) => ipcRenderer.invoke('tasks:clear', tool),
+  taskLog: (id) => ipcRenderer.invoke('tasks:log', id),
+  onTasks: on('tasks:update'),
+  pickFolder: () => ipcRenderer.invoke('dialog:folder'),
+  getCodexQuota: () => ipcRenderer.invoke('codex:quota'),
+  onCodexQuota: on('codex:quota'),
+  getPace: () => ipcRenderer.invoke('pace'),
+  getCacheReport: (range) => ipcRenderer.invoke('cache:report', range),
+  getPrompts: (range) => ipcRenderer.invoke('prompts', range),
+  getSessionContext: (id) => ipcRenderer.invoke('session:context', id),
+  getDialogue: (id) => ipcRenderer.invoke('session:dialogue', id),
+  getContextAlerts: () => ipcRenderer.invoke('context:alerts'),
+  onContextAlert: on('context:alert'),
+  getWindowHistory: (days) => ipcRenderer.invoke('windows:history', days),
+  onWaste: on('waste'),
+  setThemeColors: (colors) => ipcRenderer.send('theme:colors', colors),
+  onUpdate: on('data:update'),
+  onQuota: on('quota:update'),
+  onPricing: on('pricing:update'),
+  onSettings: on('settings:update'),
+  onLoadState: on('load:state')
+}
+
+contextBridge.exposeInMainWorld('api', api)

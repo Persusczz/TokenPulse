@@ -1,0 +1,67 @@
+/*
+ * Frame-time fixes. An SVG that changes every frame (a CSS animation on one
+ * of its shapes, or attributes set from script) has to be laid out again; when
+ * the SVG is sized by percentage, that layout spread to the whole page, every
+ * frame, and with it to every other chart. Size + layout containment (with the
+ * size coming from an aspect ratio or a fixed height) keeps each one to itself.
+ */
+.sky {
+  aspect-ratio: 1000 / 472;
+  contain: size layout style;
+}
+.zodiac-card .zodiac-figure,
+.sign-figure,
+.journey-ship svg,
+.emb-star,
+.emb-tile {
+  contain: size layout style;
+}
+.qs-stage {
+  contain: size layout style;
+}
+.rem-svg {
+  aspect-ratio: 420 / 300;
+  contain: size layout style;
+}
+.eh-svg {
+  aspect-ratio: 400 / 260;
+  contain: size layout style;
+}
+.ps-svg {
+  aspect-ratio: 660 / 280;
+  contain: size layout style;
+}
+.ms-svg {
+  aspect-ratio: 900 / 200;
+  contain: size layout style;
+}
+.sp-svg {
+  aspect-ratio: 200 / 160;
+  contain: size layout style;
+}
+.cy-svg {
+  aspect-ratio: 860 / 170;
+  contain: size layout style;
+}
+.hz-svg {
+  contain: size layout style;
+}
+
+/* decoration that ran forever inside the overview's charts */
+.ctx-dot,
+.pay-proj {
+  animation: none;
+}
+
+/* the light rays stay where they are; they still brighten on new usage */
+.rays i {
+  animation: none;
+  transform: rotate(var(--a));
+}
+
+
+/* the live marks redraw their rays every frame */
+svg.starburst,
+svg.codex-mark {
+  contain: size layout style;
+}
