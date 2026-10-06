@@ -1,5 +1,6 @@
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import type { Counter, Counters } from './achievements'
+import { writeFileAtomic, writeFileAtomicSync } from './atomicFile'
 
 const DAY = 24 * 3600_000
 const COUNTERS = ['guard', 'limit', 'tasks', 'remote', 'runaway', 'palette', 'rescued', 'checked'] as const
@@ -19,6 +20,8 @@ export class AppState {
   lastReportDay: string | null = null
   /** revision of the Telegram button keyboard last sent to the chat */
   tgKeyboard: string | null = null
+  /** the pinned board message in the Telegram chat */
+  tgBoard: number | null = null
   /** the sunrise / sunset whose theme pack was last applied (dayNightPhase id) */
   dayNightPhase: string | null = null
   /** theme packs tried, with when (an achievement collects them) */
@@ -47,6 +50,7 @@ export class AppState {
       if (!this.counters.limit && this.quotaHits.length) this.counters.limit = { n: this.quotaHits.length, first: this.quotaHits[0] }
       if (typeof s.lastReportDay === 'string') this.lastReportDay = s.lastReportDay
       if (typeof s.tgKeyboard === 'string') this.tgKeyboard = s.tgKeyboard
+      if (Number.isInteger(s.tgBoard)) this.tgBoard = s.tgBoard
       if (typeof s.dayNightPhase === 'string') this.dayNightPhase = s.dayNightPhase
       if (Array.isArray(s.packsTried)) this.packsTried = s.packsTried.filter((p: { key?: unknown; at?: unknown }) => typeof p?.key === 'string' && typeof p?.at === 'number')
     } catch {
@@ -84,24 +88,40 @@ export class AppState {
     this.save()
   }
 
+  private body(): string {
+    return JSON.stringify({
+      firedAlerts: [...this.firedAlerts],
+      // quota keys only matter while their window is open: keep the newest few hundred
+      quotaKeys: [...this.quotaKeys].slice(-300),
+      quotaHits: this.quotaHits,
+      seenAchievements: this.seenAchievements ? [...this.seenAchievements] : null,
+      counters: this.counters,
+      lastReportDay: this.lastReportDay,
+      tgKeyboard: this.tgKeyboard,
+      tgBoard: this.tgBoard,
+      dayNightPhase: this.dayNightPhase,
+      packsTried: this.packsTried
+    })
+  }
+
   /** Debounced write */
   save(): void {
     if (this.timer) clearTimeout(this.timer)
     this.timer = setTimeout(() => {
-      // quota keys only matter while their window is open: keep the newest few hundred
-      const keys = [...this.quotaKeys].slice(-300)
-      const body = {
-        firedAlerts: [...this.firedAlerts],
-        quotaKeys: keys,
-        quotaHits: this.quotaHits,
-        seenAchievements: this.seenAchievements ? [...this.seenAchievements] : null,
-        counters: this.counters,
-        lastReportDay: this.lastReportDay,
-        tgKeyboard: this.tgKeyboard,
-        dayNightPhase: this.dayNightPhase,
-        packsTried: this.packsTried
-      }
-      void writeFile(this.path, JSON.stringify(body), 'utf8').catch(() => {})
+      this.timer = null
+      void writeFileAtomic(this.path, this.body()).catch(() => {})
     }, 300)
+  }
+
+  /** on quit: a write still waiting goes out now */
+  flush(): void {
+    if (!this.timer) return
+    clearTimeout(this.timer)
+    this.timer = null
+    try {
+      writeFileAtomicSync(this.path, this.body())
+    } catch {
+      /* nothing more to do */
+    }
   }
 }

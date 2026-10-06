@@ -190,7 +190,9 @@ function CodexRings({ q, now, paceOf, compact }: { q: CodexQuota; now: number; p
       ) : (
         <div className="quota-msg">Codex 日志里还没有额度数据</div>
       )}
-      {!compact && <div className="quota-break">来自 Codex 会话日志 · {ago(q, now)}更新（Codex 运行时才会更新）</div>}
+      {!compact && (
+        <div className="quota-break">{q.origin === 'api' ? `来自 ChatGPT 账号的用量接口 · ${ago(q, now)}更新（每分钟刷新）` : `来自 Codex 会话日志 · ${ago(q, now)}更新（Codex 运行时才会更新；在设置里登录 ChatGPT 可以每分钟读取）`}</div>
+      )}
     </>
   )
 }
@@ -210,11 +212,17 @@ function CodexQuotaCard() {
           <span className="serif">Codex 额度</span>
           {chatgpt(codexQuota?.plan ?? null) && <span className="badge accent">{chatgpt(codexQuota!.plan)}</span>}
         </div>
-        <span className="badge" title="Codex 每次响应都会把 rate_limits 写进会话日志">
-          会话日志
-        </span>
+        {codexQuota?.origin === 'api' ? (
+          <span className="badge" title="ChatGPT 账号的用量接口（Codex 的 /status 用的同一个），每分钟刷新">
+            官方接口
+          </span>
+        ) : (
+          <span className="badge" title="Codex 每次响应都会把 rate_limits 写进会话日志">
+            会话日志
+          </span>
+        )}
       </div>
-      {codexQuota ? <CodexRings q={codexQuota} now={now} paceOf={(k) => paces?.find((p) => p.key === k)} /> : <div className="quota-msg">还没有读到 Codex 的额度数据：Codex 运行一次后就会出现</div>}
+      {codexQuota ? <CodexRings q={codexQuota} now={now} paceOf={(k) => paces?.find((p) => p.key === k)} /> : <div className="quota-msg">还没有读到 Codex 的额度数据：在设置 → Codex 额度里登录 ChatGPT，或运行一次 Codex</div>}
       <div className="guard-strip">
         <span className="guard-dot off" />
         额度守卫只作用于 Claude Code；Codex 到线时提醒（桌面通知、灵动岛、Telegram）

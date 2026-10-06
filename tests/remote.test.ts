@@ -186,7 +186,7 @@ describe('telegram commands', () => {
     const handled: string[] = []
     const bot = new TelegramBot(new TelegramNotifier(fetchFn, 'http://tg'), async (c): Promise<Reply> => {
       handled.push([c.name, ...c.args].join(' '))
-      return c.name === 'help' ? { text: 'help', keyboard: true } : { text: `got ${c.name}`, buttons: [[{ text: '🔄', data: 'e:status' }]] }
+      return c.name === 'help' ? { text: 'help', keyboard: 'fold' } : { text: `got ${c.name}`, buttons: [[{ text: '🔄', data: 'e:status' }]] }
     })
     bot.start('1:A', '42')
     for (let i = 0; i < 100 && handled.length < 3; i++) await new Promise((r) => setTimeout(r, 20))
@@ -198,8 +198,9 @@ describe('telegram commands', () => {
     expect(m('setChatMenuButton').every((c) => c.body.menu_button.type === 'commands')).toBe(true)
     expect(bot.menuReady).toBe(true)
     const sends = m('sendMessage')
-    expect(sends[0].body.reply_markup.keyboard[0][0]).toEqual({ text: '📊 状态' })
-    expect(sends[0].body.reply_markup.is_persistent).toBe(true)
+    // one row that folds away: the keyboard icon in the input field brings it back
+    expect(sends[0].body.reply_markup.keyboard).toEqual([[{ text: '🎛 面板' }, { text: '📊 状态' }, { text: '📋 任务' }, { text: '🃏 卡片' }]])
+    expect(sends[0].body.reply_markup).toMatchObject({ is_persistent: false, one_time_keyboard: true, resize_keyboard: true })
     // e: edits the tapped message, a plain command answers with a new one
     expect(m('editMessageText')[0].body).toMatchObject({ message_id: 77, text: 'got status' })
     expect(m('editMessageText')[0].body.reply_markup.inline_keyboard[0][0]).toEqual({ text: '🔄', callback_data: 'e:status' })

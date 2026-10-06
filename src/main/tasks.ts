@@ -1,8 +1,8 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { appendFile, mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { existsSync, readFileSync } from 'node:fs'
+import { appendFile, copyFile, mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import { cleanCompactAt, compactText } from '@shared/compact'
@@ -23,6 +23,7 @@ import type {
   UsageSource
 } from '@shared/types'
 import runnerSrc from '../bridge/taskrunner.cjs?raw'
+import { writeFileAtomic, writeFileAtomicSync } from './atomicFile'
 import { CODEX_WINDOW } from './context'
 
 /** a little after the reset, so the new window has really opened */
@@ -586,11 +587,20 @@ export class TaskService extends EventEmitter {
   }
 
   async load(): Promise<void> {
+    let text: string | null = null
     try {
-      const list = JSON.parse(await readFile(this.file, 'utf8'))
-      if (Array.isArray(list)) this.tasks = list
+      text = await readFile(this.file, 'utf8')
     } catch {
       /* none yet */
+    }
+    if (text !== null) {
+      try {
+        const list = JSON.parse(text)
+        if (Array.isArray(list)) this.tasks = list
+      } catch {
+        // unreadable: kept aside, or the next save would write over the queue
+        await copyFile(this.file, `${this.file}.broken`).catch(() => {})
+      }
     }
     // tasks saved by older versions
     this.tasks.sort((a, b) => (a.order ?? a.createdAt) - (b.order ?? b.createdAt))
@@ -651,7 +661,7 @@ export class TaskService extends EventEmitter {
   private persist(): void {
     if (this.saving) return void (this.dirty = true)
     this.saving = true
-    void writeFile(this.file, JSON.stringify(this.tasks, null, 1), 'utf8')
+    void writeFileAtomic(this.file, JSON.stringify(this.tasks, null, 1))
       .catch(() => {})
       .finally(() => {
         this.saving = false
@@ -665,7 +675,7 @@ export class TaskService extends EventEmitter {
   /** on quit: whatever is not on disk yet */
   flush(): void {
     try {
-      writeFileSync(this.file, JSON.stringify(this.tasks, null, 1), 'utf8')
+      writeFileAtomicSync(this.file, JSON.stringify(this.tasks, null, 1))
     } catch {
       /* nothing more to do */
     }
@@ -1499,7 +1509,7 @@ export class TaskService extends EventEmitter {
     if (refused) {
       this.codexRefused.add(refused)
       if (!run.model) this.codexDefaultRefused = true
-      void writeFile(this.codexFile, JSON.stringify({ refused: [...this.codexRefused], defaultRefused: this.codexDefaultRefused }), 'utf8').catch(() => {})
+      void writeFileAtomic(this.codexFile, JSON.stringify({ refused: [...this.codexRefused], defaultRefused: this.codexDefaultRefused })).catch(() => {})
       const next = this.codexModel({ ...t, model: run.model ?? null })
       if (next && next !== run.model) {
         // a setup problem TokenPulse fixed by itself: not a try that failed at the task

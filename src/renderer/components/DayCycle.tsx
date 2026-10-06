@@ -785,8 +785,8 @@ const clockOf = (t: number) => new Date(t).toLocaleTimeString('zh-CN', { hour: '
 /**
  * The sidebar's 昼夜 clock: today's sky as a ring (each quarter hour in its
  * real colour) with the clock in the middle, the sun or the moon where the
- * day stands, the time of day and what comes next. A click plays the whole day as a
- * time-lapse.
+ * day stands, the time of day and the time now (what comes next is in the
+ * tooltip). A click plays the whole day as a time-lapse.
  */
 export function DayClock() {
   const place = usePlace()
@@ -810,7 +810,11 @@ export function DayClock() {
   const [hx, hy] = pos(frac)
   const up = sky.alt > -0.8
   return (
-    <button className={`day-clock phase-${sky.phase}${lapse ? ' lapse' : ''}`} onClick={() => (lapse ? stopTimelapse() : startTimelapse())} title={lapse ? '点一下回到现在' : '点一下：40 秒看完一整天'}>
+    <button
+      className={`day-clock phase-${sky.phase}${lapse ? ' lapse' : ''}`}
+      onClick={() => (lapse ? stopTimelapse() : startTimelapse())}
+      title={`${next ? `${clockOf(next.at)} 进入${next.label}\n` : ''}${lapse ? '点一下回到现在' : '点一下：40 秒看完一整天'}`}
+    >
       <span className="day-clock-dial">
       {up && <i className="day-clock-glow" style={{ left: `${(hx / 64) * 100}%`, top: `${(hy / 64) * 100}%` }} />}
       <svg viewBox="0 0 64 64" aria-hidden>
@@ -832,7 +836,7 @@ export function DayClock() {
         </b>
         <small>
           {dayStatus.text ? <span className="day-event">{dayStatus.text}</span> : place.name}
-          {next ? ` · ${clockOf(next.at)} ${next.label}` : ''}
+          {` · 现在 ${clockOf(sky.t)}`}
         </small>
       </span>
     </button>

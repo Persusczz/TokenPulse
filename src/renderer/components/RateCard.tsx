@@ -441,7 +441,17 @@ export function RateCard({ theme }: { theme: string }) {
             <div className="gauge-num">
               <AnimatedNumber value={r?.tokensPerMin ?? 0} format={tokFmt} />
             </div>
-            <div className="gauge-unit">tokens / 分钟</div>
+            <div className="gauge-unit">TPM · 含缓存读取</div>
+          </div>
+          {/* in the dial's open bottom: TPM the way API rate limits count it */}
+          <div
+            className="gauge-tpm"
+            title="按 API 限速的口径（ITPM / OTPM）统计最近 60 秒：输入只算没走缓存的部分（新输入 + 缓存写入），缓存读取不计；输出是模型写出的 token"
+          >
+            <span>限速口径 TPM</span>
+            <b>
+              入 <AnimatedNumber value={r?.inputTpm ?? 0} format={tokFmt} /> · 出 <AnimatedNumber value={r?.outputTpm ?? 0} format={tokFmt} />
+            </b>
           </div>
         </div>
         <div className="rate-tiles">

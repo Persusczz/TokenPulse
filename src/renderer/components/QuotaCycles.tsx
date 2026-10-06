@@ -58,16 +58,22 @@ function Mix({ c }: { c: QuotaCycle }) {
 function Panel({ kind, list, metric, now }: { kind: '5h' | '7d'; list: QuotaCycle[]; metric: Metric; now: number }) {
   const { money } = useApp()
   const [hover, setHover] = useState<number | null>(null)
+  // a clicked bar takes over the numbers at the top until it is clicked again (or the open window is)
+  const [sel, setSel] = useState<number | null>(null)
   const shown = list.slice(-SHOW[kind])
   const cur = list.find((c) => c.current) ?? null
   const closed = list.filter((c) => !c.current)
   const prev = closed[closed.length - 1] ?? null
-  const head = cur ?? prev
+  const chosen = sel !== null ? (list.find((c) => c.start === sel && !c.current) ?? null) : null
+  const head = chosen ?? cur ?? prev
+  // the closed window just before the chosen one
+  const before = chosen ? (closed[closed.indexOf(chosen) - 1] ?? null) : null
   const avg = closed.length ? { tokens: closed.reduce((a, c) => a + c.tokens, 0) / closed.length, cost: closed.reduce((a, c) => a + c.cost, 0) / closed.length } : null
   const val = (c: { tokens: number; cost: number }) => (metric === 'tokens' ? c.tokens : c.cost)
   const fmt = (v: number) => (metric === 'tokens' ? fmtTokens(v, 1) : money(v, v >= 100 ? 0 : undefined))
   const top = Math.max(...shown.map(val), avg ? val(avg) : 0) || 1
-  const pick = shown.find((c) => c.start === hover) ?? cur ?? shown[shown.length - 1] ?? null
+  const pick = shown.find((c) => c.start === hover) ?? chosen ?? cur ?? shown[shown.length - 1] ?? null
+  const rank = chosen ? [...closed].sort((a, b) => val(b) - val(a)).indexOf(chosen) + 1 : 0
   const most = closed.length ? closed.reduce((a, c) => (val(c) > val(a) ? c : a)) : null
   const name = kind === '5h' ? '5 小时窗口' : '7 天窗口'
   const per = pick && pick.pct !== null && pick.pct >= 5 && pick.tokens > 0 ? { tokens: pick.tokens / pick.pct, cost: pick.cost / pick.pct } : null
@@ -79,7 +85,14 @@ function Panel({ kind, list, metric, now }: { kind: '5h' | '7d'; list: QuotaCycl
           {name}
         </span>
         <span className="cy-when">
-          {cur ? (
+          {chosen ? (
+            <>
+              {range(chosen, now)} · 已结束
+              <button className="cy-back" onClick={() => setSel(null)}>
+                ↺ 回到{cur ? '当前窗口' : '最近'}
+              </button>
+            </>
+          ) : cur ? (
             <>
               {range(cur, now)} · 还剩 <b>{left(cur.end - now)}</b>
             </>
@@ -90,9 +103,9 @@ function Panel({ kind, list, metric, now }: { kind: '5h' | '7d'; list: QuotaCycl
       </header>
 
       {head ? (
-        <div className="cy-now">
+        <div className={`cy-now${chosen ? ' picked' : ''}`} key={head.start}>
           <div className="cy-num">
-            <span className="cy-label">{cur ? '本窗口已用' : '上个窗口'}</span>
+            <span className="cy-label">{chosen ? `${kind === '5h' ? `${dayName(chosen.start, now)} ${hm(chosen.start)} 起` : `${md(chosen.start)} 起`}的窗口` : cur ? '本窗口已用' : '上个窗口'}</span>
             <b className="serif">
               <AnimatedNumber value={head.tokens} format={tok} />
             </b>
@@ -105,7 +118,7 @@ function Panel({ kind, list, metric, now }: { kind: '5h' | '7d'; list: QuotaCycl
             </b>
           </div>
           {head.pct !== null && (
-            <div className={`cy-quota${head.pct >= 90 ? ' hot' : head.pct >= 75 ? ' warm' : ''}`} title={cur ? '官方额度读数' : '这个窗口的最高读数'}>
+            <div className={`cy-quota${head.pct >= 90 ? ' hot' : head.pct >= 75 ? ' warm' : ''}`} title={head.current ? '官方额度读数' : '这个窗口的最高读数'}>
               <svg viewBox="0 0 36 36" aria-hidden>
                 <circle cx="18" cy="18" r="15" className="cy-q-track" />
                 <motion.circle
@@ -122,7 +135,7 @@ function Panel({ kind, list, metric, now }: { kind: '5h' | '7d'; list: QuotaCycl
               </svg>
               <span>
                 <b>{Math.round(head.pct)}%</b>
-                <small>{cur ? '额度' : '峰值'}</small>
+                <small>{head.current ? '额度' : '峰值'}</small>
               </span>
             </div>
           )}
@@ -132,12 +145,23 @@ function Panel({ kind, list, metric, now }: { kind: '5h' | '7d'; list: QuotaCycl
       )}
 
       <div className="cy-compare">
-        {cur && prev && prev.tokens > 0 && (
+        {chosen && before && val(before) > 0 && (
+          <span>
+            前一个窗口 {fmtTokens(before.tokens, 1)} · {money(before.cost)}，这个是它的{' '}
+            <b className={val(chosen) > val(before) ? 'up' : ''}>{Math.round((val(chosen) / val(before)) * 100)}%</b>
+          </span>
+        )}
+        {chosen && avg && val(avg) > 0 && (
+          <span>
+            是平均的 <b className={val(chosen) > val(avg) ? 'up' : ''}>{Math.round((val(chosen) / val(avg)) * 100)}%</b> · 在 {closed.length} 个已结束的窗口里排第 {rank}
+          </span>
+        )}
+        {!chosen && cur && prev && prev.tokens > 0 && (
           <span>
             上个窗口 {fmtTokens(prev.tokens, 1)} · {money(prev.cost)}，本窗口已到它的 <b className={cur.tokens > prev.tokens ? 'up' : ''}>{Math.round((cur.tokens / prev.tokens) * 100)}%</b>
           </span>
         )}
-        {avg && (
+        {!chosen && avg && (
           <span>
             平均每个 {fmtTokens(avg.tokens, 1)} · {money(avg.cost)}
             {most && ` · 最多 ${fmt(val(most))}（${kind === '5h' ? `${dayName(most.start, now)} ${hm(most.start)}` : `${md(most.start)} 起`}）`}
@@ -151,9 +175,18 @@ function Panel({ kind, list, metric, now }: { kind: '5h' | '7d'; list: QuotaCycl
           {shown.map((c, i) => {
             const h = val(c) > 0 ? Math.max(0.015, val(c) / top) : 0
             const newDay = kind === '5h' && (i === 0 || dayOf(shown[i - 1].start) !== dayOf(c.start))
-            const cls = ['cy-col', c.current && 'current', c === pick && 'on', c.estimated && 'est', ((c.pct ?? 0) >= 100 || c.hitAt) && 'hit', newDay && i > 0 && 'new-day'].filter(Boolean).join(' ')
+            const cls = ['cy-col', c.current && 'current', c === pick && 'on', c === head && 'sel', c.estimated && 'est', ((c.pct ?? 0) >= 100 || c.hitAt) && 'hit', newDay && i > 0 && 'new-day'].filter(Boolean).join(' ')
             return (
-              <button key={c.start} className={cls} onMouseEnter={() => setHover(c.start)} onFocus={() => setHover(c.start)} aria-label={`${range(c, now)} ${fmtTokens(c.tokens, 1)} ${money(c.cost)}`}>
+              <button
+                key={c.start}
+                className={cls}
+                onMouseEnter={() => setHover(c.start)}
+                onFocus={() => setHover(c.start)}
+                onClick={() => setSel(c.current || c.start === sel ? null : c.start)}
+                aria-pressed={c === head}
+                title={c.current ? '当前窗口' : c === chosen ? '再点一次回到当前窗口' : '点一下，在上面查看这个窗口'}
+                aria-label={`${range(c, now)} ${fmtTokens(c.tokens, 1)} ${money(c.cost)}`}
+              >
                 <span className="cy-bar">
                   <span className="cy-val">{val(c) > 0 ? fmt(val(c)) : ''}</span>
                   <i style={{ height: `calc((100% - var(--vh)) * ${h.toFixed(4)})`, animationDelay: `${i * 35}ms` }} />

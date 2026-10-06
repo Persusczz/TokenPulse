@@ -1,0 +1,329 @@
+/* ---------- overview: 日历, 今天的会话, 模型对比 ---------- */
+.calendar-card,
+.timeline-card,
+.model-table-card {
+  margin-bottom: 16px;
+}
+
+/* 日历: 12 weeks, a cell a day */
+.cal-body {
+  --cal-cell: 22px;
+  display: grid;
+  grid-template-columns: auto minmax(220px, 1fr);
+  gap: 32px;
+  align-items: start;
+}
+@media (max-width: 980px) {
+  .cal-body {
+    grid-template-columns: 1fr;
+  }
+}
+.cal-months {
+  display: grid;
+  gap: 0 4px;
+  margin-left: 22px;
+  font-size: 10.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.cal-rows {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+.cal-week {
+  display: grid;
+  grid-template-rows: repeat(7, 1fr);
+  width: 16px;
+  font-size: 10px;
+  color: var(--text-3);
+  align-items: center;
+}
+.cal-grid {
+  display: grid;
+  grid-template-rows: repeat(7, var(--cal-cell));
+  gap: 4px;
+}
+.cal-cell {
+  width: var(--cal-cell);
+  height: var(--cal-cell);
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+.cal-cell.l1 {
+  background: rgba(var(--accent-rgb), 0.22);
+}
+.cal-cell.l2 {
+  background: rgba(var(--accent-rgb), 0.4);
+}
+.cal-cell.l3 {
+  background: rgba(var(--accent-rgb), 0.58);
+}
+.cal-cell.l4 {
+  background: rgba(var(--accent-rgb), 0.78);
+}
+.cal-cell.l5 {
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.55);
+}
+.cal-grid .cal-cell:hover {
+  transform: scale(1.25);
+}
+.cal-cell.today {
+  outline: 1.5px solid var(--text-2);
+  outline-offset: 1px;
+}
+.cal-cell.on {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 1px;
+}
+.cal-legend {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  margin-top: 8px;
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.cal-legend .cal-cell {
+  width: 11px;
+  height: 11px;
+  cursor: default;
+}
+.cal-day {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.cal-day-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cal-day-head b {
+  font-size: 18px;
+  color: var(--text);
+}
+.cal-day-nums {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-variant-numeric: tabular-nums;
+}
+.cal-day-nums b {
+  font-size: 17px;
+  color: var(--text);
+}
+.cal-day-row {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cal-sum {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-3);
+}
+.cal-sum b {
+  color: var(--text-2);
+}
+
+/* 今天的会话: a bar per session */
+.timeline-card {
+  position: relative;
+}
+.tl-body {
+  --tl-label: 128px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tl-row {
+  display: flex;
+  align-items: center;
+  height: 18px;
+  cursor: pointer;
+}
+.tl-row:not(.tl-axis):not(.tl-open):hover {
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+.tl-label {
+  flex: none;
+  width: var(--tl-label);
+  padding-right: 10px;
+  overflow: hidden;
+  font-size: 11.5px;
+  color: var(--text-2);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.tl-track {
+  position: relative;
+  flex: 1;
+  height: 100%;
+}
+.tl-bar {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  overflow: hidden;
+  border: 1px solid rgba(var(--accent-rgb), 0.45);
+  border-radius: 4px;
+  background: rgba(var(--accent-rgb), 0.18);
+}
+.tl-bar i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--accent);
+}
+.src-codex .tl-bar {
+  border-color: rgba(var(--codex-rgb), 0.5);
+  background: rgba(var(--codex-rgb), 0.18);
+}
+.src-codex .tl-bar i {
+  background: var(--codex);
+}
+.tl-open {
+  height: 26px;
+  margin-bottom: 4px;
+  cursor: default;
+}
+.tl-open .tl-track {
+  border-bottom: 1px solid var(--border);
+}
+.tl-open-bar {
+  position: absolute;
+  bottom: 0;
+  background: rgba(var(--accent-rgb), 0.3);
+}
+.tl-axis {
+  height: 16px;
+  cursor: default;
+}
+.tl-axis em,
+.tl-axis b {
+  position: absolute;
+  transform: translateX(-50%);
+  font-size: 10.5px;
+  font-style: normal;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.tl-axis b {
+  top: -1px;
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+.tl-now-line {
+  position: absolute;
+  top: 0;
+  bottom: 18px;
+  width: 0;
+  border-left: 1px dashed rgba(var(--accent-rgb), 0.7);
+  pointer-events: none;
+}
+.tl-more {
+  margin: 2px 0 2px var(--tl-label);
+  font-size: 11px;
+  color: var(--text-3);
+}
+.tl-tip {
+  position: absolute;
+  z-index: 10;
+  min-width: 190px;
+  transform: translate(12px, 12px);
+  pointer-events: none;
+}
+
+/* 模型对比 */
+.mt-wrap {
+  overflow-x: auto;
+}
+.mt {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.mt th {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11.5px;
+  font-weight: 500;
+  text-align: left;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.mt th.num {
+  cursor: pointer;
+}
+.mt th.on {
+  color: var(--accent-strong);
+}
+.mt td {
+  padding: 8px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.mt .num {
+  text-align: right;
+}
+.mt tr:hover td {
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+}
+.mt-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 600;
+  color: var(--text);
+}
+.mt-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.src-codex .mt-dot {
+  background: var(--codex);
+}
+.mt-src {
+  padding: 0 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--text-3);
+}
+.mt-bar {
+  display: inline-block;
+  width: 56px;
+  height: 5px;
+  margin-right: 8px;
+  overflow: hidden;
+  border-radius: 3px;
+  vertical-align: middle;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+.mt-bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.src-codex .mt-bar i {
+  background: var(--codex);
+}

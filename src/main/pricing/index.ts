@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events'
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import type { ModelResolution, PriceRow, PricingInfo, PricingSource } from '@shared/types'
 import {
   BUNDLED_FETCHED_AT,
@@ -9,6 +9,7 @@ import {
   GPT_ROWS,
   LEGACY_ROWS
 } from './bundled'
+import { writeFileAtomic } from '../atomicFile'
 import { LITELLM_URL, parseLiteLLM } from './litellm'
 import { parsePricingMarkdown } from './markdown'
 import { resolvePrice, type Resolved } from './resolve'
@@ -184,6 +185,6 @@ export class PricingService extends EventEmitter {
     this.lastError = undefined
     this.snap = { ...next, rows: tidy(mergeMissing(next.rows, [...LEGACY_ROWS, ...GPT_ROWS])) }
     this.index()
-    await writeFile(this.cachePath, JSON.stringify(next), 'utf8').catch(() => {})
+    await writeFileAtomic(this.cachePath, JSON.stringify(next)).catch(() => {})
   }
 }

@@ -4,7 +4,7 @@ import { Backdrop } from './components/Backdrop'
 import { Brand, SourceSwitch } from './components/Brand'
 import { Splash } from './components/Splash'
 import { Celebration, LightFx, SideCounter, TokenFx } from './components/Fx'
-import { IconMoon, IconOverview, IconPrice, IconSessions, IconSettings, IconTasks, IconTrophy } from './components/Icons'
+import { IconMoon, IconTarot, IconOverview, IconPrice, IconSessions, IconSettings, IconTasks, IconTrophy } from './components/Icons'
 import { CommandPalette } from './components/CommandPalette'
 import { DayClock, useDayPalette } from './components/DayCycle'
 import { FpsMeter } from './components/FpsMeter'
@@ -20,13 +20,14 @@ import { Overview } from './pages/Overview'
 import { Pricing } from './pages/Pricing'
 import { Sessions } from './pages/Sessions'
 import { SkyPage } from './pages/SkyPage'
+import { TarotPage } from './pages/TarotPage'
 import { SETTINGS_GROUPS, SettingsPage, useSettingsGroups, type SettingsGroupId } from './pages/SettingsPage'
 import { Stage } from './pages/Stage'
 import { TasksPage } from './pages/Tasks'
 import { Wallpaper } from './pages/Wallpaper'
-import { AppProvider, cssVar, finishIntro, hexColor, TOOL_NAME, useApp, useData, useHtmlFlags, useMotionLevel, useNow, usePaintKey, useResolvedTheme, useSource } from './state'
+import { AppProvider, cssVar, finishIntro, hexColor, TOOL_NAME, useApp, useData, useHtmlFlags, useMotionLevel, useNow, usePaintKey, useResolvedTheme, useSource, useUpdate } from './state'
 
-type Page = 'overview' | 'tasks' | 'sessions' | 'achievements' | 'sky' | 'pricing' | 'settings'
+type Page = 'overview' | 'tasks' | 'sessions' | 'achievements' | 'sky' | 'tarot' | 'pricing' | 'settings'
 
 const NAV: { id: Page; label: string; icon: typeof IconOverview; key: string; keys: string }[] = [
   { id: 'overview', label: '概览', icon: IconOverview, key: '1', keys: 'gl overview' },
@@ -34,9 +35,27 @@ const NAV: { id: Page; label: string; icon: typeof IconOverview; key: string; ke
   { id: 'sessions', label: '会话', icon: IconSessions, key: '3', keys: 'hh sessions' },
   { id: 'achievements', label: '成就', icon: IconTrophy, key: '4', keys: 'cj achievements' },
   { id: 'sky', label: '星空', icon: IconMoon, key: '5', keys: 'xk sky moon star tx' },
-  { id: 'pricing', label: '定价', icon: IconPrice, key: '6', keys: 'dj pricing' },
-  { id: 'settings', label: '设置', icon: IconSettings, key: '7', keys: 'sz settings' }
+  { id: 'tarot', label: '塔罗', icon: IconTarot, key: '6', keys: 'tl tarot taluo zb arcana' },
+  { id: 'pricing', label: '定价', icon: IconPrice, key: '7', keys: 'dj pricing' },
+  { id: 'settings', label: '设置', icon: IconSettings, key: '8', keys: 'sz settings' }
 ]
+
+/** a new version, downloading or ready: one click restarts into it */
+function UpdatePill() {
+  const u = useUpdate()
+  if (!u || (u.status !== 'downloading' && u.status !== 'ready')) return null
+  return u.status === 'ready' ? (
+    <button className="update-pill ready" onClick={() => void window.api.updateInstall()} title={u.latest?.notes.slice(0, 400)}>
+      <span>✦ {u.latest?.version} 已就绪</span>
+      <b>重启并更新</b>
+    </button>
+  ) : (
+    <div className="update-pill" title="在后台下载，下完会提示">
+      <span>正在下载 {u.latest?.version}</span>
+      <i style={{ width: `${Math.round((u.progress ?? 0) * 100)}%` }} />
+    </div>
+  )
+}
 
 function LiveStatus() {
   const { load } = useApp()
@@ -93,31 +112,72 @@ function cornerColor(bg: string): number[] {
   return sum.map((v) => v / (d.length / 4))
 }
 
+const contrast = (x: number[], y: number[]) => {
+  const [a, b] = [lum(x), lum(y)]
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+}
+const mixRgb = (x: number[], y: number[], t: number) => x.map((v, i) => v + (y[i] - v) * t)
+/** strongest scrim, as an opacity of the page colour */
+const SCRIM_MAX = 0.8
+
 /**
- * The native title-bar buttons: always transparent, so the page and the
- * pack's scene run on under them, with symbols that read on what is there:
- * the pack's own text colour where it stands out, else near-white or
- * near-black. Looked at again now and then (the 昼夜 sky changes all day).
+ * The native title-bar buttons stay transparent, so the page and the pack's
+ * scene run on under them. Their symbols take the theme's own text colour,
+ * and a soft wash of the page colour fades in from the corner only as far as
+ * that colour needs to read (5:1 on average, 3.5:1 on the darkest and
+ * brightest tenth of the pixels). Where the scene already contrasts, there is
+ * no wash at all; where the theme colour can't win without one but plain
+ * white or black can, that is used instead. Looked at again every few seconds
+ * (the 昼夜 sky changes all day).
  */
 function useTitleButtons(deps: unknown[]): void {
   const sent = useRef('')
+  const shown = useRef(0)
   useEffect(() => {
-    const check = () => {
+    let alive = true
+    const check = async () => {
       const bg = hexColor(cssVar('--bg'))
-      const under = lum(cornerColor(bg))
-      const own = hexColor(cssVar('--text-2'))
-      const a = lum(rgbOfHex(own))
-      const contrast = (Math.max(a, under) + 0.05) / (Math.min(a, under) + 0.05)
-      const fg = contrast >= 3 ? own : under > 0.3 ? '#2b2a26' : '#f3f1ea'
+      const page = rgbOfHex(bg)
+      const theme = hexColor(cssVar('--text'))
+      const own = rgbOfHex(theme)
+      const sample = await window.api.titleCorner().catch(() => null)
+      if (!alive) return
+      // what is there without the wash (the sample includes the wash now showing); a window material shows the page colour
+      const a0 = shown.current
+      const unwash = (c: number[]) => c.map((v, i) => Math.max(0, Math.min(255, (v - a0 * page[i]) / (1 - a0))))
+      const under = sample && sample.opaque > 0.5 ? [sample.avg, sample.lo, sample.hi].map(unwash) : [cornerColor(bg)]
+      // the symbols are 1 px lines, so a little more than text needs
+      const reads = (fg: number[], a: number) => under.every((u, i) => contrast(fg, mixRgb(u, page, a)) >= (i === 0 ? 5 : 3.5))
+      let fg = theme
+      let wash = 0
+      if (!reads(own, 0)) {
+        const plain = lum(under[0]) > 0.3 ? '#2b2a26' : '#f3f1ea'
+        if (reads(rgbOfHex(plain), 0)) fg = plain
+        else {
+          wash = SCRIM_MAX
+          for (let a = 0.1; a <= SCRIM_MAX + 1e-9; a += 0.05) {
+            if (reads(own, a)) {
+              wash = a
+              break
+            }
+          }
+        }
+      }
+      shown.current = wash
+      document.documentElement.style.setProperty('--tb-scrim', wash.toFixed(2))
+      document.documentElement.style.setProperty('--tb-fg', fg)
       if (sent.current === bg + fg) return
       sent.current = bg + fg
       window.api.setThemeColors({ bg, fg })
     }
-    // once the new look has painted, then every few seconds
-    const first = setTimeout(check, 1200)
-    const every = setInterval(check, 8000)
+    // once the new look has painted, again when a theme fade has settled, then every few seconds
+    const first = setTimeout(() => void check(), 1200)
+    const settled = setTimeout(() => void check(), 3500)
+    const every = setInterval(() => void check(), 8000)
     return () => {
+      alive = false
       clearTimeout(first)
+      clearTimeout(settled)
       clearInterval(every)
     }
   }, deps) // eslint-disable-line react-hooks/exhaustive-deps
@@ -234,7 +294,7 @@ function Shell() {
     document.querySelector('.main')?.scrollTo(0, 0)
   }, [page])
 
-  // Ctrl+1–7 pages, Ctrl+M floating window, F5 refresh quota, F11 big screen
+  // Ctrl+1–8 pages, Ctrl+M floating window, F5 refresh quota, F11 big screen
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement | null)?.closest?.('input, textarea')) return
@@ -255,6 +315,7 @@ function Shell() {
       <Backdrop theme={theme} paint={paint} />
       <LightFx />
       <div className="titlebar" />
+      <div className="title-scrim" aria-hidden />
       <aside className="side">
         <Brand />
         <SourceSwitch />
@@ -283,6 +344,7 @@ function Shell() {
             <kbd>Ctrl K</kbd>
           </button>
           <SideCounter />
+          <UpdatePill />
           <LiveStatus />
           <button className="btn" style={{ marginTop: 6, justifyContent: 'center' }} onClick={() => window.api.toggleMini()} title="Ctrl+M">
             {settings?.showMini ? '隐藏悬浮窗' : '显示悬浮窗'}
@@ -297,6 +359,7 @@ function Shell() {
             {page === 'sessions' && <Sessions />}
             {page === 'achievements' && <AchievementsPage />}
             {page === 'sky' && <SkyPage />}
+            {page === 'tarot' && <TarotPage />}
             {page === 'pricing' && <Pricing />}
             {page === 'settings' && <SettingsPage group={group} onGroup={openGroup} />}
           </motion.div>

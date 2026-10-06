@@ -1,6 +1,7 @@
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import type { UsageSource, WindowHistory, WindowRecord } from '@shared/types'
 import type { CostedEntry } from './aggregate'
+import { writeFileAtomic, writeFileAtomicSync } from './atomicFile'
 import type { CodexWindow } from './collector/codex'
 
 const MIN = 60_000
@@ -79,7 +80,22 @@ export class ClaudeWindowLog {
 
   private save(): void {
     if (this.timer) clearTimeout(this.timer)
-    this.timer = setTimeout(() => void writeFile(this.path, JSON.stringify({ windows: this.windows, weeks: this.weeks }), 'utf8').catch(() => {}), 2000)
+    this.timer = setTimeout(() => {
+      this.timer = null
+      void writeFileAtomic(this.path, JSON.stringify({ windows: this.windows, weeks: this.weeks })).catch(() => {})
+    }, 2000)
+  }
+
+  /** on quit: a write still waiting goes out now */
+  flush(): void {
+    if (!this.timer) return
+    clearTimeout(this.timer)
+    this.timer = null
+    try {
+      writeFileAtomicSync(this.path, JSON.stringify({ windows: this.windows, weeks: this.weeks }))
+    } catch {
+      /* nothing more to do */
+    }
   }
 }
 

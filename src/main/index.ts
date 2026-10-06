@@ -14,7 +14,9 @@ import {
   nativeTheme,
   net,
   Notification,
+  safeStorage,
   screen,
+  shell,
   Tray,
   type BrowserWindowConstructorOptions,
   type MenuItemConstructorOptions
@@ -39,6 +41,9 @@ import type {
   RunawayAlert,
   Settings,
   SourceView,
+  TarotDeck,
+  TelegramResult,
+  TitleCorner,
   UpdateEvent,
   UsageSource,
   WasteAlert
@@ -49,7 +54,9 @@ import { AppState } from './appState'
 import { UsageArchive } from './archive'
 import { checkBudgets, pruneFired } from './budget'
 import { diagnoseCache } from './cacheDoctor'
-import { codexDirs, codexQuota, CodexStore } from './collector/codex'
+import { codexDirs, codexQuota, codexRoot, CodexStore } from './collector/codex'
+import { CodexUsageService } from './codexUsage'
+import { Updater } from './updater'
 import { claudeRoots, credentialsPath, projectsDirs } from './collector/paths'
 import { UsageStore } from './collector/store'
 import { computePace, wasteDue, wasteRule } from './pace'
@@ -70,14 +77,21 @@ import { detectRunaway, runawayBaseline } from './runaway'
 import { SettingsStore } from './settings'
 import { codingSign } from './stars'
 import { computePatterns, dayNightPhase } from './patterns'
-import { achLines, spark, starLines, starSummary, topLines, weekLines } from './sky'
+import { achLines, bar, spark, starLines, starSummary, topLines, weekLines } from './sky'
 import { cosmicCalendar, meteors, projectPlanets, quotaStar, remnants, sessionStars, STAGES, stellarType, zhr } from './cosmos'
 import { placeOf } from '@shared/astro'
 import { PACKS } from '@shared/packs'
 import { raceSeries, starMap } from './race'
 import { claudeDialogue, codexDialogue } from './dialogue'
 import { findClaude, findCodex, TaskService, type WindowInfo } from './tasks'
-import { escapeHtml, TelegramBot, TelegramNotifier, type Button, type Command, type Reply } from './telegram'
+import { escapeHtml, fold, TelegramBot, TelegramNotifier, type Button, type Command, type Effect, type KeyboardMode, type Message, type Reply } from './telegram'
+import { CARD_H, CARD_W, cardFrames, cardSvg, GAUGE_H, GAUGE_W, gaugeFrames, type CardData, type CardQuota, type GaugeAlert } from './tgCard'
+import { svgsToMp4, svgToJpeg } from './cardRender'
+import { stageInfo } from '@shared/stages'
+import { ARCANA, cardStory } from '@shared/tarot'
+import { cardFace } from '@shared/tarotArt'
+import { buildDeck } from './tarot'
+import { calendarDays, modelRows, todaySessions } from './overviewData'
 import { pauseBadge, trayBitmap } from './trayIcon'
 import { attachToDesktop, hwndOf, refreshDesktop } from './wallpaper'
 
@@ -139,6 +153,12 @@ const tasks = new TaskService(join(userData, 'tasks.json'), join(userData, 'task
 })
 const firedAlerts = appState.firedAlerts
 const telegram = new TelegramNotifier((url, init) => net.fetch(url, init as RequestInit))
+/** Codex's limits from the ChatGPT account; the login is kept sealed with the system's data protection */
+const codexUsage = new CodexUsageService((url, init) => net.fetch(url, init as RequestInit), join(app.getPath('userData'), 'codex-login.dat'), codexRoot(), {
+  available: () => safeStorage.isEncryptionAvailable(),
+  seal: (s) => safeStorage.encryptString(s),
+  open: (b) => safeStorage.decryptString(b)
+})
 
 let store = new UsageStore()
 let codex = new CodexStore()
@@ -290,82 +310,144 @@ type PushKind = 'guard' | 'quota' | 'budget' | 'achievement' | 'runaway' | 'task
 
 const telegramReady = (s: Settings = settings.value) => s.telegramEnabled && !!s.telegramToken && !!s.telegramChatId
 
-/** Sends a notice to Telegram when it is set up and this kind is switched on */
-function push(kind: PushKind, html: string): void {
+/** inside the quiet hours pushes arrive without a sound */
+const quietNow = (s: Settings = settings.value) => !!s.telegramQuietFrom && !!s.telegramQuietTo && inHours(new Date(), s.telegramQuietFrom, s.telegramQuietTo)
+
+/** an effect, when they are switched on */
+const fx = (effect: Effect): Effect | undefined => (settings.value.telegramEffects ? effect : undefined)
+
+/** animations, when they are switched on */
+const animated = () => settings.value.telegramAnimations
+
+/** Sends a notice to Telegram when it is set up and this kind is switched on; a gauge comes as an animation */
+function push(kind: PushKind, html: string, effect?: Effect, gauge?: GaugeAlert): void {
   const s = settings.value
   const on = { guard: s.pushGuard, quota: s.pushQuota, budget: s.pushBudget, achievement: s.pushAchievement, runaway: s.pushRunaway, tasks: s.pushTasks }[kind]
   if (!telegramReady() || !on) return
-  void telegram.send(s.telegramToken, s.telegramChatId, `<b>TokenPulse</b>\n${html}`)
+  const msg = { text: `<b>TokenPulse</b>\n${html}`, silent: quietNow(s), effect: effect && fx(effect) }
+  if (!gauge || !animated()) {
+    void telegram.send(s.telegramToken, s.telegramChatId, msg)
+    return
+  }
+  void svgsToMp4(gaugeFrames(gauge, 20), GAUGE_W, GAUGE_H, 20)
+    .then((animation) => telegram.send(s.telegramToken, s.telegramChatId, { ...msg, animation }))
+    .catch(() => telegram.send(s.telegramToken, s.telegramChatId, msg))
 }
+
+/** a quota alert's gauge: the needle from the last reading to this one */
+function quotaGauge(title: string, tool: UsageSource, from: number, to: number, resetsAt: number | null, reset = false): GaugeAlert {
+  return {
+    title,
+    accent: accentHex({ accent: settings.value.accent, sourceFilter: tool }),
+    from,
+    to,
+    note: reset ? '新的窗口刚刚开始' : resetsAt ? `${clockOf(resetsAt)} 重置` : '',
+    reset
+  }
+}
+
+/** the waiting frames of an animated reply: the moon turns while it reads */
+const MOONS = ['🌑', '🌒', '🌓', '🌔', '🌕']
+const readingFrame = (title: string, i: number) => `${title}\n${MOONS.slice(0, i + 2).join('')} 读取中…`
 
 // ---------- telegram commands ----------
 
 const bot = new TelegramBot(telegram, onCommand)
 
 /** bump when the button keyboard changes, so the chat gets the new one once */
-const KEYBOARD_REV = '5'
+const KEYBOARD_REV = '6'
+
+const keyboardMode = (s: Settings = settings.value): KeyboardMode => (s.telegramKeyboard === 'off' ? 'remove' : s.telegramKeyboard)
+
+function keyboardNote(style: Settings['telegramKeyboard']): string {
+  const how =
+    style === 'off'
+      ? '输入框下面的按钮已经收起：点左下角的「菜单」选指令，或者发送 /panel 打开控制面板'
+      : style === 'fold'
+        ? '输入框下面只留一行按钮，点一下就自动收起；要再用时点输入框旁边的 ⌨️ 图标展开'
+        : '输入框下面只留一行按钮，点输入框旁边的 ⌨️ 图标可以随时收起、展开'
+  return `🎛 <b>TokenPulse 遥控已连接</b>\n${how}\n\n🎛 面板在一条消息里翻看状态、今日、7 天、任务、星空、成就，看完点「收起」只剩一行。发送 /help 看全部指令`
+}
 
 function syncBot(): void {
   const s = settings.value
   if (telegramReady() && s.telegramCommands && !shotDir) {
     bot.start(s.telegramToken, s.telegramChatId)
-    // hand the chat the button keyboard once, so nothing has to be typed
-    if (appState.tgKeyboard !== KEYBOARD_REV) {
-      void telegram.send(s.telegramToken, s.telegramChatId, { text: `🎛 <b>TokenPulse 遥控已连接</b>\n点输入框下面的按钮发指令，或输入 / 从菜单里选。\n\n${HELP}`, keyboard: true }).then((r) => {
+    // hand the chat the keyboard (or take the old one away) once per revision and style
+    const rev = `${KEYBOARD_REV}:${s.telegramKeyboard}`
+    if (appState.tgKeyboard !== rev) {
+      void telegram.send(s.telegramToken, s.telegramChatId, { text: keyboardNote(s.telegramKeyboard), keyboard: keyboardMode(s) }).then((r) => {
         if (!r.ok) return
-        appState.tgKeyboard = KEYBOARD_REV
+        appState.tgKeyboard = rev
         appState.save()
       })
     }
   } else bot.stop()
+  void syncBoard(true)
 }
 
-const HELP = [
-  '<b>TokenPulse 指令</b>',
-  '/status 额度与运行状态',
-  '/today 今日用量',
-  '/pause 暂停所有 Claude Code 任务（下一次工具调用时停住）',
-  '/resume 恢复暂停的任务',
-  '/guard 额度守卫开关',
-  '/report 立即发送今日晚报',
-  '/task 任务内容 排到下一次 5h 额度刷新时自动执行（/task codex 任务内容 交给 Codex）',
-  '/tasks 查看刷新任务队列，可以直接开始、停止、取消',
-  '/log 正在执行（或最近一个）任务的日志',
-  '/sign 你最近的编码星座和今天的星座进度',
-  '/star 额度星空：5 小时额度是一颗恒星（星云→主序星→红巨星→超新星），7 天额度是它的轨道，用过的窗口留下星骸',
-  '/week 最近 7 天的用量，逐日柱状和走势',
-  '/top 今天最贵的 5 次提问',
-  '/ach 成就进度：最近解锁、最接近的几个、隐藏成就',
-  '',
-  '任务开始后会发一张进度卡，每半分钟自己更新一次，结束时变成结果；卡片上能停止、看日志、再次排队',
-  '',
-  '也可以直接点输入框下面的按钮；看不到按钮时发送 /help'
-].join('\n')
+const HELP = fold(
+  [
+    '<b>TokenPulse 指令</b>',
+    '🎛 /panel 控制面板：一条消息里翻页，看完点「收起」只剩一行',
+    '🃏 /card 今日卡片：一张图看完用量、额度和 24 小时',
+    '',
+    '/status 额度与运行状态',
+    '/today 今日用量',
+    '/week 最近 7 天的用量，逐日柱状和走势',
+    '/pause 暂停所有 Claude Code 任务（下一次工具调用时停住）',
+    '/resume 恢复暂停的任务',
+    '/guard 额度守卫开关',
+    '/report 立即发送今日晚报',
+    '/task 任务内容 排到下一次 5h 额度刷新时自动执行（/task codex 任务内容 交给 Codex）',
+    '/tasks 查看刷新任务队列，可以直接开始、停止、取消',
+    '/log 正在执行（或最近一个）任务的日志',
+    '/star 额度星空：5 小时额度是一颗恒星（星云→主序星→红巨星→超新星），7 天额度是它的轨道，用过的窗口留下星骸',
+    '/top 今天最贵的 5 次提问',
+    '/ach 成就进度：最近解锁、最接近的几个、隐藏成就',
+    '/sign 你最近的编码星座和今天的星座进度',
+    '/luck 摇一把今日额度运势 🎰',
+    '/tarot 你的牌：太阳是今天的 24 小时、月亮是 7 天额度、命运之轮是这周的 5 小时窗口……每张牌画的都是你的用量 🔮',
+    '/board on 置顶实时看板：聊天顶部一直显示额度（/board off 取消）',
+    '/keys 拿回输入框下面的按钮 · /hide 收起它们',
+    '',
+    '直接发文字也行：「状态」「卡片」「面板」这类词会当成指令，其他的话可以一键排成任务',
+    '任务开始后会发一张进度卡，每半分钟自己更新一次，结束时变成结果；卡片上能停止、看日志、再次排队'
+  ],
+  3
+)
 
 const guardButton = (): Button => (settings.value.guardEnabled ? { text: '🛡 关闭守卫', data: 'guard off' } : { text: '🛡 开启守卫', data: 'guard on' })
 const holdButton = (): Button => (guard.state.manualHold || guard.state.paused.length ? { text: '▶️ 恢复任务', data: 'resume' } : { text: '⏸ 暂停全部', data: 'pause' })
 
-function quotaLine(): string[] {
+/** `p` (0–1) is how far an animated reply has counted up */
+function quotaLine(p = 1): string[] {
   const five = fiveHourWindow(quota.info.windows)
   const week = sevenDayWindow(quota.info.windows)
   const out: string[] = []
-  if (five) out.push(`5h 额度 <b>${Math.round(five.utilization)}%</b>${five.resetsAt ? `（${clockOf(Date.parse(five.resetsAt))} 重置）` : ''}`)
-  if (week) out.push(`7 天额度 ${Math.round(week.utilization)}%${week.resetsAt ? `（${clockOf(Date.parse(week.resetsAt))} 重置）` : ''}`)
+  if (five) out.push(`5h 额度 <b>${Math.round(five.utilization * p)}%</b> <code>${bar((five.utilization / 100) * p, 10)}</code>${five.resetsAt ? `（${clockOf(Date.parse(five.resetsAt))} 重置）` : ''}`)
+  if (week) out.push(`7 天额度 ${Math.round(week.utilization * p)}% <code>${bar((week.utilization / 100) * p, 10)}</code>${week.resetsAt ? `（${clockOf(Date.parse(week.resetsAt))} 重置）` : ''}`)
   return out.length ? out : ['额度：暂无数据']
 }
 
-function codexLine(): string[] {
+function codexLine(p = 1): string[] {
   if (!codexQ?.windows.length) return []
-  const parts = codexQ.windows.map((w) => `${w.label.replace('额度', '')} <b>${Math.round(w.utilization)}%</b>`)
+  const parts = codexQ.windows.map((w) => `${w.label.replace('额度', '')} <b>${Math.round(w.utilization * p)}%</b>`)
   return [`Codex${codexQ.plan ? `（${escapeHtml(codexQ.plan)}）` : ''}：${parts.join(' · ')}`]
 }
 
-function statusText(): string {
+/** a reply that counts up over a few frames before it settles (when animations are on) */
+function counting(title: string, body: (p: number) => string): { frames?: { text: string }[]; text: string } {
+  if (!animated()) return { text: body(1) }
+  return { frames: [{ text: readingFrame(title, 0) }, { text: body(0.35) }, { text: body(0.75) }], text: body(1) }
+}
+
+function statusText(p = 1): string {
   const l = computeLive(costed, Date.now(), settings.value.dailyBudget)
   const g = guard.state
   const rate = computeRate(claudeCosted, Date.now())
   const ago = l.lastEntryAt ? Math.round((Date.now() - l.lastEntryAt) / 60_000) : null
-  const claude = claudeWorking() ? `正在工作（${fmtTokens(rate.tokensPerMin)} tokens/分）` : ago !== null ? `空闲（${ago} 分钟前有活动）` : '还没有活动'
+  const claude = claudeWorking() ? `🟢 正在工作（${fmtTokens(rate.tokensPerMin)} tokens/分）` : ago !== null ? `空闲（${ago} 分钟前有活动）` : '还没有活动'
   const guardText = g.manualHold
     ? '已手动暂停所有任务（/resume 恢复）'
     : g.paused.length
@@ -375,9 +457,9 @@ function statusText(): string {
         : '关闭'
   return [
     '📊 <b>TokenPulse 状态</b>',
-    ...quotaLine(),
-    ...codexLine(),
-    `今日 ${cn(l.today.tokens)} tokens · ${money(l.today.cost)}`,
+    ...quotaLine(p),
+    ...codexLine(p),
+    `今日 ${cn(l.today.tokens * p)} tokens · ${money(l.today.cost * p)}`,
     `Claude：${claude}`,
     `守卫：${guardText}`,
     ...taskLine(),
@@ -392,15 +474,30 @@ function taskLine(): string[] {
   return [`🧩 任务：${running.length ? `执行中 ${running.length}（${running.map((t) => escapeHtml(taskTitle(t.prompt).slice(0, 14))).join('、')}）` : '没有在执行'} · 排队 ${queued}`]
 }
 
+/** one line: the quota and today, for the folded panel and the pinned board */
+function glance(): string {
+  const parts: string[] = []
+  const five = fiveHourWindow(quota.info.windows)
+  const week = sevenDayWindow(quota.info.windows)
+  if (five) parts.push(`5h ${Math.round(five.utilization)}%`)
+  if (week) parts.push(`7d ${Math.round(week.utilization)}%`)
+  const cx = codexQ?.windows.find((w) => w.key === 'codex_5h')
+  if (cx) parts.push(`Codex ${Math.round(cx.utilization)}%`)
+  parts.push(`今日 ${cn(computeLive(costed, Date.now(), settings.value.dailyBudget).today.tokens)}`)
+  return parts.join(' · ')
+}
+
 // ---------- tasks in Telegram: a card per run that keeps itself up to date ----------
 
 const shortId = (id: string) => id.slice(0, 8)
 const findTask = (arg: string | undefined) => (arg ? tasks.tasks.find((t) => t.id.startsWith(arg)) : undefined)
 const LOG_GLYPH: Record<string, string> = { system: '·', thinking: '✻', text: '💬', tool: '🔧', result: '✅', error: '⚠️' }
+/** a running card turns through the moon's phases, one step per update */
+const MOON = ['🌑', '🌒', '🌓', '🌔', '🌕', '🌖', '🌗', '🌘']
 
-function taskCard(t: (typeof tasks.tasks)[number]): Reply {
+function taskCard(t: (typeof tasks.tasks)[number]): Message {
   const id = shortId(t.id)
-  const icon = { running: '▶️', done: '✅', failed: '❌', queued: '⏳', cancelled: '⏹' }[t.status]
+  const icon = t.status === 'running' ? MOON[Math.floor(Date.now() / 30_000) % MOON.length] : { done: '✅', failed: '❌', queued: '⏳', cancelled: '⏹' }[t.status]
   const elapsed = t.startedAt ? Math.max(0, Math.round(((t.finishedAt ?? Date.now()) - t.startedAt) / 60_000)) : 0
   const lines = [
     `${icon} <b>${toolLabel(t.tool)} 任务</b>：${escapeHtml(taskTitle(t.prompt))}`,
@@ -431,7 +528,7 @@ const taskCards = new Map<string, { id: number; at: number }>()
 async function postTaskCard(t: (typeof tasks.tasks)[number]): Promise<void> {
   const s = settings.value
   if (!telegramReady() || !s.pushTasks) return
-  const r = await telegram.send(s.telegramToken, s.telegramChatId, taskCard(t))
+  const r = await telegram.send(s.telegramToken, s.telegramChatId, { ...taskCard(t), silent: quietNow(s) })
   if (r.ok && r.messageId) taskCards.set(t.id, { id: r.messageId, at: Date.now() })
 }
 
@@ -457,39 +554,40 @@ function refreshTaskCards(force?: string): void {
 async function taskLogText(t: (typeof tasks.tasks)[number] | undefined, n = 14): Promise<Reply> {
   if (!t) return '还没有执行过任务'
   const lines = (await tasks.log(t.id)).filter((l) => l.kind !== 'system').slice(-n)
-  const body = lines.length ? lines.map((l) => `${LOG_GLYPH[l.kind] ?? '·'} ${escapeHtml(l.text.replace(/\s+/g, ' ').slice(0, 220))}`).join('\n') : '还没有输出'
+  const rows = lines.map((l) => `${LOG_GLYPH[l.kind] ?? '·'} ${escapeHtml(l.text.replace(/\s+/g, ' ').slice(0, 220))}`)
+  // the older lines fold away, the newest stay in sight
+  const older = rows.slice(0, -4)
+  const body = rows.length ? `${older.length ? `<blockquote expandable>${older.join('\n')}</blockquote>\n` : ''}${rows.slice(-4).join('\n')}` : '还没有输出'
   return {
     text: `📜 <b>${escapeHtml(taskTitle(t.prompt))}</b>\n${body}`,
     buttons: t.status === 'running' ? [[{ text: '🔄 刷新', data: `e:tasklog ${shortId(t.id)}` }, { text: '⏹ 停止', data: `taskstop ${shortId(t.id)}` }]] : undefined
   }
 }
 
-function signText(): Reply {
+function signLines(): string[] {
   const sign = codingSign(costed, Date.now())
   const z = sign.zodiac
-  return {
-    text: [
-      `✨ <b>你的编码星座：${escapeHtml(sign.name)}</b> ${sign.symbol}`,
-      escapeHtml(sign.desc),
-      sign.traits.length ? sign.traits.map((x) => `· ${escapeHtml(x)}`).join('\n') : '',
-      '',
-      `${z.symbol} 今天的星座是 <b>${z.name}</b>：今日用量点亮了 ${z.lit}/${z.stars} 颗星${z.lit >= z.stars ? '，整座星座都亮了 🌟' : ''}`
-    ]
-      .filter((l) => l !== '')
-      .join('\n'),
-    buttons: [[{ text: '🔄 刷新', data: 'e:sign' }]]
-  }
+  return [
+    `✨ <b>你的编码星座：${escapeHtml(sign.name)}</b> ${sign.symbol}`,
+    escapeHtml(sign.desc),
+    sign.traits.length ? sign.traits.map((x) => `· ${escapeHtml(x)}`).join('\n') : '',
+    '',
+    `${z.symbol} 今天的星座是 <b>${z.name}</b>：今日用量点亮了 ${z.lit}/${z.stars} 颗星${z.lit >= z.stars ? '，整座星座都亮了 🌟' : ''}`
+  ].filter((l) => l !== '')
 }
 
-function todayText(): string {
+function todayText(p = 1): string {
   const s = computeSummary(costed, 'today', Date.now(), modelLabel)
   const t = s.totals
   if (!t.messages) return codexCosted.length ? '今天还没有使用 Claude Code 和 Codex' : '今天还没有使用 Claude Code'
   const cx = codexCosted.length ? computeSummary(codexCosted, 'today', Date.now(), modelLabel).totals : null
+  // the sparkline fills in hour by hour while it counts up
+  const line = spark(s.buckets.map((b) => b.tokens)).split('')
+  const shown = Math.ceil(line.length * p)
   return [
     `📅 <b>今日用量</b>`,
-    `${cn(t.tokens)} tokens · ${money(t.cost)}（API 等价）`,
-    `<code>${spark(s.buckets.map((b) => b.tokens))}</code> 0 → 24 时`,
+    `${cn(t.tokens * p)} tokens · ${money(t.cost * p)}（API 等价）`,
+    `<code>${line.map((ch, i) => (i < shown ? ch : '·')).join('')}</code> 0 → 24 时`,
     cx && cx.messages ? `其中 Claude ${cn(t.tokens - cx.tokens)} · Codex ${cn(cx.tokens)}` : '',
     `响应 ${t.messages} 次 · 会话 ${t.sessions} 个`,
     `缓存命中 ${(s.cacheHitRate * 100).toFixed(1)}% · 省下 ${money(t.costParts.cacheSavings)}`,
@@ -500,22 +598,344 @@ function todayText(): string {
     .join('\n')
 }
 
+const starText = () => fold(starLines(cosmos()), 7)
+const weekText = () => weekLines(costed, Date.now(), money).join('\n')
+function topText(): string {
+  const now = Date.now()
+  return fold(topLines(promptReport(costed, prompts(), 'today', startOfDay(now), now + 1, modelLabel), money), 4)
+}
+function achText(): string {
+  if (!achievements.length) checkAchievements()
+  const lines = achLines(achievements)
+  const closest = lines.indexOf('最接近的：')
+  return fold(lines, closest > 0 ? closest : lines.length)
+}
+
+// ---------- the panel: one message that turns its pages and folds to a line ----------
+
+type PanelPage = 'status' | 'today' | 'week' | 'tasks' | 'star' | 'ach' | 'top' | 'sign'
+const PANEL_TABS: { page: PanelPage; icon: string; name: string }[] = [
+  { page: 'status', icon: '📊', name: '状态' },
+  { page: 'today', icon: '📅', name: '今日' },
+  { page: 'week', icon: '📈', name: '7 天' },
+  { page: 'tasks', icon: '📋', name: '任务' },
+  { page: 'star', icon: '⭐', name: '星空' },
+  { page: 'ach', icon: '🏆', name: '成就' },
+  { page: 'top', icon: '💸', name: '最贵' },
+  { page: 'sign', icon: '✨', name: '星座' }
+]
+
+function panelBody(page: PanelPage): string {
+  switch (page) {
+    case 'status':
+      return statusText()
+    case 'today':
+      return todayText()
+    case 'week':
+      return weekText()
+    case 'tasks':
+      return tasksText()
+    case 'star':
+      return starText()
+    case 'ach':
+      return achText()
+    case 'top':
+      return topText()
+    case 'sign':
+      return signLines().join('\n')
+  }
+}
+
+/** a button on a page that acts and then redraws the page in place */
+async function panelAction(action: string): Promise<string | undefined> {
+  if (action === 'pause') return (await pauseAll()).toast
+  if (action === 'resume') return (await resumeAll()).toast
+  if (action === 'guardon' || action === 'guardoff') {
+    await applySettings({ guardEnabled: action === 'guardon' })
+    return action === 'guardon' ? `🛡 守卫已开启（5h ${settings.value.guardPauseAt}%）` : '守卫已关闭'
+  }
+  return undefined
+}
+
+async function panel(arg: string | undefined, action?: string): Promise<Reply> {
+  const toast = action ? await panelAction(action) : undefined
+  if (arg === 'min') return { text: `🎛 <b>TokenPulse</b> · ${glance()}`, buttons: [[{ text: '▾ 展开面板', data: 'e:panel status' }, { text: '🔄', data: 'e:panel min' }]], toast }
+  const page: PanelPage = PANEL_TABS.some((t) => t.page === arg) ? (arg as PanelPage) : 'status'
+  const tabs = PANEL_TABS.map((t) => ({ text: t.page === page ? `「${t.name}」` : `${t.icon} ${t.name}`, data: `e:panel ${t.page}` }))
+  const held = guard.state.manualHold || guard.state.paused.length > 0
+  const actions: Button[] =
+    page === 'status'
+      ? [
+          held ? { text: '▶️ 恢复任务', data: 'e:panel status resume' } : { text: '⏸ 暂停全部', data: 'e:panel status pause' },
+          settings.value.guardEnabled ? { text: '🛡 关闭守卫', data: 'e:panel status guardoff' } : { text: '🛡 开启守卫', data: 'e:panel status guardon' }
+        ]
+      : page === 'today'
+        ? [{ text: '📰 发晚报', data: 'report' }]
+        : page === 'tasks'
+          ? [{ text: '📜 日志', data: 'log' }, { text: '🗂 管理任务', data: 'tasks' }]
+          : []
+  return {
+    text: panelBody(page),
+    buttons: [
+      ...(actions.length ? [actions] : []),
+      tabs.slice(0, 4),
+      tabs.slice(4),
+      [
+        { text: '🃏 卡片', data: 'card' },
+        { text: '🔄 刷新', data: `e:panel ${page}` },
+        { text: '▴ 收起', data: 'e:panel min' }
+      ]
+    ],
+    toast
+  }
+}
+
+// ---------- the picture card ----------
+
+const WEEKDAY = '日一二三四五六'
+const hhmm = (t: number) => new Date(t).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+
+/** "23:17" today, "10/9 08:00" on another day */
+function whenLabel(t: number, now: number): string {
+  const d = new Date(t)
+  return startOfDay(t) === startOfDay(now) ? hhmm(t) : `${d.getMonth() + 1}/${d.getDate()} ${hhmm(t)}`
+}
+
+function cardData(v: SourceView, now = Date.now()): CardData {
+  const list = v === 'claude' ? claudeCosted : v === 'codex' ? codexCosted : costed
+  const s = computeSummary(list, 'today', now, modelLabel)
+  const d = new Date(now)
+  const reset = (iso: string | null | undefined) => (iso ? `${whenLabel(Date.parse(iso), now)} 重置` : null)
+  const quotas: CardQuota[] = []
+  if (v !== 'codex') {
+    const five = fiveHourWindow(quota.info.windows)
+    const week = sevenDayWindow(quota.info.windows)
+    if (five) quotas.push({ label: 'Claude 5h', pct: five.utilization, reset: reset(five.resetsAt) })
+    if (week) quotas.push({ label: 'Claude 7 天', pct: week.utilization, reset: reset(week.resetsAt) })
+  }
+  if (v !== 'claude' && settings.value.codexEnabled) {
+    for (const w of codexQ?.windows ?? []) quotas.push({ label: w.key === 'codex_5h' ? 'Codex 5h' : w.key === 'codex_7d' ? 'Codex 7 天' : w.label, pct: w.utilization, reset: reset(w.resetsAt) })
+  }
+  // the first 5-hour window, as a star
+  const five = quotas.find((q) => q.label.endsWith('5h'))
+  const st = five ? stageInfo(five.pct) : null
+  const working = v === 'codex' ? codexWorking() : v === 'claude' ? claudeWorking() : claudeWorking() || codexWorking()
+  const sign = codingSign(list, now)
+  return {
+    date: `${d.getMonth() + 1}/${d.getDate()} 周${WEEKDAY[d.getDay()]}`,
+    time: hhmm(now),
+    view: v === 'all' ? (codexCosted.length ? 'Claude + Codex' : 'Claude') : toolLabel(v),
+    accent: accentHex({ accent: settings.value.accent, sourceFilter: v }),
+    tokens: s.totals.tokens,
+    cost: money(s.totals.cost),
+    costUsd: s.totals.cost,
+    messages: s.totals.messages,
+    sessions: s.totals.sessions,
+    cacheHit: s.cacheHitRate,
+    hours: s.buckets.map((b) => b.tokens),
+    nowHour: d.getHours(),
+    quotas,
+    star: st && five ? { name: st.name, pct: five.pct, color: st.color, desc: st.desc } : null,
+    model: s.byModel[0]?.name ?? null,
+    sign: `${sign.zodiac.symbol} ${sign.zodiac.name} · 点亮 ${sign.zodiac.lit}/${sign.zodiac.stars} 颗星`,
+    rate: working ? `${cn(computeRate(list, now).tokensPerMin)} tokens/分` : null
+  }
+}
+
+const cardPhoto = (v: SourceView) => svgToJpeg(cardSvg(cardData(v)), CARD_W, CARD_H)
+
+/** the today card as a looping animation: the numbers count up, the rings fill, the hours rise */
+const cardAnimation = (v: SourceView) => svgsToMp4(cardFrames(cardData(v), money, 20), 720, 934, 20)
+
+async function cardReply(arg: string | undefined): Promise<Reply> {
+  const v: SourceView = arg === 'claude' || arg === 'codex' || arg === 'all' ? arg : source()
+  let photo: Buffer | undefined
+  let animation: Buffer | undefined
+  try {
+    if (animated()) animation = await cardAnimation(v).catch(() => undefined)
+    if (!animation) photo = await cardPhoto(v)
+  } catch (e) {
+    return `卡片没画出来：${escapeHtml(e instanceof Error ? e.message : String(e))}`
+  }
+  const views: { v: SourceView; text: string }[] = codexCosted.length
+    ? [
+        { v: 'claude', text: 'Claude' },
+        { v: 'codex', text: 'Codex' },
+        { v: 'all', text: '全部' }
+      ]
+    : []
+  return {
+    text: `🃏 <b>今日卡片</b> · ${escapeHtml(glance())}`,
+    photo,
+    animation,
+    buttons: [[{ text: '🔄 刷新', data: `e:card ${v}` }, ...views.filter((x) => x.v !== v).map((x) => ({ text: `🔀 ${x.text}`, data: `e:card ${x.v}` }))]],
+    toast: '🃏 卡片已更新'
+  }
+}
+
+// ---------- the pinned board ----------
+
+let boardKey = ''
+let boardAt = 0
+let boardBusy = false
+
+function boardText(): Message {
+  const now = Date.now()
+  // the first line is what the pinned bar at the top of the chat shows
+  const lines = [`📌 ${glance()}`]
+  const row = (name: string, pct: number, resetsAt: string | null | undefined) =>
+    `<code>${bar(pct / 100, 12)}</code> ${name} <b>${Math.round(pct)}%</b>${resetsAt ? ` · ${whenLabel(Date.parse(resetsAt), now)} 重置` : ''}`
+  const five = fiveHourWindow(quota.info.windows)
+  const week = sevenDayWindow(quota.info.windows)
+  if (five) lines.push(row('Claude 5h', five.utilization, five.resetsAt))
+  if (week) lines.push(row('Claude 7 天', week.utilization, week.resetsAt))
+  if (settings.value.codexEnabled) for (const w of codexQ?.windows ?? []) lines.push(row(w.key === 'codex_5h' ? 'Codex 5h' : w.key === 'codex_7d' ? 'Codex 7 天' : w.label, w.utilization, w.resetsAt))
+  const g = guard.state
+  lines.push(
+    `${claudeWorking() || codexWorking() ? '🟢 正在工作' : '⚪ 空闲'} · 守卫${g.manualHold ? '已暂停全部' : settings.value.guardEnabled ? `开（${settings.value.guardPauseAt}%）` : '关'}${taskLine().length ? ` · ${tasks.tasks.filter((t) => t.status === 'running').length} 个任务在跑` : ''}`
+  )
+  lines.push(`<i>${hhmm(now)} 更新 · 每分钟自动刷新</i>`)
+  return { text: lines.join('\n'), buttons: [[{ text: '🔄', data: 'e:boardnow' }, { text: '🎛 面板', data: 'panel' }, { text: '🃏 卡片', data: 'card' }]] }
+}
+
+/** keeps the pinned board up to date (edits are silent), or takes it down when it is switched off */
+async function syncBoard(force = false): Promise<void> {
+  const s = settings.value
+  if (boardBusy || shotDir) return
+  const id = appState.tgBoard
+  const want = telegramReady(s) && s.telegramBoard
+  if (!want && id === null) return
+  boardBusy = true
+  try {
+    if (!want) {
+      if (telegramReady(s)) {
+        await telegram.call(s.telegramToken, 'unpinChatMessage', { chat_id: s.telegramChatId, message_id: id }).catch(() => {})
+        await telegram.call(s.telegramToken, 'deleteMessage', { chat_id: s.telegramChatId, message_id: id }).catch(() => {})
+      }
+      appState.tgBoard = null
+      appState.save()
+      return
+    }
+    const r = boardText()
+    const key = r.text.replace(/<i>.*<\/i>/, '')
+    if (id !== null && !force && key === boardKey && Date.now() - boardAt < 10 * 60_000) return
+    if (id !== null) {
+      try {
+        await telegram.update(s.telegramToken, s.telegramChatId, id, r)
+        boardKey = key
+        boardAt = Date.now()
+        return
+      } catch (e) {
+        // only a board that is gone is posted anew (a network hiccup waits for the next minute)
+        if (!/not found|can't be edited|MESSAGE_ID_INVALID/i.test(e instanceof Error ? e.message : '')) return
+      }
+    }
+    const sent = await telegram.send(s.telegramToken, s.telegramChatId, { ...r, silent: true })
+    if (!sent.ok || !sent.messageId) return
+    appState.tgBoard = sent.messageId
+    appState.save()
+    boardKey = key
+    boardAt = Date.now()
+    await telegram.call(s.telegramToken, 'pinChatMessage', { chat_id: s.telegramChatId, message_id: sent.messageId, disable_notification: true }).catch(() => {})
+  } finally {
+    boardBusy = false
+  }
+}
+
+// ---------- luck ----------
+
+const LUCK_DO = ['重构一个老函数', '先写测试', '删掉没用的代码', '开个新会话', '让 Haiku 跑杂活', '读一遍报错日志', '提交一次', '让 Claude 补文档', '排一个刷新任务', '早点睡']
+const LUCK_AVOID = ['无限循环', '把整个仓库贴进去', '凌晨改线上', '跳过测试', '让上下文涨到 1M', '一句话需求', '同一个问题问三遍', '不看 diff 就提交']
+
+/** the 🎰 lands on 1–64: 64 is 777, 1 / 22 / 43 are three of a kind */
+function luckText(v: number | null): Reply {
+  const n = v ?? 1 + Math.floor(Math.random() * 64)
+  const tier = n === 64 ? '🎉 大吉 · 777' : [1, 22, 43].includes(n) ? '✨ 上吉 · 三连' : ['🌤 中吉', '🍀 小吉', '☁️ 吉', '🌙 末吉'][n % 4]
+  const five = fiveHourWindow(quota.info.windows)
+  const left = five ? Math.max(0, 100 - Math.round(five.utilization)) : null
+  const quotaLine =
+    left === null
+      ? ''
+      : left >= 60
+        ? `5h 额度还剩 ${left}%，弹药充足`
+        : left >= 25
+          ? `5h 额度还剩 ${left}%，省着点花`
+          : `5h 额度只剩 ${left}%${five?.resetsAt ? `，${clockOf(Date.parse(five.resetsAt))} 回血` : ''}`
+  const day = new Date()
+  const seed = n + day.getDate() * 7
+  return {
+    text: [`🎰 <b>今日额度运势</b>：${tier}`, quotaLine, `宜：${LUCK_DO[seed % LUCK_DO.length]}`, `忌：${LUCK_AVOID[(seed * 3) % LUCK_AVOID.length]}`].filter(Boolean).join('\n'),
+    effect: n === 64 || [1, 22, 43].includes(n) ? 'party' : undefined,
+    react: n === 64 ? '🏆' : undefined
+  }
+}
+
+// ---------- actions shared by commands and buttons ----------
+
+async function pauseAll(): Promise<{ text: string; toast: string }> {
+  const g = await guard.setManualHold(true)
+  if (g.error) return { text: `暂停失败：${escapeHtml(g.error)}`, toast: '暂停失败' }
+  return {
+    text: `⏸ 已暂停所有 Claude Code 任务，它们会在下一次工具调用时停住等待${g.hookFresh ? '\n注意：守卫钩子刚刚安装，只对之后新开的 Claude Code 会话生效' : ''}\n回复 /resume 继续`,
+    toast: '⏸ 已暂停所有 Claude Code 任务'
+  }
+}
+
+async function resumeAll(): Promise<{ text: string; toast: string }> {
+  await guard.setManualHold(false)
+  await guard.releaseSessions()
+  runaways = runaways.map((r) => ({ ...r, held: false }))
+  broadcast('runaway:update', runaways)
+  return { text: '▶️ 已恢复，暂停中的任务会继续执行', toast: '▶️ 已恢复' }
+}
+
+function queueTask(tool: UsageSource, prompt: string): string {
+  const cwd = settings.value.taskCwd || homedir()
+  const s = settings.value
+  const t = tasks.add({
+    prompt,
+    cwd,
+    tool,
+    trigger: 'reset',
+    permission: tool === 'codex' ? s.codexTaskPermission : s.taskPermission,
+    model: tool === 'codex' ? s.codexTaskModel : s.taskModel,
+    continue: s.taskContinue,
+    autoCompact: s.taskAutoCompact,
+    compactAt: s.taskCompactAt,
+    retries: s.taskRetries,
+    timeoutMin: s.taskTimeoutMin
+  })
+  return `📥 已排队${tool === 'codex' ? ' Codex 任务' : ''}：<b>${escapeHtml(taskTitle(prompt))}</b>\n${t.notBefore <= Date.now() + 5000 ? '额度空闲，马上开始' : `将在 ${clockOf(t.notBefore)} 额度刷新后开始`}\n目录：${escapeHtml(cwd)}`
+}
+
+/** plain messages offered as tasks, by a short id (button data holds 64 bytes) */
+const offered = new Map<string, string>()
+let offerSeq = 0
+
 async function onCommand(cmd: Command): Promise<Reply> {
   let reply: Reply
   switch (cmd.name) {
     case 'start':
     case 'help':
-      reply = { text: HELP, keyboard: true }
+      reply = { text: HELP, keyboard: keyboardMode() }
+      break
+    case 'panel':
+      reply = await panel(cmd.args[0], cmd.args[1])
+      break
+    case 'card':
+      reply = await cardReply(cmd.args[0])
       break
     case 'status':
-      reply = { text: statusText(), buttons: [[{ text: '🔄 刷新', data: 'e:status' }, holdButton(), guardButton()]] }
+      reply = { ...counting('📊 <b>TokenPulse 状态</b>', statusText), buttons: [[{ text: '🔄 刷新', data: 'e:status' }, holdButton(), guardButton()]] }
       break
     case 'today':
-      reply = { text: todayText(), buttons: [[{ text: '🔄 刷新', data: 'e:today' }, { text: '📰 晚报', data: 'report' }]] }
+      reply = { ...counting('📅 <b>今日用量</b>', todayText), buttons: [[{ text: '🔄 刷新', data: 'e:today' }, { text: '🃏 卡片', data: 'card' }, { text: '📰 晚报', data: 'report' }]] }
       break
-    case 'report':
-      reply = reportText()
+    case 'report': {
+      const r = await sendReport()
+      reply = r.ok ? { text: '', skip: true, toast: '📰 晚报已发送' } : `晚报没发出去：${escapeHtml(r.error ?? '')}`
       break
+    }
     case 'tasks': {
       // a button per running task (stop) and the first queued ones (start now)
       const running = tasks.tasks.filter((t) => t.status === 'running')
@@ -557,70 +977,85 @@ async function onCommand(cmd: Command): Promise<Reply> {
       else {
         await tasks.action(t.id, action)
         const done = { stop: '⏹ 已要求停止', start: '▶️ 已开始（同一文件夹有任务在跑时会排在它后面）', cancel: '✕ 已取消', requeue: '🔁 已重新排到下次刷新' }[action]
-        reply = `${done}：<b>${escapeHtml(taskTitle(t.prompt))}</b>`
+        reply = { text: `${done}：<b>${escapeHtml(taskTitle(t.prompt))}</b>`, toast: done.split('（')[0] }
       }
       break
     }
     case 'sign':
-      reply = signText()
+      reply = { text: signLines().join('\n'), buttons: [[{ text: '🔄 刷新', data: 'e:sign' }]] }
       break
     case 'star':
     case 'sky':
-      reply = { text: starLines(cosmos()).join('\n'), buttons: [[{ text: '🔄 刷新', data: 'e:star' }, { text: '📈 本周', data: 'week' }]] }
+      reply = { text: starText(), buttons: [[{ text: '🔄 刷新', data: 'e:star' }, { text: '📈 本周', data: 'week' }]] }
       break
     case 'week':
-      reply = { text: weekLines(costed, Date.now(), money).join('\n'), buttons: [[{ text: '🔄 刷新', data: 'e:week' }, { text: '💸 最贵的提问', data: 'top' }]] }
+      reply = { text: weekText(), buttons: [[{ text: '🔄 刷新', data: 'e:week' }, { text: '💸 最贵的提问', data: 'top' }]] }
       break
-    case 'top': {
-      const now = Date.now()
-      const r = promptReport(costed, prompts(), 'today', startOfDay(now), now + 1, modelLabel)
-      reply = { text: topLines(r, money).join('\n'), buttons: [[{ text: '🔄 刷新', data: 'e:top' }]] }
+    case 'top':
+      reply = { text: topText(), buttons: [[{ text: '🔄 刷新', data: 'e:top' }]] }
+      break
+    case 'ach':
+      reply = { text: achText(), buttons: [[{ text: '🔄 刷新', data: 'e:ach' }]] }
+      break
+    case 'tarot':
+      reply = await tarotReply()
+      break
+    case 'luck': {
+      const s = settings.value
+      const v = await telegram.dice(s.telegramToken, s.telegramChatId, '🎰')
+      // the reels stop after about two seconds
+      if (v !== null) await new Promise((r) => setTimeout(r, 2300))
+      reply = luckText(v)
       break
     }
-    case 'ach':
-      if (!achievements.length) checkAchievements()
-      reply = { text: achLines(achievements).join('\n'), buttons: [[{ text: '🔄 刷新', data: 'e:ach' }]] }
-      break
     case 'task': {
       // "/task codex …" queues a Codex task
       const first = cmd.args[0]?.toLowerCase()
       const tool: UsageSource = first === 'codex' ? 'codex' : 'claude'
       const prompt = (first === 'codex' || first === 'claude' ? cmd.args.slice(1) : cmd.args).join(' ').trim()
-      const cwd = settings.value.taskCwd || homedir()
-      const s = settings.value
-      if (!prompt) reply = '用法：/task 任务内容（Codex 任务：/task codex 任务内容）\n例如 /task 把 tests 里失败的用例修好并跑一遍测试'
+      reply = prompt ? { text: queueTask(tool, prompt), react: '✍' } : '用法：/task 任务内容（Codex 任务：/task codex 任务内容）\n例如 /task 把 tests 里失败的用例修好并跑一遍测试'
+      break
+    }
+    case 'plain': {
+      const text = cmd.plain ?? ''
+      if (!text) {
+        reply = '发送 /help 查看可用指令'
+        break
+      }
+      const id = (++offerSeq).toString(36)
+      offered.set(id, text)
+      if (offered.size > 20) offered.delete(offered.keys().next().value!)
+      const tools: Button[] = [{ text: '📥 排成 Claude 任务', data: `e:offer ${id} claude` }]
+      if (settings.value.codexEnabled) tools.push({ text: '📥 Codex 任务', data: `e:offer ${id} codex` })
+      reply = {
+        text: `💭 「${escapeHtml(text.length > 120 ? `${text.slice(0, 119)}…` : text)}」\n要把这句话排成任务吗？下一次额度刷新时自动执行。\n想看状态的话点 🎛 面板，或者发 /help`,
+        buttons: [tools, [{ text: '✕ 不用了', data: `e:offer ${id} no` }, { text: '🎛 面板', data: 'e:panel status' }]]
+      }
+      break
+    }
+    case 'offer': {
+      const [id, tool] = cmd.args
+      const text = offered.get(id ?? '')
+      if (tool === 'no') {
+        offered.delete(id ?? '')
+        reply = { text: '👌 好的，没有排队', toast: '已忽略' }
+      } else if (!text) reply = '这条消息找不到了（TokenPulse 重启过），重新发一次吧'
       else {
-        const t = tasks.add({
-          prompt,
-          cwd,
-          tool,
-          trigger: 'reset',
-          permission: tool === 'codex' ? s.codexTaskPermission : s.taskPermission,
-          model: tool === 'codex' ? s.codexTaskModel : s.taskModel,
-          continue: s.taskContinue,
-          autoCompact: s.taskAutoCompact,
-          compactAt: s.taskCompactAt,
-          retries: s.taskRetries,
-          timeoutMin: s.taskTimeoutMin
-        })
-        reply = `📥 已排队${tool === 'codex' ? ' Codex 任务' : ''}：<b>${escapeHtml(taskTitle(prompt))}</b>\n${t.notBefore <= Date.now() + 5000 ? '额度空闲，马上开始' : `将在 ${clockOf(t.notBefore)} 额度刷新后开始`}\n目录：${escapeHtml(cwd)}`
+        offered.delete(id)
+        reply = { text: queueTask(tool === 'codex' ? 'codex' : 'claude', text), toast: '📥 已排队' }
       }
       break
     }
     case 'pause': {
-      const g = await guard.setManualHold(true)
-      reply = g.error
-        ? `暂停失败：${escapeHtml(g.error)}`
-        : `⏸ 已暂停所有 Claude Code 任务，它们会在下一次工具调用时停住等待${g.hookFresh ? '\n注意：守卫钩子刚刚安装，只对之后新开的 Claude Code 会话生效' : ''}\n回复 /resume 继续`
+      const r = await pauseAll()
+      reply = { text: r.text, buttons: [[{ text: '▶️ 恢复', data: 'resume' }]], react: '🫡', toast: r.toast }
       break
     }
-    case 'resume':
-      await guard.setManualHold(false)
-      await guard.releaseSessions()
-      runaways = runaways.map((r) => ({ ...r, held: false }))
-      broadcast('runaway:update', runaways)
-      reply = '▶️ 已恢复，暂停中的任务会继续执行'
+    case 'resume': {
+      const r = await resumeAll()
+      reply = { text: r.text, react: '⚡', toast: r.toast }
       break
+    }
     case 'guard': {
       const on = cmd.args[0]?.toLowerCase()
       if (on !== 'on' && on !== 'off') {
@@ -634,9 +1069,34 @@ async function onCommand(cmd: Command): Promise<Reply> {
       }
       break
     }
+    case 'board': {
+      const on = cmd.args[0]?.toLowerCase()
+      if (on === 'on' || on === 'off') {
+        await applySettings({ telegramBoard: on === 'on' })
+        reply = on === 'on' ? { text: '📌 实时看板已置顶：聊天顶部会一直显示额度，每分钟悄悄更新一次', toast: '📌 已置顶' } : { text: '已取消置顶看板', toast: '已取消' }
+      } else {
+        const now = settings.value.telegramBoard
+        reply = {
+          text: `📌 置顶实时看板现在<b>${now ? '开启' : '关闭'}</b>\n开启后聊天顶部一直显示 5h / 7 天额度和今日用量，每分钟编辑一次（不会响铃）`,
+          buttons: [[now ? { text: '取消置顶', data: 'board off' } : { text: '📌 置顶看板', data: 'board on' }]]
+        }
+      }
+      break
+    }
+    case 'boardnow':
+      reply = { ...boardText(), toast: '已刷新' }
+      break
+    case 'hide':
+      reply = { text: '⌨️ 按钮已收起。要用时发送 /keys，或点左下角的「菜单」', keyboard: 'remove' }
+      break
+    case 'keys':
+      reply = { text: '⌨️ 按钮在输入框下面了：点输入框旁边的 ⌨️ 图标可以收起、展开', keyboard: settings.value.telegramKeyboard === 'keep' ? 'keep' : 'fold' }
+      break
     default:
       reply = `不认识的指令 /${escapeHtml(cmd.name)}，发送 /help 查看可用指令`
   }
+  // effects and reactions only when they are switched on
+  if (typeof reply !== 'string' && !settings.value.telegramEffects) reply = { ...reply, effect: undefined, react: undefined }
   const text = typeof reply === 'string' ? reply : reply.text
   broadcast('remote:command', { command: cmd.name, reply: text.replace(/<[^>]+>/g, '').split('\n')[0] })
   appState.bump('remote')
@@ -728,7 +1188,9 @@ tasks.on('finished', (t) => {
     checkAchievements()
     notify(`${name}完成`, `${taskTitle(t.prompt)}（${mins} 分钟${cost}）`)
     const tried = (t.attempts?.length ?? 0) > 1 && t.note ? `\n🔁 ${escapeHtml(t.note)}` : ''
-    push('tasks', `✅ ${name}完成：<b>${escapeHtml(taskTitle(t.prompt))}</b>\n用时 ${mins} 分钟${cost}${t.turns ? ` · ${t.turns} 轮` : ''}${tried}${t.summary ? `\n\n${escapeHtml(t.summary.slice(0, 600))}` : ''}`)
+    // the summary folds into a quote that opens with a tap
+    const summary = t.summary ? `\n<blockquote expandable>${escapeHtml(t.summary.slice(0, 1500))}</blockquote>` : ''
+    push('tasks', `✅ ${name}完成：<b>${escapeHtml(taskTitle(t.prompt))}</b>\n用时 ${mins} 分钟${cost}${t.turns ? ` · ${t.turns} 轮` : ''}${tried}${summary}`, 'like')
   } else {
     const tries = t.attempts?.length ?? 0
     notify(`${name}未完成`, `${taskTitle(t.prompt)}：${t.error ?? ''}${tries > 1 ? `（试了 ${tries} 次）` : ''}`)
@@ -801,6 +1263,98 @@ function reportText(): string {
     star: starSummary(cosmos(now), now),
     money
   })
+}
+
+/** the report, as a picture card with the report as its caption when that is on */
+async function sendReport(): Promise<TelegramResult> {
+  const s = settings.value
+  if (!telegramReady(s)) return { ok: false, error: '先配置并开启 Telegram 推送' }
+  const text = reportText()
+  const silent = quietNow(s)
+  if (s.telegramCardReport) {
+    const photo = await cardPhoto(source()).catch(() => null)
+    // a caption holds 1024 characters (tags not counted)
+    if (photo && text.replace(/<[^>]+>/g, '').length <= 1000) {
+      const r = await telegram.send(s.telegramToken, s.telegramChatId, { text, photo, silent })
+      if (r.ok) return r
+    } else if (photo) await telegram.send(s.telegramToken, s.telegramChatId, { text: '🌙 <b>今日卡片</b>', photo, silent })
+  }
+  return telegram.send(s.telegramToken, s.telegramChatId, { text, silent })
+}
+
+// ---------- tarot: 22 cards, each drawing a piece of your usage ----------
+
+function readDeck(now = Date.now()): TarotDeck {
+  const v = source()
+  // the quota cards draw Claude's quota in 全部 (the guard is Claude's too)
+  const tool: UsageSource = v === 'codex' ? 'codex' : 'claude'
+  const ps = paces(now)
+  const p5 = ps.find((p) => p.key === `${tool}_5h`)
+  const p7 = ps.find((p) => p.key === `${tool}_7d`)
+  return buildDeck({
+    now,
+    view: v,
+    entries: view(),
+    label: modelLabel,
+    tool,
+    five: p5 ? { pct: p5.pct, end: p5.end } : null,
+    seven: p7 ? { pct: p7.pct, start: p7.start, end: p7.end } : null,
+    guardAt: tool === 'claude' && settings.value.guardEnabled ? settings.value.guardPauseAt : null,
+    windows: windowRecords(8, [tool], now).map((w) => ({ start: w.start, end: w.end, peak: w.peak })),
+    prompts: costByPrompt(view(), prompts(), startOfDay(now), now + 1, modelLabel).list,
+    tasks: tasks.tasks.filter((t) => (t.tool ?? 'claude') === tool || v === 'all').map((t) => ({ prompt: t.prompt, status: t.status, finishedAt: t.finishedAt ?? null, startedAt: t.startedAt ?? null })),
+    tpm: computeRate(view(), now).tokensPerMin
+  })
+}
+
+/** six cards for Telegram: the day, the quota and the week */
+const TG_CARDS = [19, 18, 10, 16, 17, 14]
+
+function tarotSvg(d: TarotDeck): string {
+  const W = 1080
+  const H = 1240
+  const accent = accentHex({ accent: settings.value.accent, sourceFilter: d.source })
+  const head = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 340" width="200" height="340">'
+  const cards = TG_CARDS.map((id, i) => {
+    const x = 60 + (i % 3) * 340
+    const y = 150 + Math.floor(i / 3) * 540
+    const svg = cardFace(id, `t${i}`, { deck: d, frame: accent }).replace(head, `<svg x="${x}" y="${y}" width="280" height="476" viewBox="0 0 200 340">`)
+    const line = cardStory(id, d, money)[0] ?? ''
+    return `${svg}<text x="${x + 140}" y="${y + 508}" text-anchor="middle" font-size="20" fill="rgba(255,255,255,0.8)">${escapeHtml(clip(line, 22))}</text>`
+  }).join('')
+  const day = new Date(d.at)
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="'Microsoft YaHei UI','Microsoft YaHei',sans-serif">
+<defs>
+  <radialGradient id="tbg" cx=".5" cy=".3" r=".9"><stop offset="0" stop-color="#241a3a"/><stop offset=".6" stop-color="#0d0c1c"/><stop offset="1" stop-color="#06060d"/></radialGradient>
+  <radialGradient id="tglow"><stop offset="0" stop-color="${accent}" stop-opacity=".3"/><stop offset="1" stop-color="${accent}" stop-opacity="0"/></radialGradient>
+</defs>
+<rect width="${W}" height="${H}" fill="url(#tbg)"/>
+<ellipse cx="540" cy="520" rx="560" ry="480" fill="url(#tglow)"/>
+<text x="540" y="76" text-anchor="middle" font-size="40" font-weight="700" fill="#f4e3b5" font-family="'KaiTi','STKaiti',serif">你的牌</text>
+<text x="540" y="112" text-anchor="middle" font-size="20" fill="rgba(255,255,255,0.5)">${day.getMonth() + 1}/${day.getDate()} ${clockOf(d.at).split(' ').pop()} · 每张牌画的都是你自己的用量</text>
+${cards}
+</svg>`
+}
+
+const clip = (s: string, n: number) => {
+  const t = s.replace(/\s+/g, ' ').trim()
+  return t.length > n ? `${t.slice(0, n - 1)}…` : t
+}
+
+async function tarotReply(): Promise<Reply> {
+  const d = readDeck()
+  const text = [
+    '🔮 <b>你的牌</b>',
+    ...TG_CARDS.map((id) => `<b>${ARCANA[id].numeral} ${ARCANA[id].name}</b>：${escapeHtml(cardStory(id, d, money).slice(0, 2).join('，'))}`),
+    '<i>22 张牌全在 TokenPulse 的「塔罗」页</i>'
+  ].join('\n')
+  try {
+    const photo = await svgToJpeg(tarotSvg(d), 1080, 1240)
+    // a caption holds 1024 characters
+    return { text: text.replace(/<[^>]+>/g, '').length > 1000 ? '🔮 <b>你的牌</b>' : text, photo, buttons: [[{ text: '🔄 刷新', data: 'e:tarot' }]], toast: '🔮 已刷新' }
+  } catch {
+    return text
+  }
 }
 
 // ---------- the quota as stars ----------
@@ -919,7 +1473,7 @@ function checkReport(): void {
   if (now.getTime() < due || appState.lastReportDay === today) return
   appState.lastReportDay = today
   appState.save()
-  void telegram.send(s.telegramToken, s.telegramChatId, reportText())
+  void sendReport()
 }
 
 // ---------- runaway sessions ----------
@@ -1050,12 +1604,12 @@ function checkAchievements(): void {
   if (fresh.length > 2) {
     const names = fresh.map((a) => a.title).join('、')
     notify(`一次解锁 ${fresh.length} 个成就`, names)
-    push('achievement', `🏆 一次解锁 <b>${fresh.length}</b> 个成就\n${escapeHtml(names)}`)
+    push('achievement', `🏆 一次解锁 <b>${fresh.length}</b> 个成就\n${escapeHtml(names)}`, 'party')
     return
   }
   for (const a of fresh) {
     notify(`解锁成就 · ${a.title}`, a.desc)
-    push('achievement', `🏆 解锁成就：<b>${escapeHtml(a.title)}</b>\n${escapeHtml(a.desc)}`)
+    push('achievement', `🏆 解锁成就：<b>${escapeHtml(a.title)}</b>\n${escapeHtml(a.desc)}`, 'party')
   }
 }
 
@@ -1067,6 +1621,7 @@ function onQuotaReading(q: QuotaInfo): void {
   if (q.status === 'loading' || q.status === 'disabled' || !q.windows.length) return
   const pick = (w: ReturnType<typeof fiveHourWindow>) => (w ? { pct: w.utilization, resetsAt: w.resetsAt ? Date.parse(w.resetsAt) : null } : null)
   const cur: QuotaSnapshot = { five: pick(fiveHourWindow(q.windows)), week: pick(sevenDayWindow(q.windows)) }
+  const prev = lastQuota
   const events = quotaEvents(lastQuota, cur)
   lastQuota = cur
   for (const ev of events) {
@@ -1074,12 +1629,18 @@ function onQuotaReading(q: QuotaInfo): void {
     appState.quotaKeys.add(ev.key)
     appState.save()
     const name = ev.window === 'five' ? '5 小时额度' : '7 天额度'
+    const was = (ev.window === 'five' ? prev?.five?.pct : prev?.week?.pct) ?? 0
     if (ev.kind === 'cross') {
       if (ev.window === 'five' && ev.mark! >= 90) appState.recordHit(Date.now())
       const icon = ev.mark! >= 90 ? '🔴' : '🟠'
-      push('quota', `${icon} ${name}已用 <b>${Math.round(ev.pct)}%</b>\n重置时间：${clockOf(ev.resetsAt)}${ev.window === 'five' ? stageNote(ev.pct) : ''}`)
+      push(
+        'quota',
+        `${icon} ${name}已用 <b>${Math.round(ev.pct)}%</b>\n重置时间：${clockOf(ev.resetsAt)}${ev.window === 'five' ? stageNote(ev.pct) : ''}`,
+        ev.mark! >= 100 ? 'fire' : undefined,
+        quotaGauge(`Claude ${name}`, 'claude', Math.min(was, ev.pct), ev.pct, ev.resetsAt)
+      )
     } else {
-      push('quota', `🔄 ${name}已重置，可以继续了${ev.window === 'five' ? '\n🌫 新的星云正在聚拢，一颗新恒星要诞生了' : ''}`)
+      push('quota', `🔄 ${name}已重置，可以继续了${ev.window === 'five' ? '\n🌫 新的星云正在聚拢，一颗新恒星要诞生了' : ''}`, undefined, quotaGauge(`Claude ${name}`, 'claude', Math.max(was, 20), 0, null, true))
     }
   }
 }
@@ -1102,6 +1663,7 @@ function syncCodexQuota(): void {
     return w ? { pct: w.utilization, resetsAt: w.resetsAt ? Date.parse(w.resetsAt) : null } : null
   }
   const cur: QuotaSnapshot = { five: pick('codex_5h'), week: pick('codex_7d') }
+  const prev = lastCodexQuota
   const events = quotaEvents(lastCodexQuota, cur)
   lastCodexQuota = cur
   for (const ev of events) {
@@ -1110,10 +1672,57 @@ function syncCodexQuota(): void {
     appState.quotaKeys.add(key)
     appState.save()
     const name = ev.window === 'five' ? 'Codex 5 小时额度' : 'Codex 7 天额度'
-    if (ev.kind === 'cross') push('quota', `${ev.mark! >= 90 ? '🔴' : '🟠'} ${name}已用 <b>${Math.round(ev.pct)}%</b>\n重置时间：${clockOf(ev.resetsAt)}${ev.window === 'five' ? stageNote(ev.pct) : ''}`)
-    else push('quota', `🔄 ${name}已重置`)
+    const was = (ev.window === 'five' ? prev?.five?.pct : prev?.week?.pct) ?? 0
+    if (ev.kind === 'cross')
+      push(
+        'quota',
+        `${ev.mark! >= 90 ? '🔴' : '🟠'} ${name}已用 <b>${Math.round(ev.pct)}%</b>\n重置时间：${clockOf(ev.resetsAt)}${ev.window === 'five' ? stageNote(ev.pct) : ''}`,
+        ev.mark! >= 100 ? 'fire' : undefined,
+        quotaGauge(name, 'codex', Math.min(was, ev.pct), ev.pct, ev.resetsAt)
+      )
+    else push('quota', `🔄 ${name}已重置`, undefined, quotaGauge(name, 'codex', Math.max(was, 20), 0, null, true))
   }
 }
+
+// ---------- updates from GitHub ----------
+
+const updater = new Updater((url, init) => net.fetch(url, init as RequestInit), {
+  current: app.getVersion(),
+  kind: !app.isPackaged ? 'dev' : process.env.PORTABLE_EXECUTABLE_FILE ? 'portable' : 'installer',
+  portable: process.env.PORTABLE_EXECUTABLE_FILE ?? null,
+  dir: join(app.getPath('userData'), 'updates'),
+  // a walkthrough can point the updater at a local stand-in for GitHub
+  api: shotDir ? process.env.TP_UPDATE_API : undefined
+})
+let updateAnnounced = ''
+updater.on('state', (s) => {
+  broadcast('update:state', s)
+  if (s.status === 'ready' && s.latest && updateAnnounced !== s.latest.version) {
+    updateAnnounced = s.latest.version
+    notify(`TokenPulse ${s.latest.version} 已下载`, '点侧边栏的「重启并更新」，或到 设置 → 系统')
+  }
+})
+
+/** looks for a release now and then and fetches it in the background; installing waits for a click */
+async function autoUpdate(): Promise<void> {
+  if (shotDir || !settings.value.autoUpdate) return
+  const s = await updater.check()
+  if (s.status === 'available' && !s.error && s.kind !== 'dev') await updater.download()
+}
+
+/** reads Codex's limits from the account (every minute, and on demand) */
+async function pollCodexUsage(): Promise<void> {
+  const s = settings.value
+  if (!s.codexEnabled || !s.codexUsageApi || shotDir) {
+    codexUsage.idle()
+    return
+  }
+  const l = await codexUsage.poll()
+  if (!l) return
+  codex.noteLimits(l)
+  syncCodexQuota()
+}
+codexUsage.on('state', (st) => broadcast('codex:usage', st))
 
 // ---------- pace and waste ----------
 
@@ -1912,10 +2521,11 @@ async function applySettings(patch: Partial<Settings>): Promise<Settings> {
     next.telegramEnabled !== prev.telegramEnabled ||
     next.telegramToken !== prev.telegramToken ||
     next.telegramChatId !== prev.telegramChatId ||
-    next.telegramCommands !== prev.telegramCommands
+    next.telegramCommands !== prev.telegramCommands ||
+    next.telegramKeyboard !== prev.telegramKeyboard
   ) {
     syncBot()
-  }
+  } else if (next.telegramBoard !== prev.telegramBoard) void syncBoard(true)
   if (!next.runawayDetect && prev.runawayDetect && runaways.length) {
     runaways = []
     broadcast('runaway:update', runaways)
@@ -1934,6 +2544,8 @@ async function applySettings(patch: Partial<Settings>): Promise<Settings> {
     setTimeout(() => checkDayNight(true), 0)
   }
   if (JSON.stringify(next.extraDirs) !== JSON.stringify(prev.extraDirs) || next.codexEnabled !== prev.codexEnabled) void rescan()
+  if (next.codexEnabled !== prev.codexEnabled || next.codexUsageApi !== prev.codexUsageApi) void pollCodexUsage()
+  if (next.autoUpdate && !prev.autoUpdate) void autoUpdate()
   // Codex switched off while it was the only thing on view
   if (!next.codexEnabled && next.sourceFilter === 'codex') return applySettings({ sourceFilter: 'all' })
   if (next.dailyBudget !== prev.dailyBudget || next.monthlyBudget !== prev.monthlyBudget || next.sourceFilter !== prev.sourceFilter) {
@@ -1969,7 +2581,33 @@ function registerIpc(): void {
     return pricing.info(models())
   })
   ipcMain.handle('quota:get', () => quota.info)
-  ipcMain.handle('quota:refresh', () => quota.refresh())
+  ipcMain.handle('quota:refresh', () => {
+    void pollCodexUsage()
+    return quota.refresh()
+  })
+  ipcMain.handle('codex:usage-state', () => codexUsage.state)
+  ipcMain.handle('update:state', () => updater.state)
+  ipcMain.handle('update:check', () => updater.check())
+  ipcMain.handle('update:download', () => updater.download())
+  ipcMain.handle('update:install', async () => {
+    if (!(await updater.install())) return false
+    quitting = true
+    app.quit()
+    return true
+  })
+  ipcMain.handle('codex:sign-in', async () => {
+    const r = await codexUsage.signIn((url) => void shell.openExternal(url))
+    if (r.ok) await pollCodexUsage()
+    return r
+  })
+  ipcMain.handle('codex:sign-out', async () => {
+    await codexUsage.signOut()
+    await pollCodexUsage()
+  })
+  ipcMain.handle('codex:usage-refresh', async () => {
+    await pollCodexUsage()
+    return codexUsage.state
+  })
   ipcMain.handle('settings:get', () => settings.value)
   ipcMain.handle('settings:set', (_e, patch: Partial<Settings>) => applySettings(patch))
   ipcMain.handle('load:get', () => loadState())
@@ -2014,7 +2652,10 @@ function registerIpc(): void {
     await clipboard.write([new ClipboardItem({ 'image/png': new Blob([png], { type: 'image/png' }) })])
   })
   ipcMain.handle('telegram:test', () =>
-    telegram.send(settings.value.telegramToken, settings.value.telegramChatId, '<b>TokenPulse</b>\n✅ 测试消息：推送已连通，守卫暂停、额度提醒等通知会发到这里')
+    telegram.send(settings.value.telegramToken, settings.value.telegramChatId, {
+      text: '<b>TokenPulse</b>\n✅ 测试消息：推送已连通，守卫暂停、额度提醒等通知会发到这里',
+      effect: fx('party')
+    })
   )
   // getUpdates allows one reader: while the bot listens it already saw the chat
   ipcMain.handle('telegram:detect', async (_e, token: string) => {
@@ -2127,13 +2768,43 @@ function registerIpc(): void {
     const r = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
     return r.canceled ? null : (r.filePaths[0] ?? null)
   })
-  ipcMain.handle('report:send', () =>
-    telegramReady() ? telegram.send(settings.value.telegramToken, settings.value.telegramChatId, reportText()) : { ok: false, error: '先配置并开启 Telegram 推送' }
-  )
+  ipcMain.handle('report:send', () => sendReport())
   ipcMain.handle('display:hz', (e) => {
     const win = BrowserWindow.fromWebContents(e.sender)
     const hz = win && !win.isDestroyed() ? screen.getDisplayMatching(win.getBounds()).displayFrequency : 0
     return Number.isFinite(hz) && hz > 0 ? hz : 0
+  })
+  // what the page shows under the title-bar buttons, read from the real pixels (CSS gradients and cards included)
+  ipcMain.handle('tarot', () => readDeck())
+  ipcMain.handle('overview:calendar', () => calendarDays(view(), Date.now(), modelLabel))
+  ipcMain.handle('overview:timeline', () => todaySessions(view(), Date.now(), modelLabel))
+  ipcMain.handle('overview:models', (_e, range: RangeKey) => {
+    const now = Date.now()
+    const r = RANGES.includes(range) ? range : 'today'
+    const b = rangeBounds(r, now, view()[0]?.ts ?? null)
+    return modelRows(view(), b.start, b.end, modelLabel, costByPrompt(view(), prompts(), b.start, b.end, modelLabel).list)
+  })
+  ipcMain.handle('titlebar:sample', async (e): Promise<TitleCorner | null> => {
+    const win = BrowserWindow.fromWebContents(e.sender)
+    if (!win || win !== mainWin || win.isDestroyed() || !win.isVisible() || win.isMinimized()) return null
+    const [w] = win.getContentSize()
+    const width = Math.min(150, w)
+    const img = await win.webContents.capturePage({ x: w - width, y: 0, width, height: TITLEBAR_H }).catch(() => null)
+    if (!img || img.isEmpty()) return null
+    const bmp = img.toBitmap()
+    const px: { l: number; c: number[] }[] = []
+    let total = 0
+    for (let i = 0; i + 3 < bmp.length; i += 4) {
+      total++
+      if (bmp[i + 3] < 128) continue
+      const c = [bmp[i + 2], bmp[i + 1], bmp[i]]
+      px.push({ l: 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2], c })
+    }
+    if (!px.length) return { avg: [0, 0, 0], lo: [0, 0, 0], hi: [0, 0, 0], opaque: 0 }
+    px.sort((a, b) => a.l - b.l)
+    const mean = (list: typeof px) => [0, 1, 2].map((k) => list.reduce((s, p) => s + p.c[k], 0) / list.length)
+    const tenth = Math.max(1, Math.round(px.length / 10))
+    return { avg: mean(px), lo: mean(px.slice(0, tenth)), hi: mean(px.slice(-tenth)), opaque: px.length / total }
   })
   ipcMain.on('theme:colors', (e, c: { bg: string; fg: string }) => {
     const win = BrowserWindow.fromWebContents(e.sender)
@@ -2212,6 +2883,8 @@ app.on('before-quit', () => (quitting = true))
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
   tasks.stopAll()
+  appState.flush()
+  windowLog.flush()
   if (wallWin && !wallWin.isDestroyed()) {
     wallWin.destroy()
     void refreshDesktop()
@@ -2239,6 +2912,10 @@ void app.whenReady().then(async () => {
   // the statusline bridge rewrites its file after every Claude response
   setInterval(() => void quota.checkStatusline(), 5_000)
   await rescan()
+  void pollCodexUsage()
+  // a release check a little after start, then every six hours
+  setTimeout(() => void autoUpdate(), 30_000)
+  setInterval(() => void autoUpdate(), 6 * 3600_000)
   if (pricing.isStale) void pricing.refresh()
   setInterval(() => pricing.isStale && void pricing.refresh(), 3600_000)
   // date rollover, burn-rate decay and tray text
@@ -2246,6 +2923,8 @@ void app.whenReady().then(async () => {
     refreshTray()
     runBudgetCheck()
     checkReport()
+    void syncBoard()
+    void pollCodexUsage()
     checkRunaway()
     // a Codex window that reset while Codex was idle rolls over to 0%
     syncCodexQuota()
@@ -2258,6 +2937,8 @@ void app.whenReady().then(async () => {
   if (process.env.TP_SCREENSHOT && mainWin) {
     // the walkthrough runs tasks with a stand-in instead of the real claude
     ;(globalThis as { __tpTasks?: TaskService }).__tpTasks = tasks
+    ;(globalThis as { __tpTelegram?: unknown }).__tpTelegram = { onCommand, cardPhoto, cardAnimation, gauge: (g: GaugeAlert) => svgsToMp4(gaugeFrames(g, 20), GAUGE_W, GAUGE_H, 20) }
+    ;(globalThis as { __tpUpdater?: Updater }).__tpUpdater = updater
     const { runDevShots } = await import('./devshot')
     if (!miniWin) createMini()
     void runDevShots(process.env.TP_SCREENSHOT, mainWin, miniWin, () => {

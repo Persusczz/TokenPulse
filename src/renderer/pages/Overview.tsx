@@ -20,6 +20,8 @@ import { DailyQuotaCard, QuotaOutlookCard } from '../components/QuotaViz'
 import { CacheCard } from '../components/QuotaInsights'
 import { QuotaCard } from '../components/QuotaRings'
 import { CyclesCard } from '../components/QuotaCycles'
+import { QuotaRelationCard } from '../components/QuotaRelation'
+import { CalendarCard, ModelTableCard, TimelineCard } from '../components/OverviewMore'
 import { coverageNote, RANGE_OPTIONS, RangeTabs, spanText } from '../components/RangeTabs'
 import { RateCard } from '../components/RateCard'
 import { RunawayBanner } from '../components/RunawayBanner'
@@ -280,7 +282,11 @@ export function Overview({ theme }: { theme: string }) {
 
       <CyclesCard />
 
+      <QuotaRelationCard />
+
       <RateCard theme={theme} />
+
+      <TimelineCard />
 
       {/* the quota: will it last, and the week day by day */}
       <div className="grid-2 quota-row">
@@ -349,6 +355,8 @@ export function Overview({ theme }: { theme: string }) {
         {summary ? <TrendChart summary={summary} metric={metric} /> : <div className="chart-box skeleton" />}
       </div>
 
+      <CalendarCard />
+
       <div className="grid-2">
         <div className="card">
           <div className="card-head">
@@ -373,6 +381,8 @@ export function Overview({ theme }: { theme: string }) {
           {summary && <ProjectBars projects={summary.byProject} />}
         </div>
       </div>
+
+      <ModelTableCard range={range} />
 
       <div className="grid-2 rhythm-row">
         <PunchCard />

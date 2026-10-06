@@ -35,6 +35,10 @@ export interface CodexLimits {
   plan: string | null
   primary: CodexLimit | null
   secondary: CodexLimit | null
+  /** which limit: "codex" is the plan's 5-hour / 7-day one (newer Codex also logs others, e.g. "premium", often empty) */
+  limitId?: string | null
+  /** read from the session logs, or from the ChatGPT account's usage endpoint */
+  origin?: 'logs' | 'api'
 }
 
 /** What a file has told us so far, kept between incremental reads */
@@ -88,7 +92,7 @@ function limitsOf(rl: Record<string, any>, ts: number): CodexLimits {
           resetsAt: Number.isFinite(v.resets_at) ? v.resets_at * 1000 : Number.isFinite(v.resets_in_seconds) ? ts + v.resets_in_seconds * 1000 : null
         }
       : null
-  return { at: ts, plan: typeof rl.plan_type === 'string' ? rl.plan_type : null, primary: lim(rl.primary), secondary: lim(rl.secondary) }
+  return { at: ts, plan: typeof rl.plan_type === 'string' ? rl.plan_type : null, primary: lim(rl.primary), secondary: lim(rl.secondary), limitId: typeof rl.limit_id === 'string' ? rl.limit_id : null }
 }
 
 export interface CodexLine {
@@ -280,6 +284,18 @@ export class CodexStore {
     w.samples.push({ t: l.at, pct: p.pct })
   }
 
+  /**
+   * Takes a reading of the plan's limits (from a log line or the usage
+   * endpoint). Readings of other limits, and empty ones, are left out: newer
+   * Codex logs a "premium" limit with no windows after the real one, which
+   * used to blank the quota.
+   */
+  noteLimits(l: CodexLimits): void {
+    if ((!l.primary && !l.secondary) || (l.limitId && l.limitId !== 'codex')) return
+    if (!this.limits || l.at >= this.limits.at) this.limits = l
+    this.recordWindow(l)
+  }
+
   get fileCount(): number {
     return this.files.size
   }
@@ -317,10 +333,7 @@ export class CodexStore {
         this.lastPrompt.set(path, r.prompt)
         return
       }
-      if (r.limits) {
-        if (!this.limits || r.limits.at >= this.limits.at) this.limits = r.limits
-        this.recordWindow(r.limits)
-      }
+      if (r.limits) this.noteLimits(r.limits)
       if (r.window && file.model) this.contextWindows.set(file.model, r.window)
       const e = r.entry
       if (!e) return
@@ -382,5 +395,5 @@ export function codexQuota(l: CodexLimits | null, now: number, files: number): C
       }
     ]
   }
-  return { plan: l.plan, updatedAt: l.at, windows: [...win('codex_5h', l.primary, 300), ...win('codex_7d', l.secondary, 10080)], files }
+  return { plan: l.plan, updatedAt: l.at, windows: [...win('codex_5h', l.primary, 300), ...win('codex_7d', l.secondary, 10080)], files, origin: l.origin ?? 'logs' }
 }

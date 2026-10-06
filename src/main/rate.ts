@@ -43,6 +43,8 @@ export function computeRate(entries: CostedEntry[], now: number): RateStats {
   const first = Math.floor(now / MIN) * MIN - (POINTS - 1) * MIN
   const perMinute = Array.from({ length: POINTS }, (_, i) => ({ t: first + i * MIN, tokens: 0, output: 0, cost: 0, requests: 0 }))
   let tokens1 = 0
+  let input1 = 0
+  let output1 = 0
   let tokens5 = 0
   let output5 = 0
   let requests5 = 0
@@ -53,7 +55,11 @@ export function computeRate(entries: CostedEntry[], now: number): RateStats {
     if (e.ts > now) break
     const tk = tokensOf(e)
     cost60 += e.cost.total
-    if (e.ts > now - MIN) tokens1 += tk
+    if (e.ts > now - MIN) {
+      tokens1 += tk
+      input1 += e.input + e.cacheWrite5m + e.cacheWrite1h
+      output1 += e.output
+    }
     if (e.ts > now - 5 * MIN) {
       tokens5 += tk
       output5 += e.output
@@ -86,6 +92,8 @@ export function computeRate(entries: CostedEntry[], now: number): RateStats {
     now,
     perMinute,
     tokensPerMin: tokens1,
+    inputTpm: input1,
+    outputTpm: output1,
     tokensPerMin5: tokens5 / 5,
     outputPerSec: output5 / 300,
     requestsPerMin: requests5 / 5,

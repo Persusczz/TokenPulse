@@ -49,6 +49,9 @@ describe('computeRate', () => {
 
   it('reports the last minute, the 5-minute average and output speed', () => {
     expect(r.tokensPerMin).toBe(7000)
+    // rate-limit TPM leaves cache reads out
+    expect(r.inputTpm).toBe(200)
+    expect(r.outputTpm).toBe(1200)
     expect(r.tokensPerMin5).toBe((3 * 1000 + 6000) / 5)
     expect(r.outputPerSec).toBeCloseTo((4 * 600) / 300)
     expect(r.requestsPerMin).toBeCloseTo(4 / 5)

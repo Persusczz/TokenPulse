@@ -609,6 +609,41 @@ svg.q-rewind .q-arc {
 .cy-col.on .cy-val {
   color: var(--text);
 }
+/* the window shown at the top: a lifted bar with a ring of light under it */
+.cy-col.sel:not(.current) .cy-bar i {
+  background: linear-gradient(to top, rgba(var(--accent-rgb), 0.7), var(--accent-hi));
+  box-shadow:
+    0 0 0 1.5px rgba(var(--accent-rgb), 0.9),
+    0 0 14px rgba(var(--accent-rgb), 0.5);
+}
+.cy-col.sel .cy-x,
+.cy-col.sel .cy-val {
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+.cy-now.picked {
+  animation: cy-pick 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes cy-pick {
+  from {
+    opacity: 0.35;
+    transform: translateY(6px);
+  }
+}
+.cy-back {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border: 1px solid rgba(var(--accent-rgb), 0.45);
+  border-radius: 999px;
+  background: rgba(var(--accent-rgb), 0.1);
+  color: var(--accent-strong);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.cy-back:hover {
+  background: rgba(var(--accent-rgb), 0.2);
+}
 .cy-col.on .cy-x::after {
   content: '';
   width: 14px;
@@ -695,4 +730,181 @@ svg.q-rewind .q-arc {
   border-color: transparent;
   background: rgba(208, 59, 59, 0.16);
   color: var(--critical);
+}
+
+/* ---------- 5 小时 × 7 天: the week cut into its 5-hour windows ---------- */
+.relation-card .qr-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.qr-verdict {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 36px;
+}
+.qr-verdict > div {
+  display: flex;
+  flex-direction: column;
+}
+.qr-label {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.qr-verdict b {
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.15;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.qr-verdict > div:first-child b {
+  color: var(--accent-strong);
+}
+.qr-verdict small {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.qr-bar {
+  position: relative;
+  display: flex;
+  height: 26px;
+  margin-top: 4px;
+  border-radius: 8px;
+  overflow: visible;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+.qr-seg {
+  flex: 0 0 auto;
+  min-width: 2px;
+  height: 100%;
+  background: rgba(var(--accent-rgb), 0.55);
+  border-right: 1.5px solid var(--surface-solid, var(--bg));
+  transition:
+    filter 0.2s,
+    transform 0.2s;
+}
+.qr-seg:nth-child(even) {
+  background: rgba(var(--accent-rgb), 0.8);
+}
+.qr-seg:first-child {
+  border-radius: 8px 0 0 8px;
+}
+.qr-seg.current {
+  background: linear-gradient(90deg, var(--accent), var(--accent-hi));
+  box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.55);
+}
+.qr-seg.on {
+  filter: brightness(1.25);
+  transform: scaleY(1.18);
+}
+.qr-rest {
+  flex: 0 0 auto;
+  height: 100%;
+  border-radius: 0 8px 8px 0;
+  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--text) 7%, transparent) 0 5px, transparent 5px 10px);
+}
+/* where one, two, three… full 5-hour windows would reach */
+.qr-tick {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 0;
+  border-left: 1.5px dashed color-mix(in srgb, var(--text) 45%, transparent);
+  pointer-events: none;
+}
+.qr-tick em {
+  position: absolute;
+  top: 100%;
+  left: -6px;
+  width: 12px;
+  margin-top: 2px;
+  font-size: 10px;
+  font-style: normal;
+  text-align: center;
+  color: var(--text-3);
+}
+.qr-axis {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.qr-axis b {
+  color: var(--text-2);
+}
+.qr-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.qr-row {
+  display: grid;
+  grid-template-columns: 150px 74px 18px minmax(120px, 1fr) 130px;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.qr-row.on {
+  background: rgba(var(--accent-rgb), 0.1);
+}
+.qr-row.current .qr-when {
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+.qr-when {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.qr-five b,
+.qr-seven b {
+  color: var(--text);
+}
+.qr-five b.est {
+  font-weight: 500;
+  color: var(--text-2);
+}
+.qr-five em {
+  font-style: normal;
+  color: var(--text-3);
+}
+.qr-arrow {
+  color: var(--text-3);
+}
+.qr-seven {
+  position: relative;
+  isolation: isolate;
+  padding-left: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.qr-seven i {
+  position: absolute;
+  inset: 3px auto 3px 0;
+  border-radius: 4px;
+  background: rgba(var(--accent-rgb), 0.18);
+  z-index: -1;
+}
+.qr-cost {
+  text-align: right;
+  white-space: nowrap;
+}
+.qr-foot {
+  font-size: 11.5px;
+}
+@container (max-width: 640px) {
+  .qr-row {
+    grid-template-columns: 130px 64px 14px minmax(0, 1fr);
+  }
+  .qr-cost {
+    display: none;
+  }
 }

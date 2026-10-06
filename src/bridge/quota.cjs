@@ -432,8 +432,30 @@ function editSettings(fn) {
   if (JSON.stringify(next) === JSON.stringify(cfg)) return false
   fs.mkdirSync(ROOT, { recursive: true })
   if (text !== null) fs.copyFileSync(file, `${file}.tokenpulse.bak`)
-  fs.writeFileSync(file, JSON.stringify(next, null, 2) + '\n', 'utf8')
+  writeWhole(file, JSON.stringify(next, null, 2) + '\n')
   return true
+}
+
+/** Written whole or not at all: a temp file beside it renamed over it, so Claude Code never reads half a settings.json (a link is followed, not replaced) */
+function writeWhole(file, text) {
+  let target = file
+  try {
+    target = fs.realpathSync(file)
+  } catch {
+    /* not there yet */
+  }
+  const tmp = `${target}.${process.pid}.tmp`
+  try {
+    fs.writeFileSync(tmp, text, 'utf8')
+    fs.renameSync(tmp, target)
+  } catch {
+    try {
+      fs.unlinkSync(tmp)
+    } catch {
+      /* never made */
+    }
+    fs.writeFileSync(target, text, 'utf8')
+  }
 }
 
 /** A directory on PATH to put the `tpq` command in */

@@ -4,7 +4,7 @@ import { ACCENT_KEYS, ACCENTS, type AccentKey } from '@shared/accents'
 import { toCurrency } from '@shared/format'
 import { HOTKEYS, hotkeyLabel, type Hotkey, type HotkeyStatus } from '@shared/hotkeys'
 import { PACK_KEYS, PACKS } from '@shared/packs'
-import type { BackdropStyle, FrameCap, MiniMode, MotionLevel, QuotaSource, Settings, SourceView, TaskPermission, TaskQueueState, ThemePack, ThemeSetting, WindowMaterial } from '@shared/types'
+import type { BackdropStyle, CodexUsageState, FrameCap, MiniMode, MotionLevel, QuotaSource, Settings, SourceView, TaskPermission, TaskQueueState, ThemePack, ThemeSetting, WindowMaterial } from '@shared/types'
 import { CompactPicker } from '../components/CompactPicker'
 import { ScenePreview, useLivePreview } from '../components/ScenePreview'
 import { IconClose } from '../components/Icons'
@@ -12,7 +12,7 @@ import { Segmented } from '../components/Segmented'
 import { CITIES, placeOf, sunTimes, type Place } from '@shared/astro'
 import { applyPack } from '../components/CommandPalette'
 import { revealFromPointer } from '../effects'
-import { resolveTheme, useApp, useSource } from '../state'
+import { resolveTheme, useApp, useSource, useUpdate } from '../state'
 
 function Switch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
   return <button className={`switch${on ? ' on' : ''}`} role="switch" aria-checked={on} onClick={() => onChange(!on)} />
@@ -233,6 +233,13 @@ export const CODEX_PERMISSIONS: { value: TaskPermission; label: string; desc: st
   { value: 'acceptEdits', label: '可写工作区', desc: '沙箱 workspace-write：可以改工作目录里的文件' },
   { value: 'bypassPermissions', label: '完全放行', desc: '跳过沙箱和所有确认，适合信任的仓库' }
 ]
+/** the button row under Telegram's input box */
+const TG_KEYBOARDS: { value: Settings['telegramKeyboard']; label: string; desc: string }[] = [
+  { value: 'fold', label: '点完收起', desc: '只有一行按钮，点一下就自动收起，点输入框旁的 ⌨️ 再展开' },
+  { value: 'keep', label: '常驻可收', desc: '一行按钮一直在，点输入框旁的 ⌨️ 随时收起' },
+  { value: 'off', label: '不要按钮', desc: '用左下角「菜单」和 /panel 控制面板' }
+]
+
 const THEMES: { value: ThemeSetting; label: string }[] = [
   { value: 'system', label: '跟随系统' },
   { value: 'light', label: '浅色' },
@@ -576,6 +583,85 @@ function WasteRows({ s, save, tool }: { s: Settings; save: Save; tool: 'claude' 
 }
 
 /** Codex (GPT): where its logs are read from and what they report */
+/** reading Codex's limits from the ChatGPT account, and TokenPulse's own ChatGPT login */
+function CodexLoginRows({ s, save }: { s: Settings; save: Save }) {
+  const [st, setSt] = useState<CodexUsageState | null>(null)
+  const [busy, setBusy] = useState<'' | 'in' | 'out' | 'refresh'>('')
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  useEffect(() => {
+    void window.api.codexUsageState().then(setSt)
+    return window.api.onCodexUsage(setSt)
+  }, [])
+  const signIn = async () => {
+    setBusy('in')
+    setMsg({ ok: true, text: '已在浏览器打开 ChatGPT 登录页，登录后回到这里' })
+    const r = await window.api.codexSignIn()
+    setBusy('')
+    setMsg(r.ok ? { ok: true, text: `已登录${r.email ? ` ${r.email}` : ''}` } : { ok: false, text: r.error ?? '登录失败' })
+  }
+  const signOut = async () => {
+    setBusy('out')
+    await window.api.codexSignOut()
+    setBusy('')
+    setMsg({ ok: true, text: '已退出 TokenPulse 的 ChatGPT 登录' })
+  }
+  const refresh = async () => {
+    setBusy('refresh')
+    setSt(await window.api.codexUsageRefresh())
+    setBusy('')
+  }
+  const at = st?.at ? new Date(st.at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }) : ''
+  const line =
+    st?.status === 'ok'
+      ? `正在读取${st.source === 'tokenpulse' ? ' TokenPulse 登录的' : ' Codex CLI 登录的'} ChatGPT 账号${st.email ? `（${st.email}）` : ''} · ${at} 更新`
+      : st?.status === 'nologin'
+        ? '没有可用的 ChatGPT 登录：点「登录 ChatGPT」，或先在 Codex 里登录'
+        : st?.status === 'error'
+          ? (st.error ?? '读取失败')
+          : '正在读取…'
+  return (
+    <>
+      <Row
+        label="从 ChatGPT 账号读取额度"
+        desc="每分钟读一次 Codex 的 5 小时 / 7 天额度（Codex 自己的 /status 用的同一个接口），不用等 Codex 运行。优先用 TokenPulse 自己的登录；没有时只读 Codex CLI 的登录，不会刷新它的令牌"
+      >
+        <Switch on={s.codexUsageApi} onChange={(codexUsageApi) => save({ codexUsageApi })} />
+      </Row>
+      {s.codexUsageApi && (
+        <div className="tg-box">
+          <div className="tg-row">
+            <span className="tg-label">状态</span>
+            <span className={st?.status === 'error' ? 'bad-text' : st?.status === 'ok' ? 'ok-text' : 'muted'}>{line}</span>
+          </div>
+          <div className="tg-row">
+            <span className="tg-label">账号</span>
+            {st?.loggedIn ? (
+              <>
+                <span>TokenPulse 已登录{st.email ? ` ${st.email}` : ''}</span>
+                <button className="btn small" disabled={!!busy} onClick={() => void signOut()}>
+                  退出登录
+                </button>
+              </>
+            ) : (
+              <button className="btn primary small" disabled={!!busy} onClick={() => void signIn()}>
+                {busy === 'in' ? '等待浏览器…' : '登录 ChatGPT'}
+              </button>
+            )}
+            <button className="btn small" disabled={!!busy} onClick={() => void refresh()}>
+              {busy === 'refresh' ? '读取中…' : '立即刷新'}
+            </button>
+            {msg && <span className={msg.ok ? 'ok-text' : 'bad-text'}>{msg.text}</span>}
+          </div>
+          <div className="set-note">
+            登录走 OpenAI 的官方页面（和 codex login 同一套 OAuth），令牌用系统的数据保护加密后只存在本机。
+            {st?.cliLogin ? '检测到 Codex CLI 已经登录，没有登录 TokenPulse 时直接用它（只读）。' : '没有检测到 Codex CLI 的登录。'}
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
 function CodexRows({ s, save }: { s: Settings; save: Save }) {
   const { load, codexQuota } = useApp()
   const dirs = load?.codexDirs ?? []
@@ -593,6 +679,7 @@ function CodexRows({ s, save }: { s: Settings; save: Save }) {
       >
         <Switch on={s.codexEnabled} onChange={(codexEnabled) => save({ codexEnabled })} />
       </Row>
+      {s.codexEnabled && <CodexLoginRows s={s} save={save} />}
       {s.codexEnabled && dirs.length > 0 && (
         <div className="guard-info">
           {dirs.map((d) => (
@@ -602,7 +689,7 @@ function CodexRows({ s, save }: { s: Settings; save: Save }) {
           ))}
           <div className="muted">
             {codexQuota
-              ? `ChatGPT ${codexQuota.plan ?? ''} · ${codexQuota.windows.map((w) => `${w.label} ${Math.round(w.utilization)}%`).join(' · ')}（Codex 运行时更新）`
+              ? `ChatGPT ${codexQuota.plan ?? ''} · ${codexQuota.windows.map((w) => `${w.label} ${Math.round(w.utilization)}%`).join(' · ')}（${codexQuota.origin === 'api' ? '账号接口，每分钟更新' : 'Codex 运行时更新'}）`
               : '日志里还没有额度数据'}
             。费用按 OpenAI API 价格估算，新模型按最接近的 GPT 型号估算；经 Codex 调用的其他模型（DeepSeek、Grok 等）没有价格时只计 Token。
           </div>
@@ -990,8 +1077,59 @@ function NotifyRows({ s, save, source }: { s: Settings; save: Save; source: Sour
             <span className="tg-label">远程指令</span>
             <label className="check">
               <input type="checkbox" checked={s.telegramCommands} onChange={(e) => save({ telegramCommands: e.target.checked })} />
-              /status /today /week /top /star /ach /sign /tasks /task /log /pause /resume /guard /report（只响应上面这个 Chat ID）
+              /panel /status /card /today /week /top /star /ach /sign /luck /tasks /task /log /pause /resume /guard /report /board（只响应上面这个 Chat ID）
             </label>
+          </div>
+          {s.telegramCommands && (
+            <div className="tg-row">
+              <span className="tg-label">按钮键盘</span>
+              <Segmented small value={s.telegramKeyboard} onChange={(telegramKeyboard) => save({ telegramKeyboard })} options={TG_KEYBOARDS} />
+              <span className="muted" style={{ fontSize: 12 }}>
+                {TG_KEYBOARDS.find((k) => k.value === s.telegramKeyboard)?.desc}
+              </span>
+            </div>
+          )}
+          <div className="tg-row">
+            <span className="tg-label">花样</span>
+            <span className="tg-events">
+              <label className="check">
+                <input type="checkbox" checked={s.telegramEffects} onChange={(e) => save({ telegramEffects: e.target.checked })} />
+                全屏特效与表情回应（成就 🎉、任务完成 👍、额度爆表 🔥）
+              </label>
+              <label className="check">
+                <input type="checkbox" checked={s.telegramAnimations} onChange={(e) => save({ telegramAnimations: e.target.checked })} />
+                动画：今日卡片是动图、额度提醒配仪表动画、状态回复逐帧展开
+              </label>
+              <label className="check">
+                <input type="checkbox" checked={s.telegramCardReport} onChange={(e) => save({ telegramCardReport: e.target.checked })} />
+                晚报附一张今日卡片（图片）
+              </label>
+              <label className="check">
+                <input type="checkbox" checked={s.telegramBoard} onChange={(e) => save({ telegramBoard: e.target.checked })} />
+                置顶实时看板：聊天顶部一直显示额度，每分钟悄悄更新
+              </label>
+            </span>
+          </div>
+          <div className="tg-row">
+            <span className="tg-label">免打扰</span>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={s.telegramQuietFrom !== null && s.telegramQuietTo !== null}
+                onChange={(e) => save(e.target.checked ? { telegramQuietFrom: '23:00', telegramQuietTo: '08:00' } : { telegramQuietFrom: null, telegramQuietTo: null })}
+              />
+              推送静音
+            </label>
+            {s.telegramQuietFrom !== null && s.telegramQuietTo !== null && (
+              <>
+                <input type="time" className="input tnum" style={{ flex: 'none', width: 136 }} value={s.telegramQuietFrom} onChange={(e) => save({ telegramQuietFrom: e.target.value })} />
+                <span className="muted">–</span>
+                <input type="time" className="input tnum" style={{ flex: 'none', width: 136 }} value={s.telegramQuietTo} onChange={(e) => save({ telegramQuietTo: e.target.value })} />
+              </>
+            )}
+            <span className="muted" style={{ fontSize: 12 }}>
+              这段时间的推送照常送达，只是不响铃
+            </span>
           </div>
           <div className="tg-row">
             <span className="tg-label">每日晚报</span>
@@ -999,9 +1137,9 @@ function NotifyRows({ s, save, source }: { s: Settings; save: Save; source: Sour
               <input type="checkbox" checked={s.reportTime !== null} onChange={(e) => save({ reportTime: e.target.checked ? '22:00' : null })} />
               每天
             </label>
-            {s.reportTime !== null && <input type="time" className="input tnum" style={{ flex: 'none', width: 110 }} value={s.reportTime} onChange={(e) => save({ reportTime: e.target.value })} />}
+            {s.reportTime !== null && <input type="time" className="input tnum" style={{ flex: 'none', width: 136 }} value={s.reportTime} onChange={(e) => save({ reportTime: e.target.value })} />}
             <span className="muted" style={{ fontSize: 12 }}>
-              今日用量、额度、7 天预测和回本倍数
+              今日用量、额度、7 天预测和回本倍数{s.telegramCardReport ? '，配一张今日卡片' : ''}
             </span>
           </div>
           <div className="tg-row">
@@ -1148,12 +1286,81 @@ function MoneyRows({ s, save, source }: { s: Settings; save: Save; source: Sourc
   )
 }
 
+/** the version, and updating from the GitHub releases */
+function UpdateRows({ s, save }: { s: Settings; save: Save }) {
+  const u = useUpdate()
+  const [busy, setBusy] = useState(false)
+  if (!u) return null
+  const v = u.latest?.version
+  const status =
+    u.status === 'checking'
+      ? '正在检查…'
+      : u.status === 'none'
+        ? `已是最新版本${u.checkedAt ? `（${new Date(u.checkedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })} 检查）` : ''}`
+        : u.status === 'available'
+          ? `发现新版本 ${v}${u.latest?.size ? `（${(u.latest.size / 1048576).toFixed(0)} MB）` : ''}`
+          : u.status === 'downloading'
+            ? `正在下载 ${v}… ${Math.round((u.progress ?? 0) * 100)}%`
+            : u.status === 'ready'
+              ? `${v} 已下载并校验，重启即可更新`
+              : u.status === 'error'
+                ? (u.error ?? '更新出错')
+                : ''
+  const run = async (f: () => Promise<unknown>) => {
+    setBusy(true)
+    await f()
+    setBusy(false)
+  }
+  return (
+    <>
+      <Row
+        label={`版本 ${u.current}`}
+        desc={
+          u.kind === 'portable'
+            ? '便携版：更新时下载新版本、校验 SHA-256，退出后原地替换当前的 exe 再启动（快捷方式和开机自启都不受影响）'
+            : u.kind === 'installer'
+              ? '安装版：更新时下载新的安装包、校验 SHA-256，退出后静默安装并重新启动'
+              : '开发版：只检查，不自动安装'
+        }
+      >
+        <span className={u.status === 'error' ? 'bad-text' : u.status === 'ready' || u.status === 'available' ? 'ok-text' : 'muted'} style={{ fontSize: 12.5 }}>
+          {status}
+        </span>
+        {u.status === 'available' && u.kind !== 'dev' && !u.error && (
+          <button className="btn primary small" disabled={busy} onClick={() => void run(() => window.api.updateDownload())}>
+            下载
+          </button>
+        )}
+        {u.status === 'ready' ? (
+          <button className="btn primary small" onClick={() => void window.api.updateInstall()}>
+            重启并更新
+          </button>
+        ) : (
+          <button className="btn small" disabled={busy || u.status === 'checking' || u.status === 'downloading'} onClick={() => void run(() => window.api.updateCheck())}>
+            检查更新
+          </button>
+        )}
+      </Row>
+      {u.latest && (u.status === 'available' || u.status === 'ready' || u.status === 'downloading') && u.latest.notes && (
+        <div className="set-note update-notes">
+          <b>{u.latest.version} 更新内容</b>
+          {u.latest.notes.slice(0, 900)}
+        </div>
+      )}
+      <Row label="自动更新" desc="启动后和每 6 小时从 GitHub Releases 检查一次，有新版本就在后台下载；安装要等你点「重启并更新」，不会突然重启">
+        <Switch on={s.autoUpdate} onChange={(autoUpdate) => save({ autoUpdate })} />
+      </Row>
+    </>
+  )
+}
+
 function SystemRows({ s, save, source }: { s: Settings; save: Save; source: SourceView }) {
   const { load } = useApp()
   const [dir, setDir] = useState('')
   if (source === 'codex')
     return (
       <>
+        <UpdateRows s={s} save={save} />
         <Row label="开机自启" desc="仅在安装版中生效">
           <Switch on={s.launchAtLogin} onChange={(launchAtLogin) => save({ launchAtLogin })} />
         </Row>
@@ -1174,6 +1381,7 @@ function SystemRows({ s, save, source }: { s: Settings; save: Save; source: Sour
     )
   return (
     <>
+      <UpdateRows s={s} save={save} />
       <Row label="开机自启" desc="仅在安装版中生效">
         <Switch on={s.launchAtLogin} onChange={(launchAtLogin) => save({ launchAtLogin })} />
       </Row>

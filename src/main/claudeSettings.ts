@@ -1,4 +1,5 @@
-import { copyFile, readFile, writeFile } from 'node:fs/promises'
+import { copyFile, readFile } from 'node:fs/promises'
+import { writeFileAtomic } from './atomicFile'
 
 /** Hook timeout in seconds; a paused task waits at most one 5h window */
 export const GUARD_TIMEOUT_S = 6 * 3600
@@ -87,7 +88,7 @@ export async function editClaudeSettings(path: string, fn: (cfg: Json) => Json):
   const next = fn(cfg)
   if (JSON.stringify(next) === JSON.stringify(cfg)) return cfg
   if (text !== null) await copyFile(path, `${path}.tokenpulse.bak`)
-  await writeFile(path, JSON.stringify(next, null, 2) + '\n', 'utf8')
+  await writeFileAtomic(path, JSON.stringify(next, null, 2) + '\n')
   return next
 }
 

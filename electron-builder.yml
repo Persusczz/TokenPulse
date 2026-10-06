@@ -23,5 +23,8 @@ nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
   shortcutName: TokenPulse
+  # the whole wizard in Chinese, like the app (build/installer.nsh adds the desktop-shortcut page)
+  installerLanguages: zh_CN
+  language: '2052'
 portable:
   artifactName: ${productName}-${version}-portable.exe

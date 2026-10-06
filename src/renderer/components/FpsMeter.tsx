@@ -12,8 +12,10 @@ const NAMES: Record<string, string> = {
   pulse: '速率曲线',
   gauge: '速率表盘',
   mark: '标志',
+  shine: '标题流光',
   hole: '黑洞',
-  sky: '星图'
+  sky: '星图',
+  pocket: '悬浮窗场景'
 }
 
 /**

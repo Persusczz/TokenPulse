@@ -38,6 +38,143 @@ export async function runDevShots(dir: string, main: BrowserWindow, mini: Browse
     js(`new Promise((done) => { let n = 0; const t0 = performance.now(); const f = () => { n++; performance.now() - t0 < 2000 ? requestAnimationFrame(f) : done(Math.round(n / 2)) }; requestAnimationFrame(f) })`)
   const clickSub = (title: string) => js(`(() => { const b = [...document.querySelectorAll('.nav-sub')].find((x) => x.querySelector('.nav-sub-label')?.textContent === ${JSON.stringify(title)}); b && b.click(); return !!b })()`)
 
+  // the Telegram animations: the today card and a quota alert as MP4s, checked by playing them
+  if (process.env.TP_SHOTS === 'anim') {
+    const { probeMp4 } = await import('./cardRender')
+    type Anim = { cardAnimation: (v: 'claude' | 'codex' | 'all') => Promise<Buffer>; gauge: (g: import('./tgCard').GaugeAlert) => Promise<Buffer> }
+    const tg = (globalThis as { __tpTelegram?: Anim }).__tpTelegram!
+    const jobs: [string, () => Promise<Buffer>][] = [
+      ['card', () => tg.cardAnimation('all')],
+      ['gauge-90', () => tg.gauge({ title: 'Claude 5 小时额度', accent: '#d97757', from: 72, to: 91, note: '23:17 重置' })],
+      ['gauge-reset', () => tg.gauge({ title: 'Codex 5 小时额度', accent: '#5b6cff', from: 100, to: 0, note: '新的窗口刚刚开始', reset: true })]
+    ]
+    for (const [name, make] of jobs) {
+      const t0 = Date.now()
+      try {
+        const mp4 = await make()
+        await writeFile(join(dir, `${name}.mp4`), mp4)
+        const p = await probeMp4(mp4, name === 'card' ? 1.2 : 1.4)
+        await writeFile(join(dir, `${name}-frame.png`), p.frame)
+        for (const t of [0.1, 0.6, 3.0]) await writeFile(join(dir, `${name}-frame-${t}.png`), (await probeMp4(mp4, t)).frame)
+        await log({ name, ms: Date.now() - t0, bytes: mp4.length, width: p.width, height: p.height, duration: p.duration })
+      } catch (e) {
+        await log({ name, error: String(e) })
+      }
+    }
+    done()
+    return
+  }
+
+  // the overview's calendar, today's sessions and the model table
+  if (process.env.TP_SHOTS === 'more') {
+    await main.webContents.insertCSS('.celebrate, .toasts, .toast { display: none !important }')
+    await set({ themePack: 'none', theme: 'dark', backdrop: 'flow', sourceFilter: process.env.TP_MORE_SOURCE ?? 'all' })
+    await js(click('概览'))
+    await wait(3000)
+    for (const sel of ['.timeline-card', '.calendar-card']) {
+      await js(scrollTo(sel))
+      await wait(1200)
+      await shot(main, `more${sel.replace('.', '-')}`, await js(rectOf(sel)))
+    }
+    await js(click('7 天'))
+    await wait(1500)
+    await js(scrollTo('.model-table-card'))
+    await wait(1200)
+    await shot(main, 'more-model-table', await js(rectOf('.model-table-card')))
+    await set({ theme: 'light' })
+    await js(scrollTo('.calendar-card'))
+    await wait(1500)
+    await shot(main, 'more-calendar-light', await js(rectOf('.calendar-card')))
+    done()
+    return
+  }
+
+  // updating: check a stand-in release (TP_UPDATE_API), download, verify, hand over and quit; the restarted version logs itself
+  if (process.env.TP_SHOTS === 'update') {
+    const { app } = await import('electron')
+    const u = (globalThis as { __tpUpdater?: import('./updater').Updater }).__tpUpdater!
+    await log({ running: app.getVersion(), exe: process.env.PORTABLE_EXECUTABLE_FILE ?? null, kind: u.state.kind })
+    const s = await u.check()
+    await log({ check: s.status, latest: s.latest?.version ?? null, error: s.error ?? null })
+    if (s.status === 'available' && !s.error) {
+      const d = await u.download()
+      await log({ download: d.status, error: d.error ?? null })
+      if (d.status === 'ready' && (await u.install())) await log({ handedOver: true })
+    }
+    done()
+    return
+  }
+
+  // 塔罗: the spread face down, turned, the collection; the 5h × 7d card; the Telegram picture
+  if (process.env.TP_SHOTS === 'tarot') {
+    type Tg = { onCommand: (c: import('./telegram').Command) => Promise<import('./telegram').Reply> }
+    const tg = (globalThis as { __tpTelegram?: Tg }).__tpTelegram!
+    await set({ themePack: 'none', theme: 'dark', backdrop: 'flow', sourceFilter: process.env.TP_TAROT_SOURCE ?? 'claude' })
+    await main.webContents.insertCSS('.celebrate, .toasts, .toast { display: none !important }')
+    await js(click('塔罗'))
+    await wait(2600)
+    await shot(main, 'tarot-1-deck')
+    await js(`document.querySelector('.main').scrollBy(0, 640)`)
+    await wait(800)
+    await shot(main, 'tarot-2-deck')
+    await js(`document.querySelector('.main').scrollBy(0, 640)`)
+    await wait(800)
+    await shot(main, 'tarot-3-deck')
+    await js(clickSel('.deck-flip', 19))
+    await js(clickSel('.deck-flip', 18))
+    await wait(1200)
+    await js(scrollTo('.deck-card.back'))
+    await wait(500)
+    await shot(main, 'tarot-4-back')
+    await set({ theme: 'light' })
+    await js(`document.querySelector('.main').scrollTo(0, 0)`)
+    await wait(1800)
+    await shot(main, 'tarot-5-light')
+    await set({ theme: 'dark' })
+    await js(click('概览'))
+    await wait(2500)
+    await js(scrollTo('.relation-card'))
+    await wait(1500)
+    await shot(main, 'relation', await js(rectOf('.relation-card')))
+    const r = await tg.onCommand({ name: 'tarot', args: [] })
+    if (typeof r !== 'string' && r.photo) await writeFile(join(dir, 'tarot-tg.jpg'), r.photo)
+    await writeFile(join(dir, 'tarot-tg.txt'), typeof r === 'string' ? r : r.text)
+    await log({ reading: await js('window.api.getTarot()') })
+    done()
+    return
+  }
+
+  // Telegram: the bot's replies and the picture cards, made by the real handler (the bot itself never connects in a shot run)
+  if (process.env.TP_SHOTS === 'tg') {
+    type Tg = { onCommand: (c: import('./telegram').Command) => Promise<import('./telegram').Reply>; cardPhoto: (v: 'claude' | 'codex' | 'all') => Promise<Buffer> }
+    const tg = (globalThis as { __tpTelegram?: Tg }).__tpTelegram!
+    const out: Record<string, unknown> = {}
+    const lines = ['panel status', 'panel min', 'panel today', 'panel week', 'panel tasks', 'panel star', 'panel ach', 'panel top', 'panel sign', 'help', 'status', 'today', 'star', 'top', 'ach', 'board', 'boardnow', 'hide', 'keys', 'luckless']
+    for (const line of lines) {
+      const [name, ...args] = line.split(' ')
+      const r = await tg.onCommand({ name, args })
+      out[line] = typeof r === 'string' ? r : { ...r, photo: r.photo ? r.photo.length : undefined }
+    }
+    out.plain = await tg.onCommand({ name: 'plain', args: [], plain: '把 tests 里失败的用例修好' })
+    for (const v of ['claude', 'codex', 'all'] as const) {
+      const t0 = Date.now()
+      await writeFile(join(dir, `card-${v}.jpg`), await tg.cardPhoto(v))
+      out[`card ${v} ms`] = Date.now() - t0
+    }
+    await writeFile(join(dir, 'replies.json'), JSON.stringify(out, null, 2))
+    await js(click('设置'))
+    await wait(1200)
+    await clickSub('通知与 Telegram')
+    await set({ telegramEnabled: true, telegramToken: '1:demo', telegramChatId: '42', telegramQuietFrom: '23:00', telegramQuietTo: '08:00' })
+    await wait(1500)
+    await js(scrollTo('.tg-box'))
+    await wait(600)
+    await shot(main, 'tg-settings')
+    await set({ telegramEnabled: false })
+    done()
+    return
+  }
+
   // a Chromium trace of the overview, to see where the frame time goes
   if (process.env.TP_SHOTS === 'trace') {
     const { contentTracing } = await import('electron')
@@ -526,6 +663,14 @@ const t = setInterval(() => {
       await js(`(() => { const c = document.querySelectorAll('.cy-5h .cy-col'); c[Math.max(0, c.length - 4)]?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); return c.length })()`)
       await wait(500)
       await shot(main, '431-cycles-hover')
+      // a click shows that window at the top; the 7-day panel too
+      await js(`(() => { const c = document.querySelectorAll('.cy-5h .cy-col'); c[Math.max(0, c.length - 5)]?.click(); const w = document.querySelectorAll('.cy-7d .cy-col'); w[Math.max(0, w.length - 2)]?.click(); document.querySelector('.cy-chart')?.dispatchEvent(new MouseEvent('mouseleave')); return c.length })()`)
+      await wait(900)
+      await shot(main, '431b-cycles-picked', await js(rectOf('.cycles-card')))
+      if (only === 'cycles' && process.env.TP_CYCLES_PICK) {
+        done()
+        return
+      }
       await js(click('金额'))
       await wait(900)
       await shot(main, '432-cycles-cost')
@@ -562,13 +707,37 @@ const t = setInterval(() => {
       }
       main.setAlwaysOnTop(true)
       main.focus()
-      for (const [pack, theme] of [['none', 'dark'], ['none', 'light'], ['cyber', 'dark'], ['ukiyo', 'light'], ['mystic', 'dark'], ['daylight', 'dark'], ['pixel', 'dark'], ['sakura', 'light']] as const) {
+      const packs = [['none', 'dark'], ['none', 'light'], ['cyber', 'dark'], ['ukiyo', 'light'], ['mystic', 'dark'], ['daylight', 'dark'], ['pixel', 'dark'], ['sakura', 'light'], ['paper', 'light'], ['dune', 'light'], ['borealis', 'dark'], ['koi', 'light'], ['ink', 'light'], ['lantern', 'dark']] as const
+      const only = process.env.TP_SHOTS_PACKS?.split(',')
+      for (const [pack, theme] of packs) {
+        if (only && !only.includes(`${pack}-${theme}`)) continue
         const backdrop = pack === 'none' ? 'flow' : pack
         await set({ themePack: pack, theme, backdrop })
         await js(click('概览'))
-        await wait(2600)
-        grab(`420-title-${pack}-${theme}`)
+        // the buttons are looked at 1.2 s after a change and again every 8 s
+        await wait(Number(process.env.TP_TITLE_WAIT ?? 2600))
+        if (process.env.TP_TITLE_FULL) await shot(main, `419-full-${pack}-${theme}`)
+        if (process.env.TP_TITLE_PAGE) await shot(main, `420-title-${pack}-${theme}`, { x: main.getContentSize()[0] - 420, y: 0, width: 420, height: 70 })
+        else grab(`420-title-${pack}-${theme}`)
+        await log({ title: pack, theme, scrim: await js(`getComputedStyle(document.documentElement).getPropertyValue('--tb-scrim')`), fg: await js(`getComputedStyle(document.documentElement).getPropertyValue('--tb-fg')`), bg: await js(`getComputedStyle(document.documentElement).getPropertyValue('--bg')`), sample: await js('window.api.titleCorner()') })
       }
+      // the 昼夜 sky through a day: the corner changes from dark to bright and back
+      if (only) {
+        main.setAlwaysOnTop(false)
+        done()
+        return
+      }
+      await set({ themePack: 'daylight', theme: 'light', backdrop: 'daylight' })
+      for (const h of [6, 9, 13, 17.5, 19, 23]) {
+        const t = new Date()
+        t.setHours(Math.floor(h), Math.round((h % 1) * 60), 0, 0)
+        await js(`(() => { window.__tpSetDay && window.__tpSetDay(${t.getTime()}); return true })()`)
+        await wait(9500)
+        if (process.env.TP_TITLE_PAGE) await shot(main, `421-title-day-${String(h).replace('.', '_')}`, { x: main.getContentSize()[0] - 420, y: 0, width: 420, height: 70 })
+        else grab(`421-title-day-${String(h).replace('.', '_')}`)
+        await log({ title: 'day', h, scrim: await js(`getComputedStyle(document.documentElement).getPropertyValue('--tb-scrim')`), fg: await js(`getComputedStyle(document.documentElement).getPropertyValue('--tb-fg')`) })
+      }
+      await js(`(() => { window.__tpSetDay && window.__tpSetDay(null); return true })()`)
       main.setAlwaysOnTop(false)
     }
     done()

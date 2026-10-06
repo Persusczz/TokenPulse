@@ -1,9 +1,10 @@
 import { EventEmitter } from 'node:events'
-import { readFile, writeFile } from 'node:fs/promises'
+import { copyFile, readFile } from 'node:fs/promises'
 import { ACCENT_KEYS } from '@shared/accents'
 import { cleanCompactAt } from '@shared/compact'
 import { HOTKEYS } from '@shared/hotkeys'
 import type { BackdropStyle, MiniMode, MotionLevel, Settings, ThemePack, WindowMaterial } from '@shared/types'
+import { writeFileAtomic } from './atomicFile'
 
 const MOTIONS: MotionLevel[] = ['off', 'subtle', 'standard', 'rich']
 const BACKDROPS: BackdropStyle[] = [
@@ -124,6 +125,13 @@ export const DEFAULT_SETTINGS: Settings = {
   pushAchievement: true,
   pushRunaway: true,
   telegramCommands: true,
+  telegramKeyboard: 'fold',
+  telegramEffects: true,
+  telegramAnimations: true,
+  telegramCardReport: true,
+  telegramBoard: false,
+  telegramQuietFrom: null,
+  telegramQuietTo: null,
   reportTime: '22:00',
   runawayDetect: true,
   runawaySensitivity: 'medium',
@@ -143,6 +151,8 @@ export const DEFAULT_SETTINGS: Settings = {
   codexTaskModel: null,
   pushTasks: true,
   codexEnabled: true,
+  codexUsageApi: true,
+  autoUpdate: true,
   sourceFilter: 'all',
   themePack: 'none',
   contextAlert: true,
@@ -178,6 +188,10 @@ const BOOLS = [
   'pushAchievement',
   'pushRunaway',
   'telegramCommands',
+  'telegramEffects',
+  'telegramAnimations',
+  'telegramCardReport',
+  'telegramBoard',
   'runawayDetect',
   'island',
   'taskQueuePaused',
@@ -186,6 +200,8 @@ const BOOLS = [
   'taskAutoCompact',
   'taskTerminal',
   'codexEnabled',
+  'codexUsageApi',
+  'autoUpdate',
   'wasteAlert',
   'wasteRunTasks',
   'contextAlert',
@@ -260,6 +276,9 @@ export function sanitize(raw: any, base: Settings): Settings {
   if ('guardResumeTo' in raw) s.guardResumeTo = hhmm(raw.guardResumeTo)
   if (oneOf(raw.hotkey, [...HOTKEYS])) s.hotkey = raw.hotkey
   if ('reportTime' in raw) s.reportTime = hhmm(raw.reportTime)
+  if (oneOf(raw.telegramKeyboard, ['fold', 'keep', 'off'])) s.telegramKeyboard = raw.telegramKeyboard
+  if ('telegramQuietFrom' in raw) s.telegramQuietFrom = hhmm(raw.telegramQuietFrom)
+  if ('telegramQuietTo' in raw) s.telegramQuietTo = hhmm(raw.telegramQuietTo)
   if (oneOf(raw.runawaySensitivity, ['low', 'medium', 'high'])) s.runawaySensitivity = raw.runawaySensitivity
   if (oneOf(raw.runawayAction, ['notify', 'pause'])) s.runawayAction = raw.runawayAction
   if (oneOf(raw.taskPermission, [...PERMISSIONS])) s.taskPermission = raw.taskPermission
@@ -283,17 +302,27 @@ export class SettingsStore extends EventEmitter {
   }
 
   async load(): Promise<void> {
+    let text: string
     try {
-      this.value = sanitize(JSON.parse(await readFile(this.path, 'utf8')), DEFAULT_SETTINGS)
+      text = await readFile(this.path, 'utf8')
     } catch {
       this.value = { ...DEFAULT_SETTINGS }
+      return
+    }
+    try {
+      // an editor may have put a byte-order mark in front
+      this.value = sanitize(JSON.parse(text.replace(/^﻿/, '')), DEFAULT_SETTINGS)
+    } catch {
+      // unreadable (edited by hand?): kept aside, or the next save would write over it
+      this.value = { ...DEFAULT_SETTINGS }
+      await copyFile(this.path, `${this.path}.broken`).catch(() => {})
     }
   }
 
   async update(patch: Partial<Settings>): Promise<{ next: Settings; prev: Settings }> {
     const prev = this.value
     this.value = sanitize(patch, prev)
-    await writeFile(this.path, JSON.stringify(this.value, null, 2), 'utf8').catch(() => {})
+    await writeFileAtomic(this.path, JSON.stringify(this.value, null, 2)).catch(() => {})
     this.emit('change', this.value)
     return { next: this.value, prev }
   }

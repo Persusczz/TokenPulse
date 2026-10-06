@@ -311,6 +311,37 @@ export interface CodexQuota {
   windows: QuotaWindow[]
   /** files read under ~/.codex */
   files: number
+  /** from the session logs, or the ChatGPT account's usage endpoint */
+  origin?: 'logs' | 'api'
+}
+
+/** Updating from the GitHub releases */
+export interface UpdateState {
+  status: 'idle' | 'checking' | 'none' | 'available' | 'downloading' | 'ready' | 'error'
+  current: string
+  /** the portable exe is replaced in place; the installed app runs the new installer; a dev build only checks */
+  kind: 'portable' | 'installer' | 'dev'
+  latest?: { version: string; notes: string; page: string; publishedAt: number; size?: number }
+  /** 0–1 while downloading */
+  progress?: number
+  error?: string
+  checkedAt?: number
+}
+
+/** Reading Codex's limits from the ChatGPT account */
+export interface CodexUsageState {
+  /** off: not used; nologin: no ChatGPT login to read with */
+  status: 'off' | 'ok' | 'error' | 'nologin'
+  /** whose login was used: TokenPulse's own, or Codex CLI's */
+  source: 'tokenpulse' | 'cli' | null
+  email: string | null
+  /** last good reading */
+  at: number | null
+  error?: string
+  /** TokenPulse has its own ChatGPT login */
+  loggedIn: boolean
+  /** Codex CLI is logged in with ChatGPT (~/.codex/auth.json) */
+  cliLogin: boolean
 }
 
 /** How a quota window is being used against a straight line from its start to its reset */
@@ -372,6 +403,9 @@ export interface RateStats {
   perMinute: { t: number; tokens: number; output: number; cost: number; requests: number }[]
   /** tokens in the last 60 s */
   tokensPerMin: number
+  /** the last 60 s counted like API rate limits (TPM): input not read from the cache (fresh + cache writes), and output */
+  inputTpm: number
+  outputTpm: number
   /** average over the last 5 min */
   tokensPerMin5: number
   /** output tokens per second over the last 5 min */
@@ -859,6 +893,105 @@ export interface TaskQueueState {
   node: string | null
 }
 
+/** A day of the overview's calendar */
+export interface CalendarDay {
+  t: number
+  tokens: number
+  cost: number
+  messages: number
+  sessions: number
+  /** the day's main models by cost, and its biggest projects */
+  models: { name: string; cost: number }[]
+  projects: { name: string; tokens: number }[]
+  first: number | null
+  last: number | null
+  /** hour of the day with the most tokens */
+  busiest: number | null
+}
+
+/** A session of today on the overview's timeline */
+export interface SessionSpan {
+  id: string
+  project: string
+  source: UsageSource
+  /** the model it spent most on */
+  model: string
+  start: number
+  end: number
+  tokens: number
+  cost: number
+  messages: number
+  /** tokens in each 10 minutes from its start */
+  bins: number[]
+}
+
+/** One model over a range, for the overview's model table */
+export interface ModelRow {
+  name: string
+  source: UsageSource
+  tokens: number
+  cost: number
+  messages: number
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+  /** questions it answered, and what they cost together */
+  prompts: number
+  promptCost: number
+}
+
+/** What the 22 cards of the 塔罗 page draw: each card is one picture of your usage */
+export interface TarotDeck {
+  source: SourceView
+  /** whose quota the quota cards draw (Claude in 全部) */
+  tool: UsageSource
+  at: number
+  /** the first day in the logs */
+  firstDay: number | null
+  /** the last 60 days, oldest first */
+  days: { day: number; tokens: number; output: number; cost: number }[]
+  today: { input: number; output: number; cacheWrite: number; cacheRead: number; hours: number[]; peak: { tokens: number; at: number } | null }
+  /** average tokens per hour of the day over the 14 days before today */
+  usualHours: number[]
+  /** the fastest minute in those 14 days */
+  record: number
+  tpm: number
+  /** Claude and Codex (全部), or the two most used models */
+  lovers: { a: { name: string; tokens: number }; b: { name: string; tokens: number } | null } | null
+  streak: number
+  bestStreak: number
+  /** the last 7 days between 22:00 and 05:00 */
+  night: { tokens: number; share: number }
+  five: { pct: number; end: number } | null
+  seven: { pct: number; start: number; end: number } | null
+  guardAt: number | null
+  /** the 5-hour windows of the open 7-day window */
+  wheel: { start: number; end: number; peak: number; current: boolean }[]
+  /** cost of the last 7 days and the 7 before */
+  week: { now: number; prev: number }
+  /** what the 5-hour windows of the last 7 days left unused, on average (percent) */
+  unused: { avg: number; n: number } | null
+  /** conversations that ended today, newest first */
+  ended: { project: string; tokens: number; end: number }[]
+  endedCount: number
+  /** today's costliest question against the average */
+  devil: { text: string; cost: number; avg: number; over3: number } | null
+  /** percent of the 7-day quota a full 5-hour window takes */
+  full: number | null
+  /** the 8 most used projects of the last 7 days */
+  projects: { name: string; tokens: number }[]
+  /** refresh tasks of the last 7 days, newest first */
+  tasks: { title: string; status: string; at: number }[]
+}
+
+export interface TitleCorner {
+  avg: number[]
+  lo: number[]
+  hi: number[]
+  opaque: number
+}
+
 export interface TelegramResult {
   ok: boolean
   error?: string
@@ -1049,6 +1182,19 @@ export interface Settings {
   pushRunaway: boolean
   /** answer /status, /pause … from the configured chat */
   telegramCommands: boolean
+  /** the button row under Telegram's input box: folds away after a tap, stays until folded, or none */
+  telegramKeyboard: 'fold' | 'keep' | 'off'
+  /** full-screen effects on celebrations and reactions to commands */
+  telegramEffects: boolean
+  /** the today card as an animation, animated quota alerts, replies that count up */
+  telegramAnimations: boolean
+  /** the evening report comes as a picture card */
+  telegramCardReport: boolean
+  /** a message pinned at the top of the chat that keeps the quota up to date */
+  telegramBoard: boolean
+  /** pushes arrive without a sound between these times ("HH:MM"); null = never */
+  telegramQuietFrom: string | null
+  telegramQuietTo: string | null
   /** daily report at reportTime ("HH:MM"); null = off */
   reportTime: string | null
   /** watch sessions for runaway token use */
@@ -1082,6 +1228,10 @@ export interface Settings {
   pushTasks: boolean
   /** also read Codex (GPT) session logs from ~/.codex */
   codexEnabled: boolean
+  /** read Codex's limits from the ChatGPT account every minute (TokenPulse's login, else Codex CLI's) */
+  codexUsageApi: boolean
+  /** look for a new release now and then, and download it in the background (installing waits for a click) */
+  autoUpdate: boolean
   /** which tool the app shows: Claude, Codex, or both together */
   sourceFilter: SourceView
   /** theme pack in use; the colours, backdrop and fonts it set can still be changed one by one */
@@ -1302,6 +1452,22 @@ export interface TokenPulseApi {
   getWindowHistory(days: number): Promise<WindowHistory>
   onWaste(cb: (w: WasteAlert) => void): () => void
   setThemeColors(colors: { bg: string; fg: string }): void
+  /** the pixels under the title-bar buttons: average, darkest tenth and brightest tenth (RGB), and the share that is opaque */
+  titleCorner(): Promise<TitleCorner | null>
+  getTarot(): Promise<TarotDeck>
+  getCalendar(): Promise<CalendarDay[]>
+  getTimeline(): Promise<SessionSpan[]>
+  getModelRows(range: RangeKey): Promise<ModelRow[]>
+  codexUsageState(): Promise<CodexUsageState>
+  codexSignIn(): Promise<{ ok: boolean; error?: string; email?: string | null }>
+  codexSignOut(): Promise<void>
+  codexUsageRefresh(): Promise<CodexUsageState>
+  onCodexUsage(cb: (s: CodexUsageState) => void): () => void
+  updateState(): Promise<UpdateState>
+  updateCheck(): Promise<UpdateState>
+  updateDownload(): Promise<UpdateState>
+  updateInstall(): Promise<boolean>
+  onAppUpdate(cb: (s: UpdateState) => void): () => void
   /** the refresh rate of the display the window is on (0 when unknown) */
   displayHz(): Promise<number>
   onUpdate(cb: (e: UpdateEvent) => void): () => void

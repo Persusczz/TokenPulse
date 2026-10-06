@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { fmtMoney, type MoneyOpts } from '@shared/format'
-import type { CodexQuota, GuardState, LoadState, PricingInfo, QuotaInfo, QuotaWindow, Settings, SourceView, UpdateEvent, UsageSource } from '@shared/types'
+import type { CodexQuota, GuardState, LoadState, PricingInfo, QuotaInfo, QuotaWindow, Settings, SourceView, UpdateEvent, UpdateState, UsageSource } from '@shared/types'
 import { setFrameCap } from './frames'
 
 const api = window.api
@@ -89,6 +89,16 @@ export function useApp(): AppState {
  * Fetches with `fetcher`, re-fetching when deps or the data version change,
  * and optionally on an interval. Keeps the previous value while loading.
  */
+/** updating from GitHub: the version, what was found, the download */
+export function useUpdate(): UpdateState | null {
+  const [u, setU] = useState<UpdateState | null>(null)
+  useEffect(() => {
+    void window.api.updateState().then(setU)
+    return window.api.onAppUpdate(setU)
+  }, [])
+  return u
+}
+
 export function useData<T>(fetcher: () => Promise<T>, deps: unknown[], intervalMs?: number): T | null {
   const { version } = useApp()
   const [data, setData] = useState<T | null>(null)

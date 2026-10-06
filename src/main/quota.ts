@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events'
-import { readFile, stat, writeFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import type { QuotaBurn, QuotaInfo, QuotaSource, QuotaWindow } from '@shared/types'
+import { writeFileAtomic } from './atomicFile'
 
 export const OAUTH_USAGE_URL = 'https://api.anthropic.com/api/oauth/usage'
 const HOUR = 3600_000
@@ -399,7 +400,7 @@ export class QuotaService extends EventEmitter {
       if (used > 0) {
         const est = used / (five.utilization / 100)
         this.calibUsd = this.calibUsd ? this.calibUsd * 0.7 + est * 0.3 : est
-        void writeFile(this.calibPath, JSON.stringify({ limitUsd: this.calibUsd, at: now }), 'utf8').catch(() => {})
+        void writeFileAtomic(this.calibPath, JSON.stringify({ limitUsd: this.calibUsd, at: now })).catch(() => {})
       }
     }
   }

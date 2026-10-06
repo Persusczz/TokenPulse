@@ -1,0 +1,171 @@
+/* ---------- 塔罗: 22 cards, each a picture of your usage ---------- */
+.tarot-mark {
+  color: #e8c98a;
+  text-shadow: 0 0 12px rgba(232, 201, 138, 0.6);
+}
+
+.deck-table {
+  position: relative;
+  padding: 24px 22px 20px;
+  overflow: hidden;
+}
+/* candle light over the table */
+.deck-table::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 60% 40% at 50% 20%, rgba(var(--accent-rgb), 0.12), transparent 70%),
+    radial-gradient(ellipse 50% 30% at 50% 100%, rgba(232, 201, 138, 0.08), transparent 70%);
+  pointer-events: none;
+}
+.deck-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 26px 20px;
+}
+.deck-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  animation: deck-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--i) * 35ms);
+}
+@keyframes deck-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) rotate(-2deg);
+  }
+}
+.deck-flip {
+  position: relative;
+  width: min(100%, 190px);
+  aspect-ratio: 200 / 340;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  perspective: 1100px;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.deck-flip:hover {
+  transform: translateY(-6px) scale(1.03);
+}
+.deck-inner {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform 0.8s cubic-bezier(0.2, 0.85, 0.25, 1);
+}
+.deck-card.back .deck-inner {
+  transform: rotateY(180deg);
+}
+.deck-face {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: 12px;
+  backface-visibility: hidden;
+  box-shadow:
+    0 14px 30px rgba(0, 0, 0, 0.42),
+    0 0 22px color-mix(in srgb, var(--hue) 32%, transparent);
+}
+.deck-front svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  contain: layout style;
+}
+/* the back: the numbers, on the card's own dark */
+.deck-back {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 14px;
+  transform: rotateY(180deg);
+  background:
+    radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--hue) 30%, transparent), transparent 70%),
+    linear-gradient(#0b0c18, #07080f);
+  border: 1px solid color-mix(in srgb, var(--hue) 50%, transparent);
+  color: #f4ecd2;
+  text-align: left;
+}
+.deck-back-head {
+  font-family: 'KaiTi', 'STKaiti', var(--serif);
+  font-size: 19px;
+  color: #f4d995;
+}
+.deck-back-head b {
+  margin-right: 4px;
+  font-family: 'Times New Roman', Georgia, serif;
+  font-size: 14px;
+  font-weight: 400;
+}
+.deck-back-draws {
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(244, 217, 149, 0.25);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: rgba(244, 236, 210, 0.65);
+}
+.deck-back-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  overflow: hidden;
+  font-size: 12.5px;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+}
+/* a glint crosses the card on hover */
+.deck-sheen {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: 12px;
+  pointer-events: none;
+}
+.deck-sheen::before {
+  content: '';
+  position: absolute;
+  top: -20%;
+  bottom: -20%;
+  left: -60%;
+  width: 40%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transform: translateX(0) skewX(-12deg);
+  transition: transform 0.9s ease;
+}
+.deck-flip:hover .deck-sheen::before {
+  transform: translateX(420%) skewX(-12deg);
+}
+.deck-caption {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  max-width: 200px;
+  text-align: center;
+}
+.deck-caption b {
+  font-family: 'KaiTi', 'STKaiti', var(--serif);
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--text);
+}
+.deck-caption span {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-3);
+}
+:root[data-motion='off'] .deck-card {
+  animation: none;
+}
+:root[data-motion='off'] .deck-inner {
+  transition: none;
+}

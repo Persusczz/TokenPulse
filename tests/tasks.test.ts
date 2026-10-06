@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { claudeArgs, cleanEnv, computeNotBefore, nextDue, parseStreamLine, RESET_GRACE_MS, TaskService, type WindowInfo } from '../src/main/tasks'
 import type { ScheduledTask } from '../src/shared/types'
 
@@ -91,7 +91,8 @@ describe('task runner', () => {
     expect(r.sessionId).toMatch(/^[0-9a-f-]{36}$/)
     const log = await svc.log(t.id)
     expect(log.map((l) => l.kind)).toEqual(['system', 'text', 'tool', 'result'])
-    expect(JSON.parse(readFileSync(join(dir, 'tasks.json'), 'utf8'))[0].status).toBe('done')
+    // saved in the background, whole: wait for it to land
+    await vi.waitFor(() => expect(JSON.parse(readFileSync(join(dir, 'tasks.json'), 'utf8'))[0].status).toBe('done'))
   })
 
   it('reports failures and can stop a running task', async () => {

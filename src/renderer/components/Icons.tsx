@@ -53,6 +53,13 @@ export const IconMoon = (p: SVGProps<SVGSVGElement>) => (
     <path d="M17 3.5v3M15.5 5h3" />
   </svg>
 )
+export const IconTarot = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <rect x="5" y="3" width="12" height="17" rx="2" transform="rotate(-8 11 11.5)" />
+    <path d="M14.5 4.2 19 5.5a1.6 1.6 0 0 1 1.1 2l-3.7 12.6" />
+    <path d="m11 8.5.9 1.9 2 .3-1.5 1.4.4 2-1.8-1-1.8 1 .4-2-1.5-1.4 2-.3Z" />
+  </svg>
+)
 export const IconRefresh = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base({ width: 15, height: 15, ...p })}>
     <path d="M21 12a9 9 0 1 1-2.6-6.4" />
