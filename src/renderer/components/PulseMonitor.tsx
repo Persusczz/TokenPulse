@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { Intensity } from '@shared/types'
 import { cssVar, useMotionLevel } from '../state'
+import { onFrame } from '../frames'
 
 /** one heartbeat (P, QRS, T), as offsets from the baseline in units of the R height, one value per pixel */
 function beatShape(): number[] {
@@ -149,7 +150,6 @@ export function PulseMonitor({
       draw()
       return () => ro.disconnect()
     }
-    let raf = 0
     let last = performance.now()
     let acc = 0
     const tick = (now: number) => {
@@ -172,11 +172,10 @@ export function PulseMonitor({
         head = (head + 1) % w
       }
       draw()
-      raf = requestAnimationFrame(tick)
     }
-    raf = requestAnimationFrame(tick)
+    const stop = onFrame(60, (_dt, now) => tick(now), 'monitor')
     return () => {
-      cancelAnimationFrame(raf)
+      stop()
       ro.disconnect()
     }
   }, [level])

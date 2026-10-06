@@ -96,6 +96,8 @@ const DEFS: Def[] = [
   { id: 'shichen', title: '十二时辰', desc: '子丑寅卯辰巳午未申酉戌亥，每个时辰都留下过用量', icon: '☯', group: 'collect', tier: 2 },
   { id: 'two-tools', title: '双剑合璧', desc: 'Claude Code 和 Codex 都用过', icon: '⚔', group: 'collect', tier: 1 },
   { id: 'packs-8', title: '换装达人', desc: '试过 8 个主题包', icon: '❋', group: 'collect', tier: 2 },
+  { id: 'packs-16', title: '衣橱满载', desc: '试过 16 个主题包', icon: '❖', group: 'collect', tier: 3 },
+  { id: 'worlds', title: '穿越者', desc: '去过诡秘世界、赛博朋克和云海仙山三个幻境', icon: '⟁', group: 'collect', tier: 2 },
   { id: 'seasons', title: '四季轮回', desc: '春夏秋冬，四个季节都用过', icon: '❀', group: 'collect', tier: 3 },
   // moments: secrets until they happen
   { id: 'midnight', title: '午夜钟声', desc: '在 0:00 整的那一分钟收到一次响应', icon: '♫', group: 'time', tier: 2, hidden: true },
@@ -149,6 +151,9 @@ const bits = (n: number) => {
  * the condition was first met (entries must be sorted by time); locked badges
  * carry progress toward it.
  */
+/** the three fantasy-world packs */
+const WORLDS = ['mystic', 'cyber', 'xianxia']
+
 export function computeAchievements(entries: CostedEntry[], counters: Counters = {}, extra: AchievementExtra = {}): Achievement[] {
   const dayTokens = new Map<string, number>()
   const dayCost = new Map<string, number>()
@@ -415,7 +420,11 @@ export function computeAchievements(entries: CostedEntry[], counters: Counters =
 
   // packs tried
   const packs = extra.packs ?? []
-  if (packs.length >= 8) hit('packs-8', [...packs].sort((a, b) => a.at - b.at)[7].at)
+  const tried = [...packs].sort((a, b) => a.at - b.at)
+  if (tried.length >= 8) hit('packs-8', tried[7].at)
+  if (tried.length >= 16) hit('packs-16', tried[15].at)
+  const worlds = tried.filter((p) => WORLDS.includes(p.key))
+  if (worlds.length >= WORLDS.length) hit('worlds', worlds[WORLDS.length - 1].at)
 
   // TokenPulse's own events
   const count = (k: keyof Counters) => counters[k]?.n ?? 0
@@ -508,6 +517,8 @@ export function computeAchievements(entries: CostedEntry[], counters: Counters =
     shichen: [seen.shichen.size / 12, `已集 ${seen.shichen.size} / 12 个时辰`],
     'two-tools': [seen.tools.size / 2, `已用 ${seen.tools.size} / 2 个`],
     'packs-8': [packs.length / 8, `已试 ${packs.length} / 8 个`],
+    'packs-16': [packs.length / 16, `已试 ${packs.length} / 16 个`],
+    worlds: [worlds.length / WORLDS.length, `已去 ${worlds.length} / ${WORLDS.length} 个`],
     seasons: [seen.seasons.size / 4, `已集 ${seen.seasons.size} / 4 季`],
     midnight: [0, '？？？'],
     palindrome: [0, '？？？'],

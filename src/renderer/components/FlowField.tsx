@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { Intensity } from '@shared/types'
 import type { MotionScale } from '../state'
+import { onFrame } from '../frames'
 
 const VERT = `attribute vec2 p; void main() { gl_Position = vec4(p, 0.0, 1.0); }`
 
@@ -49,7 +50,7 @@ const rgb = (hex: string): [number, number, number] => {
 }
 /** canvas resolution relative to the window: the picture is soft anyway */
 const RES = 0.5
-const FRAME_MS = 33
+const FPS = 30
 
 /**
  * Flowing light behind the window, drawn by a fragment shader at half
@@ -139,21 +140,16 @@ export function FlowField({
     resize()
     if (!level) return () => ro.disconnect()
 
-    let raf = 0
-    let last = performance.now()
-    let drawn = 0
-    const tick = (now: number) => {
-      raf = requestAnimationFrame(tick)
-      if (now - drawn < FRAME_MS) return
-      const dt = Math.min(0.1, (now - last) / 1000)
-      last = now
-      drawn = now
-      time += dt * (0.55 + s.intensity * 0.45) * (level >= 3 ? 1.3 : level === 1 ? 0.6 : 1)
-      s.draw()
-    }
-    raf = requestAnimationFrame(tick)
+    const stop = onFrame(
+      FPS,
+      (dt) => {
+        time += dt * (0.55 + s.intensity * 0.45) * (level >= 3 ? 1.3 : level === 1 ? 0.6 : 1)
+        s.draw()
+      },
+      'flow'
+    )
     return () => {
-      cancelAnimationFrame(raf)
+      stop()
       ro.disconnect()
     }
   }, [level, pixelScale])

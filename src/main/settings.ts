@@ -35,7 +35,13 @@ const BACKDROPS: BackdropStyle[] = [
   'fireworks',
   'lantern',
   'bauhaus',
-  'daylight'
+  'daylight',
+  'mystic',
+  'cyber',
+  'xianxia',
+  'koi',
+  'ukiyo',
+  'pixel'
 ]
 const PACKS: ThemePack[] = [
   'none',
@@ -61,7 +67,13 @@ const PACKS: ThemePack[] = [
   'borealis',
   'ink',
   'abyss',
-  'daylight'
+  'daylight',
+  'mystic',
+  'cyber',
+  'xianxia',
+  'koi',
+  'ukiyo',
+  'pixel'
 ]
 const PERMISSIONS = ['inherit', 'auto', 'acceptEdits', 'bypassPermissions', 'plan'] as const
 /** context warning lines offered, thousand tokens */
@@ -86,6 +98,8 @@ export const DEFAULT_SETTINGS: Settings = {
   guardPauseAt: 90,
   archiveEnabled: true,
   motion: 'standard',
+  frameCap: 'auto',
+  fpsMeter: false,
   accent: 'clay',
   backdrop: 'flow',
   adaptiveBackdrop: true,
@@ -208,6 +222,8 @@ export function sanitize(raw: any, base: Settings): Settings {
   if (Number.isFinite(raw.guardPauseAt)) s.guardPauseAt = Math.round(Math.min(99, Math.max(50, raw.guardPauseAt)))
   if (typeof raw.archiveEnabled === 'boolean') s.archiveEnabled = raw.archiveEnabled
   if (oneOf(raw.motion, MOTIONS)) s.motion = raw.motion
+  if (oneOf(raw.frameCap, ['auto', '30', '60', 'max'])) s.frameCap = raw.frameCap
+  if (typeof raw.fpsMeter === 'boolean') s.fpsMeter = raw.fpsMeter
   if (oneOf(raw.accent, ACCENT_KEYS)) s.accent = raw.accent
   if (oneOf(raw.backdrop, BACKDROPS)) s.backdrop = raw.backdrop
   if (typeof raw.adaptiveBackdrop === 'boolean') s.adaptiveBackdrop = raw.adaptiveBackdrop

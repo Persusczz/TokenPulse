@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { PromptCost, StarMap as StarMapData } from '@shared/types'
 import { useMotionLevel } from '../state'
+import { onFrame } from '../frames'
 
 /**
  * The star map: every prompt of the last days is a star. Across: the days,
@@ -76,8 +77,6 @@ export function StarMapCanvas(props: StarMapProps) {
     let sweptDays = 0
     const falling = new Map<string, { t0: number; fx: number; fy: number }>()
     let t0 = performance.now()
-    let raf = 0
-    let last = 0
 
     const layout = () => {
       const m = live.current.map
@@ -387,12 +386,7 @@ export function StarMapCanvas(props: StarMapProps) {
       }
     }
 
-    const loop = (now: number) => {
-      raf = requestAnimationFrame(loop)
-      if (now - last < 32) return
-      last = now
-      draw(now)
-    }
+    const loop = (now: number) => draw(now)
     const ro = new ResizeObserver(() => {
       layout()
       draw(performance.now())
@@ -401,7 +395,7 @@ export function StarMapCanvas(props: StarMapProps) {
     layout()
     draw(performance.now())
     redraw.current = () => draw(performance.now())
-    if (level) raf = requestAnimationFrame(loop)
+    const stop = level ? onFrame(30, (_dt, now) => loop(now), 'sky') : null
 
     const rect = () => canvas.getBoundingClientRect()
     const move = (e: MouseEvent) => {
@@ -429,7 +423,7 @@ export function StarMapCanvas(props: StarMapProps) {
     canvas.addEventListener('mouseleave', leave)
     canvas.addEventListener('click', click)
     return () => {
-      cancelAnimationFrame(raf)
+      stop?.()
       ro.disconnect()
       canvas.removeEventListener('mousemove', move)
       canvas.removeEventListener('mouseleave', leave)

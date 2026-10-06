@@ -323,11 +323,18 @@
   stroke-width: 2.5;
   filter: drop-shadow(0 0 6px var(--accent));
 }
+.race-plot {
+  position: relative;
+}
 .race-pulse {
-  fill: var(--accent);
+  position: absolute;
+  width: calc(22 / 640 * 100%);
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  border-radius: 50%;
+  background: var(--accent);
   opacity: 0;
-  transform-box: fill-box;
-  transform-origin: center;
+  pointer-events: none;
   animation: race-pulse 2s ease-out infinite;
 }
 @keyframes race-pulse {

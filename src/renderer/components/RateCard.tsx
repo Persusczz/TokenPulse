@@ -3,6 +3,7 @@ import { fmtTokens } from '@shared/format'
 import type { QuotaInfo, QuotaWindow, RateStats } from '@shared/types'
 import { clock, cssVar, useApp, useData, usePrefersReducedMotion, useSource } from '../state'
 import { AnimatedNumber } from './Numbers'
+import { onFrame } from '../frames'
 
 /** Gauge geometry: a 270° ring opening downwards */
 const C = 110
@@ -39,8 +40,10 @@ function RingGauge({ value, scale }: { value: number; scale: number }) {
   const ticks = Array.from({ length: 28 }, (_, i) => i / 27)
   // a full turn every 14 s when idle, every 1.6 s flat out
   const spin = value > 0 ? 14 - 12.4 * Math.sqrt(ratio) : 0
+  const head = START + SWEEP * ratio
   return (
-    <svg className="ring-gauge" viewBox="0 0 220 220" role="img" aria-label={`当前速率 ${fmtTokens(value)} tokens/分钟，满刻度 ${fmtTokens(scale)}`} style={{ ['--spin' as string]: `${spin.toFixed(2)}s` }}>
+    <>
+    <svg className="ring-gauge" viewBox="0 0 220 220" role="img" aria-label={`当前速率 ${fmtTokens(value)} tokens/分钟，满刻度 ${fmtTokens(scale)}`}>
       <defs>
         {/* mapped to the dial, not to the arc, so a short arc stays green */}
         <linearGradient id="rg-fill" gradientUnits="userSpaceOnUse" x1={C - R} y1={C + R * 0.7} x2={C + R} y2={C + R * 0.7}>
@@ -70,10 +73,7 @@ function RingGauge({ value, scale }: { value: number; scale: number }) {
       {/* the fill is one dash as long as the reading; an empty dash would still leave a round cap, so it fades out at zero */}
       <path d={arc(START, START + SWEEP)} className="rg-value glow" stroke="url(#rg-fill)" pathLength={1} strokeDasharray={`${Math.max(0.0001, ratio)} 2`} filter="url(#rg-glow)" style={{ opacity: ratio > 0.002 ? 0.55 : 0 }} />
       <path d={arc(START, START + SWEEP)} className="rg-value" stroke="url(#rg-fill)" pathLength={1} strokeDasharray={`${Math.max(0.0001, ratio)} 2`} style={{ opacity: ratio > 0.002 ? 1 : 0 }} />
-      {/* the inner ring of light: dashes that spin with the flow */}
-      <circle cx={C} cy={C} r={R - 22} className={`rg-spin${value > 0 ? ' on' : ''}`} style={{ stroke: zone.color }} />
-      <g className="rg-head" style={{ transform: `rotate(${(START + SWEEP * ratio).toFixed(2)}deg)` }}>
-        <circle cx={C + R} cy={C} r="11" className="rg-halo" style={{ fill: zone.color }} />
+      <g className="rg-head" style={{ transform: `rotate(${head.toFixed(2)}deg)` }}>
         <circle cx={C + R} cy={C} r="5.5" className="rg-dot" />
       </g>
       {[0, 0.5, 1].map((t) => {
@@ -85,6 +85,16 @@ function RingGauge({ value, scale }: { value: number; scale: number }) {
         )
       })}
     </svg>
+    {/* the inner ring of light, dashes that spin with the flow, and the head's pulsing halo: layers of their own, so they turn without redrawing the dial */}
+    <span className={`rg-spin-layer${value > 0 ? ' on' : ''}`} style={{ ['--spin' as string]: `${spin.toFixed(2)}s` }} aria-hidden>
+      <svg viewBox="0 0 220 220">
+        <circle cx={C} cy={C} r={R - 22} className="rg-ring" style={{ stroke: zone.color }} />
+      </svg>
+    </span>
+    <span className="rg-head-layer" style={{ transform: `rotate(${head.toFixed(2)}deg)` }} aria-hidden>
+      <i className="rg-glow" style={{ background: zone.color, left: `${((C + R) / 220) * 100}%`, top: `${(C / 220) * 100}%` }} />
+    </span>
+    </>
   )
 }
 
@@ -302,17 +312,9 @@ function PulseLine({ rate, pulse, theme }: { rate: RateStats; pulse: number; the
       s.draw()
       return () => ro.disconnect()
     }
-    let raf = 0
-    let last = 0
-    const loop = (now: number) => {
-      raf = requestAnimationFrame(loop)
-      if (now - last < 30) return
-      last = now
-      s.draw()
-    }
-    raf = requestAnimationFrame(loop)
+    const stop = onFrame(30, () => s.draw(), 'pulse')
     return () => {
-      cancelAnimationFrame(raf)
+      stop()
       ro.disconnect()
     }
   }, [reduced, theme])

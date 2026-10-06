@@ -7,6 +7,7 @@ import { Celebration, LightFx, SideCounter, TokenFx } from './components/Fx'
 import { IconMoon, IconOverview, IconPrice, IconSessions, IconSettings, IconTasks, IconTrophy } from './components/Icons'
 import { CommandPalette } from './components/CommandPalette'
 import { DayClock, useDayPalette } from './components/DayCycle'
+import { FpsMeter } from './components/FpsMeter'
 import { SideEmblem } from './components/Emblem'
 import { SoundEffects } from './components/SoundEffects'
 import { Toasts } from './components/Toasts'
@@ -23,7 +24,7 @@ import { SETTINGS_GROUPS, SettingsPage, useSettingsGroups, type SettingsGroupId 
 import { Stage } from './pages/Stage'
 import { TasksPage } from './pages/Tasks'
 import { Wallpaper } from './pages/Wallpaper'
-import { AppProvider, cssVar, finishIntro, TOOL_NAME, useApp, useData, useHtmlFlags, useMotionLevel, useNow, usePaintKey, useResolvedTheme, useSource } from './state'
+import { AppProvider, cssVar, finishIntro, hexColor, TOOL_NAME, useApp, useData, useHtmlFlags, useMotionLevel, useNow, usePaintKey, useResolvedTheme, useSource } from './state'
 
 type Page = 'overview' | 'tasks' | 'sessions' | 'achievements' | 'sky' | 'pricing' | 'settings'
 
@@ -54,6 +55,72 @@ function LiveStatus() {
       {ago !== null && <span>最近活动：{ago < 1 ? '刚刚' : ago < 60 ? `${ago} 分钟前` : new Date(last!).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>}
     </>
   )
+}
+
+const lum = ([r, g, b]: number[]) => {
+  const c = [r, g, b].map((v) => (v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+}
+const rgbOfHex = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16))
+
+/** what shows under the title-bar buttons: the page colour with the backdrop's canvases over it, averaged */
+function cornerColor(bg: string): number[] {
+  const sc = document.createElement('canvas')
+  sc.width = 16
+  sc.height = 4
+  const g = sc.getContext('2d', { willReadFrequently: true })!
+  g.fillStyle = bg
+  g.fillRect(0, 0, 16, 4)
+  for (const c of document.querySelectorAll<HTMLCanvasElement>('.backdrop canvas')) {
+    const r = c.getBoundingClientRect()
+    if (!r.width || !r.height || !c.width) continue
+    const kx = c.width / r.width
+    const ky = c.height / r.height
+    const x = Math.max(0, (innerWidth - 150 - r.left) * kx)
+    const w = Math.min(c.width - x, 150 * kx)
+    const h = Math.min(c.height, (44 - r.top) * ky)
+    if (w <= 0 || h <= 0) continue
+    g.globalAlpha = Number(getComputedStyle(c).opacity) || 1
+    try {
+      g.drawImage(c, x, Math.max(0, -r.top * ky), w, h, 0, 0, 16, 4)
+    } catch {
+      /* not drawable */
+    }
+  }
+  const d = g.getImageData(0, 0, 16, 4).data
+  const sum = [0, 0, 0]
+  for (let i = 0; i < d.length; i += 4) for (let k = 0; k < 3; k++) sum[k] += d[i + k]
+  return sum.map((v) => v / (d.length / 4))
+}
+
+/**
+ * The native title-bar buttons: always transparent, so the page and the
+ * pack's scene run on under them, with symbols that read on what is there:
+ * the pack's own text colour where it stands out, else near-white or
+ * near-black. Looked at again now and then (the 昼夜 sky changes all day).
+ */
+function useTitleButtons(deps: unknown[]): void {
+  const sent = useRef('')
+  useEffect(() => {
+    const check = () => {
+      const bg = hexColor(cssVar('--bg'))
+      const under = lum(cornerColor(bg))
+      const own = hexColor(cssVar('--text-2'))
+      const a = lum(rgbOfHex(own))
+      const contrast = (Math.max(a, under) + 0.05) / (Math.min(a, under) + 0.05)
+      const fg = contrast >= 3 ? own : under > 0.3 ? '#2b2a26' : '#f3f1ea'
+      if (sent.current === bg + fg) return
+      sent.current = bg + fg
+      window.api.setThemeColors({ bg, fg })
+    }
+    // once the new look has painted, then every few seconds
+    const first = setTimeout(check, 1200)
+    const every = setInterval(check, 8000)
+    return () => {
+      clearTimeout(first)
+      clearInterval(every)
+    }
+  }, deps) // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 function storedGroup(): SettingsGroupId {
@@ -147,10 +214,7 @@ function Shell() {
     document.querySelector('.main')?.scrollTo(0, 0)
   }
 
-  // keep the native title-bar buttons in step with the theme
-  useEffect(() => {
-    window.api.setThemeColors({ bg: cssVar('--bg'), fg: cssVar('--text-2') })
-  }, [theme])
+  useTitleButtons([theme, settings?.themePack, settings?.backdrop, settings?.accent])
 
   useEffect(() => installEffects(), [])
 
@@ -239,6 +303,7 @@ function Shell() {
         </AnimatePresence>
       </main>
       <SceneTransition style={style} level={level} />
+      {settings?.fpsMeter && <FpsMeter />}
       <CommandPalette pages={NAV} />
       <Toasts />
       <SoundEffects />

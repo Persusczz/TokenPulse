@@ -1,6 +1,7 @@
 import { useEffect, useRef, type RefObject } from 'react'
 import type { Intensity } from '@shared/types'
 import type { MotionScale } from '../state'
+import { onFrame, onQuality, sceneScale } from '../frames'
 
 /** What a scene reads every frame (kept in a ref so props never restart the loop) */
 export interface Live {
@@ -28,33 +29,30 @@ export function useScene(ref: RefObject<HTMLCanvasElement | null>, level: Motion
     const scene = make()
     let w = 0
     let h = 0
+    // a new size lays the scene out again; a new resolution (the frame clock easing off) only redraws it
     const resize = () => {
-      const dpr = (window.devicePixelRatio || 1) * res
-      w = canvas.clientWidth
-      h = canvas.clientHeight
-      canvas.width = Math.max(1, Math.round(w * dpr))
-      canvas.height = Math.max(1, Math.round(h * dpr))
+      const dpr = (window.devicePixelRatio || 1) * res * sceneScale()
+      const nw = canvas.clientWidth
+      const nh = canvas.clientHeight
+      canvas.width = Math.max(1, Math.round(nw * dpr))
+      canvas.height = Math.max(1, Math.round(nh * dpr))
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      scene.init(w, h)
+      if (nw !== w || nh !== h) {
+        w = nw
+        h = nh
+        scene.init(w, h)
+      }
       scene.draw(ctx, w, h, 0, live.current!)
     }
     const ro = new ResizeObserver(resize)
     ro.observe(canvas)
     resize()
-    let raf = 0
-    let last = performance.now()
-    if (level > 0) {
-      const tick = (now: number) => {
-        raf = requestAnimationFrame(tick)
-        if (now - last < 1000 / fps - 2) return
-        const dt = Math.min(0.08, (now - last) / 1000) * (level >= 3 ? 1.25 : level === 1 ? 0.6 : 1)
-        last = now
-        scene.draw(ctx, w, h, dt, live.current!)
-      }
-      raf = requestAnimationFrame(tick)
-    }
+    const offQuality = onQuality(resize)
+    const speed = level >= 3 ? 1.25 : level === 1 ? 0.6 : 1
+    const stop = level > 0 ? onFrame(fps, (dt) => scene.draw(ctx, w, h, Math.min(0.08, dt) * speed, live.current!), 'scene') : null
     return () => {
-      cancelAnimationFrame(raf)
+      stop?.()
+      offQuality()
       ro.disconnect()
     }
   }, [level, res]) // eslint-disable-line react-hooks/exhaustive-deps

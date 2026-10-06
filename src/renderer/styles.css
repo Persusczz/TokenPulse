@@ -185,7 +185,13 @@ select {
 .shell {
   display: grid;
   grid-template-columns: 216px 1fr;
+  /* one row exactly the window's height: a long sidebar (the settings tree open) scrolls its nav instead of stretching the page past the window's bottom */
+  grid-template-rows: minmax(0, 1fr);
   height: 100%;
+}
+.shell > .side,
+.shell > .main {
+  min-height: 0;
 }
 
 .side {
@@ -696,10 +702,24 @@ select {
   box-shadow: 0 0 14px rgba(var(--accent-rgb), 0.25);
 }
 .intensity.l3 {
+  position: relative;
   background: rgba(208, 59, 59, 0.14);
   color: var(--critical);
+  box-shadow: 0 0 6px rgba(208, 59, 59, 0.15);
+}
+.intensity.l3::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
   box-shadow: 0 0 22px rgba(208, 59, 59, 0.35);
-  animation: throb 1.2s ease-in-out infinite;
+  pointer-events: none;
+  animation: throb-glow 1.2s ease-in-out infinite;
+}
+@keyframes throb-glow {
+  50% {
+    opacity: 0;
+  }
 }
 @keyframes throb {
   50% {
@@ -1222,11 +1242,22 @@ html.mini-root #root {
 }
 .mini.lv3 {
   border-color: rgba(208, 59, 59, 0.6);
+}
+/* the burning glow breathes as an opacity, so it never repaints the panel */
+.mini.lv3::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  box-shadow: inset 0 0 22px rgba(208, 59, 59, 0.28);
+  pointer-events: none;
+  opacity: 0;
   animation: mini-burn 1.6s ease-in-out infinite;
 }
 @keyframes mini-burn {
   50% {
-    box-shadow: inset 0 0 22px rgba(208, 59, 59, 0.28), 0 3px 6px rgba(20, 20, 19, 0.14);
+    opacity: 1;
   }
 }
 .mini.alert {
@@ -1731,17 +1762,30 @@ svg.ring-gauge {
   fill: var(--text-3);
   font: 500 10.5px var(--sans);
 }
-.rg-spin {
+/* the inner ring of light and the head's halo turn as layers of their own over the dial (RateCard.tsx) */
+.rg-spin-layer,
+.rg-head-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.rg-spin-layer svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.rg-ring {
   fill: none;
   stroke-width: 2;
   stroke-dasharray: 2 9;
   stroke-linecap: round;
   opacity: 0.25;
-  transform-origin: 110px 110px;
-  transform-box: view-box;
 }
-.rg-spin.on {
+.rg-spin-layer.on .rg-ring {
   opacity: 0.75;
+}
+.rg-spin-layer.on {
   animation: rg-spin var(--spin, 8s) linear infinite;
 }
 @keyframes rg-spin {
@@ -1754,10 +1798,16 @@ svg.ring-gauge {
   transform-box: view-box;
   transition: transform 900ms cubic-bezier(0.16, 1, 0.3, 1);
 }
-.rg-halo {
+.rg-head-layer {
+  transition: transform 900ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.rg-glow {
+  position: absolute;
+  width: 10%;
+  height: 10%;
+  margin: -5% 0 0 -5%;
+  border-radius: 50%;
   opacity: 0.35;
-  transform-origin: 194px 110px;
-  transform-box: view-box;
   animation: rg-halo 1.8s ease-in-out infinite;
 }
 .rg-dot {
@@ -2485,28 +2535,44 @@ svg.rt-spark {
 .flow-border {
   box-shadow: var(--shadow), 0 0 26px -8px rgba(var(--accent-rgb), 0.55);
 }
-.flow-border::before {
+/*
+ * The light running round the border (FlowRing in Fx.tsx): a ring-shaped
+ * mask over an oversized conic gradient that turns as a layer of its own,
+ * so it never has to be painted again while it runs.
+ */
+.flow-ring {
   --fb1: var(--accent);
   --fb2: var(--accent-hi);
-  content: '';
   position: absolute;
   inset: 0;
   z-index: 2;
   padding: 2px;
   border-radius: inherit;
+  overflow: hidden;
   pointer-events: none;
-  background: conic-gradient(from var(--ang), transparent 0deg, var(--fb1) 50deg, transparent 110deg, transparent 180deg, var(--fb2) 230deg, transparent 290deg);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
-  animation: border-spin 3.6s linear infinite;
+}
+.flow-ring i {
+  position: absolute;
+  inset: -100%;
+  background: conic-gradient(transparent 0deg, var(--fb1) 50deg, transparent 110deg, transparent 180deg, var(--fb2) 230deg, transparent 290deg);
+  animation: flow-ring 3.6s linear infinite;
+}
+@keyframes flow-ring {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .flow-border.alarm {
   box-shadow: var(--shadow), 0 0 26px -8px rgba(208, 59, 59, 0.6);
 }
-.flow-border.alarm::before {
+.flow-border.alarm > .flow-ring {
   --fb1: var(--critical);
   --fb2: #ff8a6b;
+}
+.flow-border.alarm > .flow-ring i {
   animation-duration: 2.2s;
 }
 @keyframes border-spin {
@@ -4467,6 +4533,7 @@ kbd {
 .milestone-bar i {
   position: absolute;
   inset: 0 auto 0 0;
+  overflow: hidden;
   border-radius: inherit;
   background: linear-gradient(90deg, var(--accent-strong), var(--accent), var(--accent-hi));
   box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.6);
@@ -4475,18 +4542,17 @@ kbd {
 .milestone-bar i::after {
   content: '';
   position: absolute;
-  inset: 0;
+  inset: 0 auto 0 0;
+  width: 40%;
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
-  background-size: 40% 100%;
-  background-repeat: no-repeat;
   animation: bar-shine 2.4s ease-in-out infinite;
 }
 @keyframes bar-shine {
   from {
-    background-position: -60% 0;
+    transform: translateX(-90%);
   }
   to {
-    background-position: 160% 0;
+    transform: translateX(240%);
   }
 }
 

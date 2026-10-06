@@ -19,9 +19,19 @@ interface Logged {
   samples: { t: number; pct: number }[]
 }
 
-/** Claude's official 5h readings, kept per window (window-history.json in the profile) */
+/** the highest reading of one weekly window */
+export interface LoggedWeek {
+  end: number
+  peak: number
+}
+const WEEK_KEEP_MS = 120 * DAY
+/** a weekly reset time read twice can differ by a few minutes */
+const SAME_WEEK_MS = HOUR
+
+/** Claude's official 5h readings, kept per window, and the 7-day windows' peaks (window-history.json in the profile) */
 export class ClaudeWindowLog {
   windows: Logged[] = []
+  weeks: LoggedWeek[] = []
   private timer: NodeJS.Timeout | null = null
 
   constructor(private path: string) {}
@@ -32,6 +42,7 @@ export class ClaudeWindowLog {
       if (Array.isArray(j?.windows)) {
         this.windows = j.windows.filter((w: any) => Number.isFinite(w?.end) && Number.isFinite(w?.peak) && Array.isArray(w?.samples))
       }
+      if (Array.isArray(j?.weeks)) this.weeks = j.weeks.filter((w: any) => Number.isFinite(w?.end) && Number.isFinite(w?.peak))
     } catch {
       /* first run */
     }
@@ -57,10 +68,32 @@ export class ClaudeWindowLog {
     return true
   }
 
+  /** Adds a 7-day reading; true when something changed */
+  recordWeek(pct: number, resetsAt: number, t: number): boolean {
+    if (!Number.isFinite(pct) || !(resetsAt > 0) || t > resetsAt) return false
+    this.weeks = this.weeks.filter((x) => t - x.end < WEEK_KEEP_MS)
+    const changed = noteWeek(this.weeks, pct, resetsAt)
+    if (changed) this.save()
+    return changed
+  }
+
   private save(): void {
     if (this.timer) clearTimeout(this.timer)
-    this.timer = setTimeout(() => void writeFile(this.path, JSON.stringify({ windows: this.windows }), 'utf8').catch(() => {}), 2000)
+    this.timer = setTimeout(() => void writeFile(this.path, JSON.stringify({ windows: this.windows, weeks: this.weeks }), 'utf8').catch(() => {}), 2000)
   }
+}
+
+/** a weekly reading into its window (found by its reset time), keeping the peak; true when something changed */
+export function noteWeek(weeks: LoggedWeek[], pct: number, end: number): boolean {
+  const w = weeks.find((x) => Math.abs(x.end - end) < SAME_WEEK_MS)
+  if (!w) {
+    weeks.push({ end, peak: pct })
+    weeks.sort((a, b) => a.end - b.end)
+    return true
+  }
+  if (pct <= w.peak) return false
+  w.peak = pct
+  return true
 }
 
 /** Keeps the first, the last and the biggest steps */

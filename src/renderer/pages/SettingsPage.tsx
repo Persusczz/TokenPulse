@@ -4,8 +4,9 @@ import { ACCENT_KEYS, ACCENTS, type AccentKey } from '@shared/accents'
 import { toCurrency } from '@shared/format'
 import { HOTKEYS, hotkeyLabel, type Hotkey, type HotkeyStatus } from '@shared/hotkeys'
 import { PACK_KEYS, PACKS } from '@shared/packs'
-import type { BackdropStyle, MiniMode, MotionLevel, QuotaSource, Settings, SourceView, TaskPermission, TaskQueueState, ThemePack, ThemeSetting, WindowMaterial } from '@shared/types'
+import type { BackdropStyle, FrameCap, MiniMode, MotionLevel, QuotaSource, Settings, SourceView, TaskPermission, TaskQueueState, ThemePack, ThemeSetting, WindowMaterial } from '@shared/types'
 import { CompactPicker } from '../components/CompactPicker'
+import { ScenePreview, useLivePreview } from '../components/ScenePreview'
 import { IconClose } from '../components/Icons'
 import { Segmented } from '../components/Segmented'
 import { CITIES, placeOf, sunTimes, type Place } from '@shared/astro'
@@ -82,6 +83,12 @@ const MOTIONS: { value: MotionLevel; label: string; desc: string }[] = [
   { value: 'standard', label: '标准', desc: '滴管水滴、涟漪、点击火花、心电图、流光边框、卡片光斑和入场动画' },
   { value: 'rich', label: '华丽', desc: '在标准之上更多水滴与火花，背景流得更快，卡片随鼠标 3D 倾斜' }
 ]
+const FRAME_CAPS: { value: FrameCap; label: string; desc: string }[] = [
+  { value: 'auto', label: '自动', desc: '每种动画按它自己的节奏（背景场景约 30 帧，仪表约 60 帧），按屏幕刷新等间隔出帧，最稳' },
+  { value: '30', label: '30 帧', desc: '所有动画最多 30 帧，最省电，适合笔记本用电池时' },
+  { value: '60', label: '60 帧', desc: '所有动画（包括背景场景）都按约 60 帧，更顺滑，耗电稍多' },
+  { value: 'max', label: '不限', desc: '跟随屏幕刷新率（高刷屏上最顺滑，也最耗电）' }
+]
 /** backdrops, grouped in the picker by `cat` */
 export const BACKDROPS: { value: BackdropStyle; label: string; desc: string; cat: string }[] = [
   { value: 'plain', label: '纯色', cat: '简约', desc: '只用主题底色' },
@@ -127,7 +134,7 @@ export const BACKDROPS: { value: BackdropStyle; label: string; desc: string; cat
     value: 'daylight',
     label: '昼夜',
     cat: '自然',
-    desc: '山湖的一整天，按你所在城市真实的太阳位置变化：晨雾、蓝天白云、晚霞、星河与月光一点点过渡，湖面倒映天空，天黑后岸边亮起灯火；新用量白天惊起一群飞鸟、夜里划过一颗流星，用量越大风越大'
+    desc: '山湖的一整天，按你所在城市真实的太阳和节气变化：晨雾、热气球、航迹、盘旋的鹰、帆船、过云雨和彩虹、晚霞、蝙蝠、星河、卫星、萤火，四季各有飘落的花絮叶雪，远山冬天积雪、秋天染红。新用量白天惊起一群飞鸟、夜里划过一颗流星；用量越大风越大、松树摇得越厉害，深夜用量火热时拉起极光；今日 Token 过里程碑白天挂起彩虹'
   },
   {
     value: 'sakura',
@@ -152,9 +159,45 @@ export const BACKDROPS: { value: BackdropStyle; label: string; desc: string; cat
   { value: 'bauhaus', label: '包豪斯', cat: '奇想', desc: '米色纸上红蓝黄黑的几何块组成网格，时不时咔哒转上四分之一圈；用量越多转得越勤，新用量让几块弹一下（深色模式是炭灰底）' },
   { value: 'fireworks', label: '烟花', cat: '节庆', desc: '城市夜空放烟花：礼花升空、绽放、拖着光尾落下；用量越多放得越勤，每批新用量放一发，Token 越多烟花越大' },
   { value: 'lantern', label: '天灯', cat: '节庆', desc: '湖面上空的孔明灯摇晃着升起，火苗闪动、倒影落在水里；用量越多灯越多，每批新用量从岸边放飞几盏（浅色模式是黄昏）' },
+  {
+    value: 'mystic',
+    label: '诡秘世界',
+    cat: '幻境',
+    desc: '绯红之月下的雾都：封印法阵绕着月亮转动，灰雾层层漫过街巷，煤气灯明灭，塔罗牌浮起翻面，渡鸦掠过；侧边栏的钟楼走着真实时间、整点敲钟。用量越多雾越浓，每批新用量翻开一张金光塔罗牌、钟声响起'
+  },
+  {
+    value: 'cyber',
+    label: '赛博朋克',
+    cat: '幻境',
+    desc: '雨夜的不夜城：摩天楼窗格明灭，竖排霓虹招牌挂在侧边栏，探照灯扫过雾霾，飞行车拖着光轨（用量越多车越多），全息广告牌转着线框体；每批新用量广告牌故障闪烁、打出这批 Token，巡逻车呼啸而过'
+  },
+  {
+    value: 'xianxia',
+    label: '云海仙山',
+    cat: '幻境',
+    desc: '皓月下的云海与浮空石峰，侧边栏一座带亭子和飞瀑的浮岛，仙鹤从月前飞过、灵光上升；用量越多云走得越快，每批新用量划过一道御剑剑光'
+  },
+  {
+    value: 'koi',
+    label: '锦鲤池',
+    cat: '自然',
+    desc: '俯瞰锦鲤池：八种锦鲤摆尾游动，水底光纹流动，睡莲荷花漂移、花瓣浮在水面，偶尔落雨点出涟漪；每批新用量撒一把鱼食、锦鲤争食，大批量时游来一条金色锦鲤（浅色模式是午后的碧水）'
+  },
+  {
+    value: 'ukiyo',
+    label: '浮世绘',
+    cat: '奇想',
+    desc: '木版画的海：普鲁士蓝的天顶、红日、霞带和雪山，浪头翻着白沫、小船起伏、千鸟飞过；侧边栏的巨浪涨起、卷爪、拍碎，周而复始。用量越多浪越高，新用量甩出一片浪花（深色模式是夜版画）'
+  },
+  {
+    value: 'pixel',
+    label: '像素冒险',
+    cat: '奇想',
+    desc: '8-bit 视差世界，天色随时辰变；标题旁的砖块浮岛上，小冒险家在金币间跑跳，用量越多跑得越快；每批新用量顶开问号砖，蹦出金币和像素数字写的 Token 数'
+  },
   { value: 'neon', label: '霓虹', cat: '自然', desc: '合成器浪潮的夜：条纹落日沉进霓虹地平线，线框山脉前一张网格向你奔来（用量越火热越快），每批新用量沿网格扫过一道光' }
 ]
-const BACKDROP_CATS = ['天体', '自然', '节庆', '奇想', '品牌', '简约']
+const BACKDROP_CATS = ['天体', '幻境', '自然', '节庆', '奇想', '品牌', '简约']
 const MATERIALS: { value: WindowMaterial; label: string; desc: string }[] = [
   { value: 'none', label: '无', desc: '不透明窗口' },
   { value: 'mica', label: '云母', desc: 'Windows 11 云母材质：窗口底色随桌面壁纸变化（需要 Windows 11 22H2 及以上）' },
@@ -227,16 +270,9 @@ function AppearanceRows({ s, save }: { s: Settings; save: Save }) {
         preview={<PackPreview k={s.themePack} />}
       >
         <div className="packs" role="radiogroup">
-          {PACK_KEYS.map((k) => {
-            const p = PACKS[k]
-            return (
-              <button key={k} role="radio" aria-checked={s.themePack === k} className={`pack pack-${k}${s.themePack === k ? ' on' : ''}`} onClick={() => setPack(k)} title={p.desc}>
-                <PackPreview k={k} />
-                <span className="pack-name">{p.label}</span>
-                <span className="pack-desc">{p.desc}</span>
-              </button>
-            )
-          })}
+          {PACK_KEYS.map((k) => (
+            <PackCard key={k} k={k} on={s.themePack === k} onPick={() => setPack(k)} />
+          ))}
         </div>
       </Fold>
       <Row label="主题" desc={s.themePack !== 'none' ? `配色来自主题包「${PACKS[s.themePack].label}」，选「Claude 默认」可换回` : '浅色与深色均按 Claude 配色'}>
@@ -263,6 +299,12 @@ function AppearanceRows({ s, save }: { s: Settings; save: Save }) {
       <Row label="动效强度" desc={motion.desc}>
         <Segmented value={s.motion} onChange={(m) => save({ motion: m })} options={MOTIONS} />
       </Row>
+      <Row label="动画帧率" desc={FRAME_CAPS.find((c) => c.value === s.frameCap)!.desc}>
+        <Segmented value={s.frameCap} onChange={(frameCap) => save({ frameCap })} options={FRAME_CAPS} />
+      </Row>
+      <Row label="帧率显示" desc="主窗口右下角显示实时帧率和最慢的帧，方便看动画是否流畅">
+        <Switch on={s.fpsMeter} onChange={(fpsMeter) => save({ fpsMeter })} />
+      </Row>
       <BackdropPicker s={s} save={save} />
       <Row label="背景鲜明度" desc="背景色彩的浓淡，20–100%">
         <PercentSlider value={Math.round(s.backdropVivid * 100)} min={20} max={100} onSave={(v) => save({ backdropVivid: v / 100 })} />
@@ -287,10 +329,24 @@ function AppearanceRows({ s, save }: { s: Settings; save: Save }) {
   )
 }
 
-function PackPreview({ k }: { k: ThemePack }) {
+/** one pack: its preview plays the pack's own scene while the pointer rests on it */
+function PackCard({ k, on, onPick }: { k: ThemePack; on: boolean; onPick: () => void }) {
+  const p = PACKS[k]
+  const live = useLivePreview()
+  return (
+    <button role="radio" aria-checked={on} className={`pack pack-${k}${on ? ' on' : ''}${live.on ? ' previewing' : ''}`} onClick={onPick} title={p.desc} {...live.bind}>
+      <PackPreview k={k} live={live.on} />
+      <span className="pack-name">{p.label}</span>
+      <span className="pack-desc">{p.desc}</span>
+    </button>
+  )
+}
+
+function PackPreview({ k, live = false }: { k: ThemePack; live?: boolean }) {
   const p = PACKS[k]
   return (
     <span className={`pack-preview pack-${k}`} style={{ backgroundColor: p.swatch[0] }}>
+      {live && <ScenePreview style={p.backdrop} dark={p.theme !== 'light'} />}
       <i style={{ background: p.swatch[1] }} />
       <i style={{ background: p.swatch[2] }} />
       <b style={{ fontFamily: p.font, color: p.swatch[k === 'ink' || k === 'none' ? 2 : 1] }}>Aa 脉</b>
@@ -364,22 +420,23 @@ function BackdropPicker({ s, save }: { s: Settings; save: Save }) {
           <div className="bd-cat-name">{cat}</div>
           <div className="bd-grid" role="radiogroup" aria-label={cat}>
             {BACKDROPS.filter((b) => b.cat === cat).map((b) => (
-              <button
-                key={b.value}
-                role="radio"
-                aria-checked={s.backdrop === b.value}
-                className={`bd-tile bd-${b.value}${s.backdrop === b.value ? ' on' : ''}`}
-                onClick={() => save({ backdrop: b.value })}
-                title={`${b.label}：${b.desc}`}
-              >
-                <span className="bd-prev" />
-                <span className="bd-name">{b.label}</span>
-              </button>
+              <BackdropTile key={b.value} b={b} on={s.backdrop === b.value} dark={resolveTheme(s.theme) === 'dark'} onPick={() => save({ backdrop: b.value })} />
             ))}
           </div>
         </div>
       ))}
     </Fold>
+  )
+}
+
+/** one backdrop tile, its scene playing under the pointer */
+function BackdropTile({ b, on, dark, onPick }: { b: (typeof BACKDROPS)[number]; on: boolean; dark: boolean; onPick: () => void }) {
+  const live = useLivePreview()
+  return (
+    <button role="radio" aria-checked={on} className={`bd-tile bd-${b.value}${on ? ' on' : ''}${live.on ? ' previewing' : ''}`} onClick={onPick} title={`${b.label}：${b.desc}`} {...live.bind}>
+      <span className="bd-prev">{live.on && <ScenePreview style={b.value} dark={dark} />}</span>
+      <span className="bd-name">{b.label}</span>
+    </button>
   )
 }
 

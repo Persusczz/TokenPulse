@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { Intensity } from '@shared/types'
 import { cssVar, type MotionScale } from '../state'
+import { onFrame } from '../frames'
 
 const TAU = Math.PI * 2
 
@@ -58,8 +59,6 @@ export function MiniGalaxy({ intensity, level, pulse, theme, pixelScale = 1 }: {
     })
     const bg = Array.from({ length: 60 }, () => ({ x: Math.random(), y: Math.random(), r: 0.4 + Math.random(), p: Math.random() * TAU, f: 0.6 + Math.random() * 2 }))
     let t = 0
-    let raf = 0
-    let last = performance.now()
     const draw = (dt: number) => {
       const s = st.current
       const { w, h } = size
@@ -108,17 +107,9 @@ export function MiniGalaxy({ intensity, level, pulse, theme, pixelScale = 1 }: {
     })
     ro.observe(canvas)
     draw(0)
-    if (st.current.level > 0) {
-      const tick = (now: number) => {
-        raf = requestAnimationFrame(tick)
-        if (now - last < 33) return
-        draw(Math.min(0.08, (now - last) / 1000))
-        last = now
-      }
-      raf = requestAnimationFrame(tick)
-    }
+    const stop = st.current.level > 0 ? onFrame(30, (dt) => draw(Math.min(0.08, dt)), 'galaxy') : null
     return () => {
-      cancelAnimationFrame(raf)
+      stop?.()
       ro.disconnect()
     }
   }, [level, pixelScale])
@@ -186,8 +177,6 @@ export function BlackHole({
     })
     const bg = Array.from({ length: 50 }, () => ({ a: Math.random() * TAU, d: Math.sqrt(Math.random()), r: 0.4 + Math.random() * 0.9, p: Math.random() * TAU }))
     let t = 0
-    let raf = 0
-    let last = performance.now()
     const draw = (dt: number) => {
       const s = st.current
       const { w, h } = size
@@ -334,17 +323,9 @@ export function BlackHole({
     })
     ro.observe(canvas)
     draw(0.016)
-    if (level > 0) {
-      const tick = (now: number) => {
-        raf = requestAnimationFrame(tick)
-        if (now - last < 30) return
-        draw(Math.min(0.08, (now - last) / 1000))
-        last = now
-      }
-      raf = requestAnimationFrame(tick)
-    }
+    const stop = level > 0 ? onFrame(30, (dt) => draw(Math.min(0.08, dt)), 'hole') : null
     return () => {
-      cancelAnimationFrame(raf)
+      stop?.()
       ro.disconnect()
     }
   }, [level, pixelScale, gauge])

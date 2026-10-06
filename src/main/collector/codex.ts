@@ -3,6 +3,7 @@ import { open, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import type { CodexQuota, PromptMark, QuotaWindow, UsageEntry } from '@shared/types'
+import { noteWeek, type LoggedWeek } from '../windowHistory'
 import { PROMPT_CHARS } from './parser'
 import { listJsonl } from './store'
 
@@ -253,6 +254,8 @@ export class CodexStore {
   readonly prompts = new Map<string, PromptMark>()
   /** the 5-hour windows seen in rate_limits, oldest first */
   readonly windows: CodexWindow[] = []
+  /** the 7-day windows seen in rate_limits, with their peaks, oldest first */
+  readonly weeks: LoggedWeek[] = []
   /** context window per model, as Codex reports it */
   readonly contextWindows = new Map<string, number>()
   revision = 0
@@ -262,6 +265,8 @@ export class CodexStore {
 
   /** Files are read in any order: find the window by its reset time */
   private recordWindow(l: CodexLimits): void {
+    const s = l.secondary
+    if (s?.resetsAt && (!s.windowMin || s.windowMin === 10080)) noteWeek(this.weeks, s.pct, s.resetsAt)
     const p = l.primary
     if (!p || !p.resetsAt || (p.windowMin && p.windowMin !== 300)) return
     let w = this.windows.find((x) => Math.abs(x.end - p.resetsAt!) < SAME_WINDOW_MS)

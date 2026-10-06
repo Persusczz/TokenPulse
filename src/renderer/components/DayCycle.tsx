@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { placeOf, sunTimes, type Place } from '@shared/astro'
-import { mix, nextPhase, PHASE_NAME, rgbText, skyAt, smooth, uiColors, type SkyState } from '@shared/daycycle'
+import { dayLabel, mix, nextLabel, rgbText, seasonAt, skyAt, smooth, uiColors, type Season, type SeasonState, type SkyState } from '@shared/daycycle'
 import { useApp, useSource } from '../state'
+import { DayLife, dayStatus } from './DayLife'
 import { rand, TAU, useLive, useScene, type SceneProps } from './ThemeScenes'
 import { drawMoon } from './ThemeScenes3'
 
@@ -21,6 +22,10 @@ declare global {
     __tpDayAtSet?: number
     /** pins the theme's clock (screenshots); null goes back to the real one */
     __tpSetDay?: (at: number | null) => void
+    /** pins the season (screenshots) */
+    __tpSeason?: Season
+    /** sets off something in the sky now: balloon, plane, shower, rainbow, aurora, sat, jump, nova (screenshots) */
+    __tpDayEvent?: (name: string) => void
   }
 }
 window.__tpSetDay = (at) => {
@@ -100,7 +105,6 @@ export function useDayPalette(): void {
   const source = useSource()
   const on = settings?.themePack === 'daylight'
   const sky = useSky(20_000, on)
-  const lastTitle = useRef(0)
   useEffect(() => {
     const st = document.documentElement.style
     if (!on) {
@@ -111,16 +115,23 @@ export function useDayPalette(): void {
       if (source === 'codex' && /^--(accent|s1|q4|q5)/.test(k)) st.removeProperty(k)
       else st.setProperty(k, v)
     }
-    // the native title bar buttons follow, now and then
-    if (Date.now() - lastTitle.current > 60_000) {
-      lastTitle.current = Date.now()
-      window.api.setThemeColors({ bg: uiColors(sky)['--bg'], fg: '#d8def0' })
-    }
   }, [on, sky, source])
   useEffect(() => () => PALETTE_KEYS.forEach((k) => document.documentElement.style.removeProperty(k)), [])
 }
 
 // ---------------------------------------------------------------- the scene
+
+/** the season at t: the real one, or the one a screenshot pinned */
+export function seasonNow(t: number, lat: number): SeasonState {
+  const pinned = window.__tpSeason
+  if (!pinned) return seasonAt(t, lat)
+  const real = seasonAt(t, lat)
+  return { ...real, season: pinned, k: { spring: 0, summer: 0, autumn: 0, winter: 0, [pinned]: 1 } }
+}
+
+/** what autumn and spring do to the land's five layers, far to near */
+const AUTUMN = ['#9a6a3a', '#b0602a', '#a2482a', '#6e3a1e', '#2a1a10']
+const SPRING = ['#7fa0c0', '#6b9a7a', '#4f8a4a', '#3a6a34', '#1a2e1a']
 
 const hash = (a: number, b: number) => {
   const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453
@@ -180,12 +191,28 @@ interface Flock {
  * gets dark (and going out late at night). New usage sends a flock of birds
  * up from the shore by day, a shooting star by night; busier usage, more wind.
  */
-export function DayCycleScene(p: SceneProps & { place: Place }) {
+export function DayCycleScene(p: SceneProps & { place: Place; quiet?: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null)
   const live = useLive(p)
   const placeRef = useRef(p.place)
   placeRef.current = p.place
   const lastPulse = useRef(0)
+  const lifeRef = useRef<DayLife | null>(null)
+  // today's tokens passing a milestone: a rainbow by day, an aurora by night
+  useEffect(() => {
+    // a preview tile's sky keeps to itself
+    if (p.quiet) return
+    const nova = () => lifeRef.current?.force('nova')
+    const fire = (name: string) => lifeRef.current?.force(name)
+    document.addEventListener('tp-nova', nova)
+    // the backdrop's scene owns the hook; a preview tile takes it only while it plays
+    const before = window.__tpDayEvent
+    window.__tpDayEvent = fire
+    return () => {
+      document.removeEventListener('tp-nova', nova)
+      if (window.__tpDayEvent === fire) window.__tpDayEvent = before
+    }
+  }, [p.quiet])
   useScene(
     ref,
     p.level,
@@ -199,7 +226,11 @@ export function DayCycleScene(p: SceneProps & { place: Place }) {
       let poleY = 0
       let ridges: { path: Path2D; mirror: Path2D; pts: [number, number][] }[] = []
       let ground: Path2D | null = null
+      let pines: { x: number; base: number; ht: number; path: Path2D; ph: number }[] = []
       let cabin = { x: 0, y: 0, w: 0, h: 0 }
+      const life = new DayLife(!p.quiet)
+      lifeRef.current = life
+      let season: SeasonState | null = null
       let stars: Star[] = []
       let dust: Star[] = []
       let clouds: Cloud[] = []
@@ -301,19 +332,23 @@ export function DayCycleScene(p: SceneProps & { place: Place }) {
           for (let x = -10; x <= w + 10; x += 10) ground.lineTo(x, shore + 4 + Math.sin(x * 0.011) * 5 + Math.sin(x * 0.037 + 1) * 3)
           ground.lineTo(w + 10, h + 10)
           ground.closePath()
+          // each pine is its own path around its foot, so it can sway in the wind
           const pine = (cx: number, base: number, ht: number) => {
+            const path = new Path2D()
             const tiers = 6
             for (let i = 0; i < tiers; i++) {
-              const y0 = base - (ht * i) / tiers - ht * 0.12
+              const y0 = -(ht * i) / tiers - ht * 0.12
               const half = (ht * 0.32 * (tiers - i)) / tiers
-              ground!.moveTo(cx - half, y0)
-              ground!.lineTo(cx, y0 - ht * 0.34)
-              ground!.lineTo(cx + half, y0)
-              ground!.closePath()
+              path.moveTo(-half, y0)
+              path.lineTo(0, y0 - ht * 0.34)
+              path.lineTo(half, y0)
+              path.closePath()
             }
-            ground!.rect(cx - ht * 0.025, base - ht * 0.14, ht * 0.05, ht * 0.15)
+            path.rect(-ht * 0.025, -ht * 0.14, ht * 0.05, ht * 0.15)
+            pines.push({ x: cx, base, ht, path, ph: Math.random() * TAU })
           }
           const tall = Math.min(h * 0.36, 300)
+          pines = []
           ;[
             [0.025, 1],
             [0.07, 0.78],
@@ -324,6 +359,7 @@ export function DayCycleScene(p: SceneProps & { place: Place }) {
           ].forEach(([fx, k]) => pine(w * fx, shore + 8, tall * k))
           cabin = { x: w * 0.8, y: shore - h * 0.045, w: h * 0.07, h: h * 0.045 }
           ground.rect(cabin.x, cabin.y, cabin.w, cabin.h)
+          ground.rect(cabin.x + cabin.w * 0.68, cabin.y - cabin.h * 0.75, cabin.w * 0.12, cabin.h * 0.5)
           ground.moveTo(cabin.x - cabin.w * 0.12, cabin.y)
           ground.lineTo(cabin.x + cabin.w / 2, cabin.y - cabin.h * 0.6)
           ground.lineTo(cabin.x + cabin.w * 1.12, cabin.y)
@@ -358,20 +394,33 @@ export function DayCycleScene(p: SceneProps & { place: Place }) {
           flocks = []
           meteors = []
           sky = null
+          season = null
+          life.init({ w, h, hy, shore, cabin, puff: puff!, soft: soft!, warm: warm! })
         },
         draw(ctx, w, h, dt, l) {
           t += dt
           const nowMs = dayNow()
           // the sky changes slowly: worked out twice a second (every frame in a time-lapse)
-          if (!sky || Math.abs(nowMs - skyAtMs) > 500) {
+          if (!sky || !season || Math.abs(nowMs - skyAtMs) > 500) {
             sky = skyAt(nowMs, placeRef.current)
+            season = seasonNow(nowMs, placeRef.current.lat)
             skyAtMs = nowMs
           }
           const s = sky
+          const sea = season
           const wind = 1 + l.intensity * 0.45
           const [sx, sy] = sunXY(s.az, s.alt)
           const [mx, my] = sunXY(s.moon.az, s.moon.alt)
           const dayK = 1 - s.dark
+          life.update(dt, s, sea, l, wind, sx)
+          // the land in the season's colours: autumn hills, fresh spring green, wintry far ridges
+          const land = s.land.map((c, i) => {
+            let out = c
+            if (sea.k.autumn > 0.01) out = mix(out, AUTUMN[i], sea.k.autumn * [0.16, 0.3, 0.4, 0.3, 0][i] * (0.35 + 0.65 * dayK))
+            if (sea.k.spring > 0.01) out = mix(out, SPRING[i], sea.k.spring * [0.1, 0.18, 0.25, 0.2, 0][i] * (0.35 + 0.65 * dayK))
+            if (sea.k.winter > 0.01) out = mix(out, mix('#c8d4e6', s.zenith, 0.3 + 0.5 * s.dark), sea.k.winter * [0.3, 0.22, 0.12, 0.05, 0][i])
+            return out
+          })
 
           // ---- sky
           const g = ctx.createLinearGradient(0, 0, 0, hy)
@@ -432,6 +481,8 @@ export function DayCycleScene(p: SceneProps & { place: Place }) {
             }
             ctx.globalAlpha = 1
           }
+
+          life.drawAurora(ctx, l.vivid)
 
           // ---- the moon: pale by day, with a halo at night
           if (s.moon.alt > -3 && mx > -60 && mx < w + 60) {
@@ -508,12 +559,26 @@ export function DayCycleScene(p: SceneProps & { place: Place }) {
             ctx.drawImage(L, 0, 0, w, hy)
             ctx.globalAlpha = 1
           }
+          life.drawWeather(ctx, dt, s, l.vivid)
+          life.drawAir(ctx, dt, s, sx, wind)
 
           // ---- the land: ridges hazed by distance, the low sun catching their tops
           const rim = smooth(-2, 2, s.alt) * (1 - smooth(10, 22, s.alt))
+          // snow on the highest peaks all year, further down in winter
+          const snowLine = [h * (0.07 + 0.17 * (0.8 - 0.32 * sea.k.winter)), h * (0.05 + 0.1 * (0.78 - 0.4 * sea.k.winter))]
+          const snow = mix('#f4f7ff', mix(s.zenith, '#c8d4f0', 0.4), s.dark * 0.75)
           ridges.forEach((r, i) => {
-            ctx.fillStyle = s.land[i]
+            ctx.fillStyle = land[i]
             ctx.fill(r.path)
+            if (i < 2 && (i === 0 || sea.k.winter > 0.05)) {
+              ctx.save()
+              ctx.clip(r.path)
+              ctx.globalAlpha = i === 0 ? 0.55 + 0.4 * sea.k.winter : sea.k.winter * 0.85
+              ctx.fillStyle = snow
+              ctx.fillRect(0, 0, w, hy - snowLine[i])
+              ctx.restore()
+              ctx.globalAlpha = 1
+            }
             if (rim > 0.02 && i < 3) {
               const rg = ctx.createRadialGradient(sx, sy, 0, sx, sy, w * 0.7)
               rg.addColorStop(0, `rgba(${rgbText(s.sun)},${(0.7 * rim * (1 - i * 0.25)).toFixed(3)})`)
@@ -545,7 +610,7 @@ export function DayCycleScene(p: SceneProps & { place: Place }) {
           ctx.fillRect(0, hy, w, h - hy)
           ctx.globalAlpha = 0.72
           ridges.forEach((r, i) => {
-            ctx.fillStyle = mix(s.land[i], s.zenith, 0.2)
+            ctx.fillStyle = mix(land[i], s.zenith, 0.2)
             ctx.fill(r.mirror)
           })
           ctx.globalAlpha = 1
@@ -606,10 +671,19 @@ export function DayCycleScene(p: SceneProps & { place: Place }) {
             ctx.globalAlpha = 1
           }
 
-          // ---- the near shore, pines and the cabin with its windows
+          life.drawLake(ctx, dt, s)
+
+          // ---- the near shore, pines swaying (harder while usage is busy) and the cabin with its windows
           if (ground) {
-            ctx.fillStyle = s.land[4]
+            ctx.fillStyle = land[4]
             ctx.fill(ground)
+            for (const pn of pines) {
+              const lean = (Math.sin(t * 0.9 + pn.ph) * 0.012 + Math.sin(t * 2.3 + pn.ph * 2) * 0.004) * wind + (wind - 1) * 0.02
+              ctx.save()
+              ctx.setTransform(ctx.getTransform().translate(pn.x, pn.base).multiply(new DOMMatrix([1, 0, -lean, 1, 0, 0])))
+              ctx.fill(pn.path)
+              ctx.restore()
+            }
             if (s.lights > 0.15 && warm) {
               const a = Math.min(1, (s.lights - 0.15) * 2)
               const wy = cabin.y + cabin.h * 0.35
@@ -656,7 +730,7 @@ export function DayCycleScene(p: SceneProps & { place: Place }) {
             if (s.stars > 0.6) spawnMeteor()
             nextMeteor = rand(25, 60)
           }
-          const birdColor = mix(s.land[3], '#000000', 0.25)
+          const birdColor = mix(land[3], '#000000', 0.25)
           ctx.strokeStyle = birdColor
           ctx.lineWidth = 1.4
           ctx.lineCap = 'round'
@@ -693,6 +767,8 @@ export function DayCycleScene(p: SceneProps & { place: Place }) {
             ctx.stroke()
             return true
           })
+          life.drawShore(ctx, dt, s, sea, wind)
+          life.drawFront(ctx, s)
         }
       }
     },
@@ -708,48 +784,55 @@ const clockOf = (t: number) => new Date(t).toLocaleTimeString('zh-CN', { hour: '
 
 /**
  * The sidebar's 昼夜 clock: today's sky as a ring (each quarter hour in its
- * real colour), the sun or the moon where the day stands, the phase and when
- * the next one starts. A click plays the whole day as a time-lapse.
+ * real colour) with the clock in the middle, the sun or the moon where the
+ * day stands, the time of day and what comes next. A click plays the whole day as a
+ * time-lapse.
  */
 export function DayClock() {
   const place = usePlace()
-  const sky = useSky(30_000)
+  const sky = useSky(10_000)
   const lapse = useTimelapse()
   const day = new Date(sky.t).toDateString()
-  // the ring: midnight at the top, local hours clockwise
+  // the ring: local hours clockwise with noon at the top and sunrise on the left, the way the sun crosses the scene
   const ring = useMemo(() => {
     const d = new Date(sky.t)
     d.setHours(0, 0, 0, 0)
     const start = d.getTime()
     return Array.from({ length: 96 }, (_, i) => skyAt(start + i * 15 * 60_000, place))
   }, [day, place]) // eslint-disable-line react-hooks/exhaustive-deps
-  const next = useMemo(() => nextPhase(sky.t, place), [Math.floor(sky.t / 300_000), place]) // eslint-disable-line react-hooks/exhaustive-deps
+  const label = dayLabel(sky.t, place)
+  const next = useMemo(() => nextLabel(sky.t, place), [Math.floor(sky.t / 60_000), place]) // eslint-disable-line react-hooks/exhaustive-deps
+  const term = useMemo(() => seasonNow(sky.t, place.lat).term, [Math.floor(sky.t / 3_600_000), place]) // eslint-disable-line react-hooks/exhaustive-deps
   const d = new Date(sky.t)
   const frac = (d.getHours() * 60 + d.getMinutes()) / 1440
   const R = 26
-  const pos = (f: number, r = R) => [32 + r * Math.sin(f * TAU), 32 - r * Math.cos(f * TAU)] as const
+  const pos = (f: number, r = R) => [32 + r * Math.sin((f - 0.5) * TAU), 32 - r * Math.cos((f - 0.5) * TAU)] as const
   const [hx, hy] = pos(frac)
   const up = sky.alt > -0.8
   return (
     <button className={`day-clock phase-${sky.phase}${lapse ? ' lapse' : ''}`} onClick={() => (lapse ? stopTimelapse() : startTimelapse())} title={lapse ? '点一下回到现在' : '点一下：40 秒看完一整天'}>
+      <span className="day-clock-dial">
+      {up && <i className="day-clock-glow" style={{ left: `${(hx / 64) * 100}%`, top: `${(hy / 64) * 100}%` }} />}
       <svg viewBox="0 0 64 64" aria-hidden>
         {ring.map((s, i) => {
           const [x1, y1] = pos(i / 96)
           const [x2, y2] = pos((i + 1.15) / 96)
           return <path key={i} d={`M${x1.toFixed(2)},${y1.toFixed(2)} A${R},${R} 0 0 1 ${x2.toFixed(2)},${y2.toFixed(2)}`} stroke={mix(s.middle, s.horizon, 0.35)} strokeWidth="7" fill="none" />
         })}
-        <line x1="32" y1="32" x2={hx} y2={hy} className="day-clock-hand" />
         <circle cx={hx} cy={hy} r={up ? 5 : 4.2} fill={up ? sky.sun : '#eef2ff'} className={up ? 'day-clock-sun' : 'day-clock-moon'} />
-        <circle cx="32" cy="32" r="2.4" className="day-clock-pin" />
+        <text x="32" y="33" className="day-clock-time">
+          {clockOf(sky.t)}
+        </text>
       </svg>
+      </span>
       <span className="day-clock-text">
         <b>
-          {PHASE_NAME[sky.phase]}
-          {lapse && <i> · {clockOf(sky.t)}</i>}
+          {label}
+          <em className="day-term"> · {term}</em>
         </b>
         <small>
-          {place.name}
-          {next ? ` · ${clockOf(next.at)} ${PHASE_NAME[next.phase]}` : ''}
+          {dayStatus.text ? <span className="day-event">{dayStatus.text}</span> : place.name}
+          {next ? ` · ${clockOf(next.at)} ${next.label}` : ''}
         </small>
       </span>
     </button>

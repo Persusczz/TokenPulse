@@ -1,15 +1,48 @@
 import { motion } from 'motion/react'
+import { useEffect, useRef } from 'react'
 import type { Intensity, SourceView } from '@shared/types'
 import { revealFromPointer } from '../effects'
-import { useApp, useData, useHasCodex, useSource } from '../state'
+import { onFrame } from '../frames'
+import { useApp, useData, useHasCodex, useMotionLevel, useSource } from '../state'
 import { CodexMark, SourceMark } from './CodexMark'
 import { Starburst } from './Starburst'
 
 const TOOL_LINE: Record<SourceView, string> = { claude: 'for Claude Code', codex: 'for Codex', all: 'Claude + Codex' }
 
+/**
+ * The wordmark's sweep of light: still for 3.3 s, then 2.7 s across. Run on
+ * the frame clock, so it draws on frames the page draws anyway instead of
+ * asking for one on every display refresh.
+ */
+function useShine() {
+  const level = useMotionLevel()
+  const ref = useRef<HTMLElement>(null)
+  useEffect(() => {
+    const em = ref.current
+    if (!em || level < 2) return
+    let t = 0
+    let shown = ''
+    return onFrame(
+      30,
+      (dt) => {
+        t = (t + dt) % 6
+        const k = t < 3.3 ? 0 : (t - 3.3) / 2.7
+        const e = k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2
+        const v = `${(100 - 220 * e).toFixed(1)}% 0`
+        if (v === shown) return
+        shown = v
+        em.style.backgroundPosition = v
+      },
+      'shine'
+    )
+  }, [level])
+  return ref
+}
+
 /** Sidebar logo: the live mark of the tool on view, a two-tone wordmark and an ECG line redrawn on each batch of new usage */
 export function Brand() {
   const { lastUpdate } = useApp()
+  const shine = useShine()
   const source = useSource()
   const hasCodex = useHasCodex()
   const live = useData(() => window.api.getLive(), [], 30_000)
@@ -22,7 +55,7 @@ export function Brand() {
       </motion.span>
       <span className="brand-text">
         <span className="brand-name">
-          Token<em>Pulse</em>
+          Token<em ref={shine}>Pulse</em>
         </span>
         <svg key={beat} className="brand-ecg" viewBox="0 0 120 12" preserveAspectRatio="none" aria-hidden>
           <path d="M0 6h40l4-4 5 9 5-11 5 11 4-5h57" />

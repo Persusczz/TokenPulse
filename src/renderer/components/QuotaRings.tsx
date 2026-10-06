@@ -6,6 +6,7 @@ import { IconAlert, IconCheck, IconRefresh } from './Icons'
 import { PulseRings } from './PulseRings'
 import { RewindTag, useQuotaMotion, type QuotaMotion } from './QuotaMotion'
 import { Starburst } from './Starburst'
+import { FlowRing } from './Fx'
 
 const R = 42
 const C = 2 * Math.PI * R
@@ -203,6 +204,7 @@ function CodexQuotaCard() {
   const alarm = five && five.utilization >= 75 ? ' flow-border alarm' : ''
   return (
     <div className={`card quota-card${alarm}`}>
+      {alarm && <FlowRing />}
       <div className="card-head">
         <div className="card-title">
           <span className="serif">Codex 额度</span>
@@ -233,6 +235,7 @@ function BothQuotaCard() {
   const ws = (quota?.windows ?? []).filter((w) => isFive(w) || w.key === 'weekly_all' || w.key === 'seven_day')
   return (
     <div className={`card quota-card both${high ? ' flow-border alarm' : ''}`}>
+      {high && <FlowRing />}
       <div className="card-head">
         <div className="card-title">
           <span className="serif">订阅额度</span>
@@ -391,6 +394,7 @@ function ClaudeQuotaCard() {
 
   return (
     <div className={`card quota-card${alarm}`}>
+      {alarm && <FlowRing />}
       <div className="card-head">
         <div className="card-title">
           <span className="serif">Claude 额度</span>

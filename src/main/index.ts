@@ -33,6 +33,7 @@ import type {
   PausedTask,
   PromptMark,
   QuotaInfo,
+  QuotaCycles,
   QuotaRate,
   RangeKey,
   RunawayAlert,
@@ -57,6 +58,7 @@ import { findNode, GuardService, type GuardExtra } from './guard'
 import { chatgptPlan, computeValue, forecastWeekly, PLAN_PRICES } from './insights'
 import { costByPrompt, indexPrompts, promptReport } from './prompts'
 import { buildHistory, ClaudeWindowLog, estimateClaudeWindows } from './windowHistory'
+import { buildCycles, CYCLE_MS, type KnownWindow } from './cycles'
 import { contains, dockedPosition, hiddenPosition, MINI_MARGIN, miniSize, snapToEdge, type Dock, type Rect } from './miniGeometry'
 import { PricingService } from './pricing'
 import { computeCost } from './pricing/cost'
@@ -859,6 +861,26 @@ function quotaRates(days: number, now = Date.now()): QuotaRate[] {
   return out
 }
 
+/** each tool on view: its 5-hour windows of the last week and its 7-day windows of the last ten, with the usage in each */
+function quotaCycles(now = Date.now()): QuotaCycles[] {
+  const ps = paces(now)
+  return sources().map((src) => {
+    const open = (k: '5h' | '7d'): KnownWindow | null => {
+      const p = ps.find((x) => x.key === `${src}_${k}`)
+      return p ? { start: p.start, end: p.end, pct: p.pct, hitAt: null } : null
+    }
+    const five = (src === 'codex' ? codex.windows : windowLog.windows).map((w) => ({ start: w.end - CYCLE_MS['5h'], end: w.end, pct: w.peak, hitAt: w.hitAt }))
+    const weeks = (src === 'codex' ? codex.weeks : windowLog.weeks).map((w) => ({ start: w.end - CYCLE_MS['7d'], end: w.end, pct: w.peak, hitAt: null }))
+    const entries = src === 'codex' ? codexCosted : claudeCosted
+    const base = { entries, now, label: modelLabel }
+    return {
+      source: src,
+      five: buildCycles({ ...base, kind: '5h', known: five, current: open('5h'), from: now - 7 * 86_400_000 }),
+      seven: buildCycles({ ...base, kind: '7d', known: weeks, current: open('7d'), from: now - 70 * 86_400_000 })
+    }
+  })
+}
+
 /** the star a 5-hour reading turns into, for the quota notices */
 function stageNote(pct: number): string {
   const st = [...STAGES].reverse().find((x) => pct >= x.from)
@@ -1274,15 +1296,21 @@ function material(): 'mica' | 'acrylic' | null {
   return process.platform === 'win32' && (m === 'mica' || m === 'acrylic') ? m : null
 }
 
-/** Over a material the page and title bar are transparent so the backdrop shows through */
+/** the title-bar buttons' symbols, in the theme pack's text colour once the page has said what it is */
+let titleSymbol: string | null = null
+
+/**
+ * Over a material the page is transparent so the backdrop shows through. The
+ * title-bar buttons are always transparent: the page (and a theme pack's
+ * scene) runs on under them instead of a solid block in the corner.
+ */
 function applyMainChrome(): void {
   if (!mainWin || mainWin.isDestroyed()) return
   const mat = material()
   const c = themeColors()
-  const bg = mat ? TRANSPARENT : c.bg
   mainWin.setBackgroundMaterial(mat ?? 'none')
-  mainWin.setBackgroundColor(bg)
-  mainWin.setTitleBarOverlay({ color: bg, symbolColor: c.fg, height: TITLEBAR_H })
+  mainWin.setBackgroundColor(mat ? TRANSPARENT : c.bg)
+  mainWin.setTitleBarOverlay({ color: TRANSPARENT, symbolColor: titleSymbol ?? c.fg, height: TITLEBAR_H })
 }
 
 function load(win: BrowserWindow, hash: string): void {
@@ -1318,7 +1346,7 @@ function createMain(): void {
     ...(mat ? { backgroundMaterial: mat } : {}),
     icon: iconPath('icon.png'),
     titleBarStyle: 'hidden',
-    titleBarOverlay: { color: mat ? TRANSPARENT : c.bg, symbolColor: c.fg, height: TITLEBAR_H },
+    titleBarOverlay: { color: TRANSPARENT, symbolColor: c.fg, height: TITLEBAR_H },
     webPreferences
   })
   mainWin.once('ready-to-show', () => mainWin?.show())
@@ -1959,6 +1987,7 @@ function registerIpc(): void {
   ipcMain.handle('cosmos', () => cosmos())
   ipcMain.handle('race', (_e, kind: string) => raceSeries(view(), kind === 'month' ? 'month' : 'week', Date.now()))
   ipcMain.handle('starmap', (_e, days: number) => starMap(view(), prompts(), [7, 30, 90].includes(days) ? days : 30, Date.now(), modelLabel))
+  ipcMain.handle('quota:cycles', () => quotaCycles())
   ipcMain.handle('quota:rates', (_e, days: number) => quotaRates(Math.max(1, Math.min(30, Math.round(Number(days) || 7)))))
   ipcMain.on('counter:bump', (_e, name: string) => {
     if (name !== 'palette') return
@@ -2101,12 +2130,17 @@ function registerIpc(): void {
   ipcMain.handle('report:send', () =>
     telegramReady() ? telegram.send(settings.value.telegramToken, settings.value.telegramChatId, reportText()) : { ok: false, error: '先配置并开启 Telegram 推送' }
   )
+  ipcMain.handle('display:hz', (e) => {
+    const win = BrowserWindow.fromWebContents(e.sender)
+    const hz = win && !win.isDestroyed() ? screen.getDisplayMatching(win.getBounds()).displayFrequency : 0
+    return Number.isFinite(hz) && hz > 0 ? hz : 0
+  })
   ipcMain.on('theme:colors', (e, c: { bg: string; fg: string }) => {
     const win = BrowserWindow.fromWebContents(e.sender)
     if (win && win === mainWin && /^#[0-9a-f]{6}$/i.test(c?.bg) && /^#[0-9a-f]{6}$/i.test(c?.fg)) {
-      const bg = material() ? TRANSPARENT : c.bg
-      win.setTitleBarOverlay({ color: bg, symbolColor: c.fg, height: TITLEBAR_H })
-      win.setBackgroundColor(bg)
+      titleSymbol = c.fg
+      win.setTitleBarOverlay({ color: TRANSPARENT, symbolColor: c.fg, height: TITLEBAR_H })
+      win.setBackgroundColor(material() ? TRANSPARENT : c.bg)
     }
   })
 }
@@ -2124,6 +2158,8 @@ quota.on('change', (q: QuotaInfo) => {
   if (five?.resetsAt && q.origin !== 'local' && (q.status === 'ok' || q.status === 'expired' || q.status === 'error')) {
     windowLog.record(five.utilization, Date.parse(five.resetsAt), Math.min(Date.now(), q.fetchedAt ?? Date.now()))
   }
+  const seven = sevenDayWindow(q.windows)
+  if (seven?.resetsAt && q.origin !== 'local' && q.status === 'ok') windowLog.recordWeek(seven.utilization, Date.parse(seven.resetsAt), Math.min(Date.now(), q.fetchedAt ?? Date.now()))
   broadcast('quota:update', q)
   void guard.publishQuota(q)
   onQuotaReading(q)

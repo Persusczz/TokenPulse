@@ -324,3 +324,12 @@ export function ComboBadge({ combo }: { combo: number }) {
     </AnimatePresence>
   )
 }
+
+/** The light running round a hot card's border (with the card's `flow-border` class) */
+export function FlowRing() {
+  return (
+    <span className="flow-ring" aria-hidden>
+      <i />
+    </span>
+  )
+}

@@ -8,6 +8,7 @@ import { Segmented } from '../components/Segmented'
 import { Starburst } from '../components/Starburst'
 import { countdown, TOOL_CLI, useApp, useNow, useSource } from '../state'
 import { CODEX_PERMISSIONS, useCodexModels } from './SettingsPage'
+import { FlowRing } from '../components/Fx'
 
 const PERMISSIONS: { value: TaskPermission; label: string; desc: string }[] = [
   { value: 'inherit', label: '跟随设置', desc: '使用 Claude Code 自己的权限设置' },
@@ -897,6 +898,7 @@ const TaskItem = memo(function TaskItem({ t, all, now, waiting, depth, busyLanes
           onDrop(null)
         }}
       >
+        {t.status === 'running' && <FlowRing />}
         {zone === 'child' && <div className="task-drop-label">放开：成为它的子任务，它完成后再开始</div>}
         <div className="task-item-head">
           {queued && (

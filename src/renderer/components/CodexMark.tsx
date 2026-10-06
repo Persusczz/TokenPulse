@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import type { Intensity, SourceView } from '@shared/types'
 import { useMotionLevel, useSource } from '../state'
 import { Starburst } from './Starburst'
+import { onFrame } from '../frames'
 
 /** rotation speed (deg/s) and breathing per intensity level, like the spark's */
 const SPEED = [4, 18, 52, 130]
@@ -62,7 +63,6 @@ export function CodexMark({ size = 64, intensity = 0, pulse = 0, animated = true
 
   useEffect(() => {
     if (!animated || reduced) return
-    let raf = 0
     let last = performance.now()
     const tick = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000)
@@ -95,10 +95,9 @@ export function CodexMark({ size = 64, intensity = 0, pulse = 0, animated = true
         el.setAttribute('r', Math.max(0, 0.07 * Math.min(1, p.life * 2)).toFixed(3))
         el.setAttribute('opacity', Math.max(0, Math.min(1, p.life * 1.6)).toFixed(2))
       }
-      raf = requestAnimationFrame(tick)
     }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
+    const stop = onFrame(30, (_dt, now) => tick(now), 'mark')
+    return () => stop()
   }, [animated, reduced])
 
   const glow = animated ? [0, 3, 7, 12][intensity] : 0

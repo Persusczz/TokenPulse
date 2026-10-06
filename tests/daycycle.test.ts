@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { sunTimes } from '../src/shared/astro'
-import { mix, nextPhase, phaseOf, skyAt, uiColors } from '../src/shared/daycycle'
+import { dayLabel, labelOf, mix, nextLabel, nextPhase, phaseOf, seasonAt, skyAt, uiColors } from '../src/shared/daycycle'
 import { isReset } from '../src/shared/rewind'
 
 const BEIJING = { name: '北京', lat: 39.9, lon: 116.4 }
@@ -54,6 +54,26 @@ describe('the day at a place', () => {
     expect(skyAt(n.at - 120_000, BEIJING).phase).toBe('dusk')
   })
 
+  it('names the time of day the way people do', () => {
+    expect(labelOf(30, true, 20, 9.8)).toBe('上午')
+    expect(labelOf(35, false, 20, 12.2)).toBe('中午')
+    expect(labelOf(30, false, 20, 15)).toBe('下午')
+    expect(labelOf(10, false, 20, 17.5)).toBe('傍晚')
+    expect(labelOf(-3, false, 20, 18.6)).toBe('黄昏')
+    expect(labelOf(-20, false, 20, 20)).toBe('夜晚')
+    expect(labelOf(-20, false, 20, 23)).toBe('深夜')
+    expect(labelOf(-20, true, 20, 3)).toBe('凌晨')
+    expect(labelOf(-3, true, 20, 5.8)).toBe('黎明')
+    expect(labelOf(8, true, 20, 7)).toBe('早晨')
+  })
+
+  it('calls 9:44 on an autumn morning in San Francisco 上午, then 中午', () => {
+    const t = Date.UTC(2026, 9, 5, 16, 44)
+    expect(dayLabel(t, SF)).toBe('上午')
+    expect(nextLabel(t, SF)!.label).toBe('中午')
+    expect(dayLabel(bj(12, 30), BEIJING)).toBe('中午')
+  })
+
   it('works anywhere on the real clock: San Francisco is dark when Beijing has noon', () => {
     expect(skyAt(bj(12), SF).phase).toBe('night')
   })
@@ -74,5 +94,30 @@ describe('quota meters', () => {
     expect(isReset(prev, 63, prev.reset)).toBe(false)
     expect(isReset(prev, 40, prev.reset)).toBe(true)
     expect(isReset(prev, 70, prev.reset + 5 * 3600_000)).toBe(false)
+  })
+})
+
+describe('seasons and solar terms', () => {
+  it('names the term by the sun and blends the seasons at their boundaries', () => {
+    // 2026-10-05: just after the autumn equinox, 寒露 on the 8th
+    const bj = seasonAt(Date.UTC(2026, 9, 5, 4), BEIJING.lat)
+    expect(bj.term).toBe('秋分')
+    expect(bj.next).toBe('寒露')
+    expect(bj.season).toBe('autumn')
+    expect(bj.k.autumn).toBeCloseTo(1)
+    expect(seasonAt(Date.UTC(2026, 9, 9, 4), BEIJING.lat).term).toBe('寒露')
+    // the winter solstice and the summer one
+    expect(seasonAt(Date.UTC(2026, 11, 22, 12), BEIJING.lat).term).toBe('冬至')
+    expect(seasonAt(Date.UTC(2026, 5, 22, 12), BEIJING.lat).season).toBe('summer')
+    // 立冬 (about 7 November) is half autumn, half winter
+    const lidong = seasonAt(Date.UTC(2026, 10, 7, 12), BEIJING.lat)
+    expect(lidong.k.autumn + lidong.k.winter).toBeCloseTo(1)
+    expect(Math.abs(lidong.k.autumn - lidong.k.winter)).toBeLessThan(0.25)
+  })
+
+  it('runs half a year on south of the equator', () => {
+    const sydney = seasonAt(Date.UTC(2026, 9, 5, 4), -33.87)
+    expect(sydney.season).toBe('spring')
+    expect(sydney.term).toBe('春分')
   })
 })

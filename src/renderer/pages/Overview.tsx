@@ -6,7 +6,7 @@ import { Heatmap, Legend, ModelDonut, ProjectBars, TOKEN_SERIES, TrendChart } fr
 import { SourceMark } from '../components/CodexMark'
 import { ContextBanner, PromptsCard, WindowHistoryCard } from '../components/UsageInsights'
 import { EnergyTank } from '../components/EnergyTank'
-import { ComboBadge, NextMilestone, useCombo } from '../components/Fx'
+import { ComboBadge, FlowRing, NextMilestone, useCombo } from '../components/Fx'
 import { GuardBanner } from '../components/GuardBanner'
 import { IconBolt } from '../components/Icons'
 import { ValueCard } from '../components/Insights'
@@ -19,6 +19,7 @@ import { RaceCard, VsUsualChip } from '../components/OverviewDay'
 import { DailyQuotaCard, QuotaOutlookCard } from '../components/QuotaViz'
 import { CacheCard } from '../components/QuotaInsights'
 import { QuotaCard } from '../components/QuotaRings'
+import { CyclesCard } from '../components/QuotaCycles'
 import { coverageNote, RANGE_OPTIONS, RangeTabs, spanText } from '../components/RangeTabs'
 import { RateCard } from '../components/RateCard'
 import { RunawayBanner } from '../components/RunawayBanner'
@@ -182,6 +183,7 @@ export function Overview({ theme }: { theme: string }) {
 
       <div className="grid-hero">
         <div className={`card tank-card${hot}`}>
+          {hot && <FlowRing />}
           <div className="card-head" style={{ marginBottom: 0 }}>
             <div className="card-title">
               <span className="serif">今日能量罐</span>
@@ -204,6 +206,7 @@ export function Overview({ theme }: { theme: string }) {
         </div>
 
         <div className={`card hero${hot}`}>
+          {hot && <FlowRing />}
           {/* a light sweep marks each range switch */}
           <motion.div
             key={range}
@@ -274,6 +277,8 @@ export function Overview({ theme }: { theme: string }) {
 
         <QuotaCard />
       </div>
+
+      <CyclesCard />
 
       <RateCard theme={theme} />
 

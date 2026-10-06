@@ -118,6 +118,7 @@ export function RaceCard() {
               {m.proj.length > 1 ? ` · 照这样${curName}约 ${fmt(m.projEnd)}` : ''}
             </span>
           </div>
+          <div className="race-plot">
           <svg className="race-svg" viewBox={`0 0 ${W} 200`} role="img" aria-label={`${curName}和${prevName}的累计用量`}>
             <defs>
               <linearGradient id="race-fill" x1="0" x2="0" y1="0" y2="1">
@@ -154,7 +155,6 @@ export function RaceCard() {
                     <circle cx={m.x(m.k)} cy={m.y(m.then)} r="4.5" className="race-ghost" />
                   </>
                 )}
-                <circle cx={m.x(m.k)} cy={m.y(m.now)} r="11" className="race-pulse" />
                 <circle cx={m.x(m.k)} cy={m.y(m.now)} r="5.5" className="race-head-dot" />
               </g>
             )}
@@ -169,6 +169,8 @@ export function RaceCard() {
               </text>
             )}
           </svg>
+          {m.k >= 0 && <i className="race-pulse" style={{ left: `${(m.x(m.k) / W) * 100}%`, top: `${(m.y(m.now) / 200) * 100}%` }} aria-hidden />}
+          </div>
         </>
       )}
     </div>

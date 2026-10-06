@@ -65,3 +65,82 @@ svg.starburst,
 svg.codex-mark {
   contain: size layout style;
 }
+
+/* the frame-rate meter (设置 → 帧率显示) */
+.fps-meter {
+  position: fixed;
+  right: 14px;
+  bottom: 12px;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 132px;
+  padding: 6px 10px 7px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-solid, var(--bg)) 82%, transparent);
+  backdrop-filter: blur(8px);
+  color: var(--text-2);
+  font: 500 11px/1.35 var(--sans);
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+}
+.fps-main {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+.fps-main b {
+  font-size: 18px;
+  color: var(--text);
+}
+.fps-main small {
+  color: var(--text-3);
+}
+.fps-meter::before {
+  content: '';
+  position: absolute;
+  right: 9px;
+  top: 10px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #4cbf4c;
+  box-shadow: 0 0 6px #4cbf4c;
+}
+.fps-meter.meh::before {
+  background: #f0b429;
+  box-shadow: 0 0 6px #f0b429;
+}
+.fps-meter.bad::before {
+  background: #e5484d;
+  box-shadow: 0 0 6px #e5484d;
+}
+.fps-sub {
+  color: var(--text-3);
+}
+.fps-list {
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+/* the wordmark's shine runs on the frame clock (Brand.tsx), not as a style animation on every refresh */
+.brand-name em {
+  animation: none;
+  background-position: 100% 0;
+}
+
+/* the sidebar's nav scrolls only when the settings tree makes it taller than the window: a thin bar, shown on hover */
+.side-nav {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.side-nav:hover {
+  scrollbar-color: var(--border-strong) transparent;
+}

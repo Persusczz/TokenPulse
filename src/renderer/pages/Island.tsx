@@ -5,6 +5,7 @@ import { cnCount, crossed, TOKEN_MARKS } from '@shared/milestones'
 import type { Intensity, QuotaWindow } from '@shared/types'
 import { CodexMark, SourceMark } from '../components/CodexMark'
 import { BlackHole } from '../components/Cosmos'
+import { hasPocket, PocketEmblem, PocketScene } from '../components/Pocket'
 import { useQuotaMotion } from '../components/QuotaMotion'
 import { Starburst } from '../components/Starburst'
 import { clock, countdown, useApp, useData, useMotionLevel, useNow, useSource, useToolQuotas } from '../state'
@@ -79,6 +80,8 @@ export function Island() {
   const tools = useToolQuotas()
   const level = useMotionLevel()
   const cosmic = settings?.backdrop === 'galaxy'
+  // a theme pack: its own scene behind the island and its emblem in place of the tool's mark
+  const pocket = !cosmic && hasPocket(settings?.backdrop) ? settings!.backdrop : null
   const now = useNow(1000)
   const [hover, setHover] = useState(false)
   const [ev, setEv] = useState<IslandEvent | null>(null)
@@ -218,7 +221,7 @@ export function Island() {
         layout
         transition={SPRING}
         style={{ borderRadius: mode === 'compact' ? 20 : 28 }}
-        className={`island ${mode}${cosmic ? ' cosmic' : ''} tone-${ev?.tone ?? (guard?.manualHold || paused ? 'alarm' : 'none')}`}
+        className={`island ${mode}${cosmic ? ' cosmic' : ''}${pocket ? ` pocket pocket-${pocket}` : ''} tone-${ev?.tone ?? (guard?.manualHold || paused ? 'alarm' : 'none')}`}
         onMouseEnter={() => {
           setHover(true)
           window.api.islandInteractive(true)
@@ -233,11 +236,28 @@ export function Island() {
           window.api.islandMenu()
         }}
       >
+        {pocket && (
+          <PocketScene
+            className="isl-scene"
+            style={pocket}
+            shape="island"
+            dark
+            intensity={intensity}
+            level={level}
+            pulse={lastUpdate?.addedTokens ? lastUpdate.at : 0}
+            size={lastUpdate?.addedTokens ?? 0}
+            pct={five ? five.utilization : null}
+            vivid={settings?.backdropVivid ?? 0.7}
+            place={settings?.skyPlace ?? null}
+          />
+        )}
         <AnimatePresence mode="popLayout" initial={false}>
           {mode === 'compact' && (
             <motion.div key="compact" className="isl-compact" {...FADE}>
               {cosmic ? (
                 <BlackHole className="isl-hole" pct={five ? five.utilization : null} intensity={intensity} level={level} pulse={lastUpdate?.addedTokens ? lastUpdate.at : 0} gauge={false} />
+              ) : pocket ? (
+                <PocketEmblem className="isl-emblem" style={pocket} dark intensity={intensity} level={level} pulse={lastUpdate?.addedTokens ? lastUpdate.at : 0} vivid={settings?.backdropVivid ?? 0.7} place={settings?.skyPlace ?? null} />
               ) : (
                 <SourceMark size={20} intensity={intensity} pulse={lastUpdate?.addedTokens ? lastUpdate.at : 0} />
               )}
@@ -294,6 +314,8 @@ export function Island() {
               <div className="isl-head">
                 {cosmic ? (
                   <BlackHole className="isl-hole big" pct={five ? five.utilization : null} intensity={intensity} level={level} pulse={0} gauge={false} />
+                ) : pocket ? (
+                  <PocketEmblem className="isl-emblem big" style={pocket} dark intensity={intensity} level={level} pulse={0} vivid={settings?.backdropVivid ?? 0.7} place={settings?.skyPlace ?? null} />
                 ) : (
                   <SourceMark size={26} intensity={intensity} />
                 )}

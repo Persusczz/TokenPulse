@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { Intensity } from '@shared/types'
 import type { MotionScale } from '../state'
+import { onFrame } from '../frames'
 
 interface Star {
   x: number
@@ -232,18 +233,9 @@ export function StarField({
     addEventListener('pointermove', move, { passive: true })
     if (!level) return () => (ro.disconnect(), removeEventListener('pointermove', move))
 
-    let raf = 0
-    let last = performance.now()
-    const tick = (now: number) => {
-      raf = requestAnimationFrame(tick)
-      if (now - last < 15) return
-      const dt = Math.min(0.05, (now - last) / 1000)
-      last = now
-      s.draw(dt)
-    }
-    raf = requestAnimationFrame(tick)
+    const stop = onFrame(60, (dt) => s.draw(Math.min(0.05, dt)), 'stars')
     return () => {
-      cancelAnimationFrame(raf)
+      stop()
       ro.disconnect()
       removeEventListener('pointermove', move)
     }

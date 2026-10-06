@@ -4,6 +4,7 @@ import { fmtTokens } from '@shared/format'
 import type { PromptCost, StarMap, UsageSource } from '@shared/types'
 import { useApp, useMotionLevel } from '../state'
 import { GalaxyDive } from './GalaxyDive'
+import { onFrame } from '../frames'
 
 /**
  * The sky page's two scenes. 项目星系: every project is a spiral galaxy and
@@ -264,8 +265,6 @@ export function GalaxyField({ map, onProject }: { map: StarMap; onProject: (proj
     let posGalaxy: Galaxy[] = []
     let hoverKey: string | null = null
     let hoverGalaxy: string | null = null
-    let raf = 0
-    let last = 0
     let prev = performance.now()
     const t0 = performance.now()
     /** 0 = all galaxies, 1 = inside the focused one; the last focused one, while flying back out */
@@ -688,12 +687,7 @@ export function GalaxyField({ map, onProject }: { map: StarMap; onProject: (proj
     }
 
     // while flying, frames come even with motion turned down
-    const loop = (now: number) => {
-      raf = requestAnimationFrame(loop)
-      if (now - last < 32) return
-      last = now
-      draw(now)
-    }
+    const loop = (now: number) => draw(now)
     const ro = new ResizeObserver(() => {
       layout()
       draw(performance.now())
@@ -702,7 +696,7 @@ export function GalaxyField({ map, onProject }: { map: StarMap; onProject: (proj
     layout()
     draw(performance.now())
     redraw.current = () => draw(performance.now())
-    if (level) raf = requestAnimationFrame(loop)
+    const stop = level ? onFrame(30, (_dt, now) => loop(now), 'sky') : null
 
     const local = (e: MouseEvent) => {
       const r = canvas.getBoundingClientRect()
@@ -761,7 +755,7 @@ export function GalaxyField({ map, onProject }: { map: StarMap; onProject: (proj
     canvas.addEventListener('mouseleave', out)
     canvas.addEventListener('click', click)
     return () => {
-      cancelAnimationFrame(raf)
+      stop?.()
       ro.disconnect()
       canvas.removeEventListener('mousemove', move)
       canvas.removeEventListener('mouseleave', out)
@@ -859,8 +853,6 @@ export function PlanetSystem({ models, source }: { models: StarMap['models']; so
     const ctx = canvas.getContext('2d')!
     let W = 0
     let H = 0
-    let raf = 0
-    let last = 0
     let hover: string | null = null
     let spots: { name: string; x: number; y: number; r: number }[] = []
     let dust: { x: number; y: number; a: number }[] = []
@@ -998,12 +990,7 @@ export function PlanetSystem({ models, source }: { models: StarMap['models']; so
       ;[...planets].sort((a, b) => b.share - a.share).forEach(label)
       spots = planets.map((p) => ({ name: p.m.name, x: p.x, y: p.y, r: p.r }))
     }
-    const loop = (now: number) => {
-      raf = requestAnimationFrame(loop)
-      if (now - last < 32) return
-      last = now
-      draw(now)
-    }
+    const loop = (now: number) => draw(now)
     const ro = new ResizeObserver(() => {
       resize()
       draw(performance.now())
@@ -1012,7 +999,7 @@ export function PlanetSystem({ models, source }: { models: StarMap['models']; so
     resize()
     draw(performance.now())
     redraw.current = () => draw(performance.now())
-    if (level) raf = requestAnimationFrame(loop)
+    const stop = level ? onFrame(30, (_dt, now) => loop(now), 'sky') : null
     const move = (e: MouseEvent) => {
       const r = canvas.getBoundingClientRect()
       const mx = e.clientX - r.left
@@ -1030,7 +1017,7 @@ export function PlanetSystem({ models, source }: { models: StarMap['models']; so
     canvas.addEventListener('mousemove', move)
     canvas.addEventListener('mouseleave', leave)
     return () => {
-      cancelAnimationFrame(raf)
+      stop?.()
       ro.disconnect()
       canvas.removeEventListener('mousemove', move)
       canvas.removeEventListener('mouseleave', leave)

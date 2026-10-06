@@ -12,6 +12,9 @@ import { Astral, ClaudeGlow, CodexNight, Dune, PaperDesk, Sakura } from './Theme
 import { Eclipse, Firefly, Lunar, Orrery, Rain, Trails } from './ThemeScenes3'
 import { Bauhaus, Crystal, DigitalRain, Fireworks, Lanterns, LavaLamp } from './ThemeScenes4'
 import { DayCycleScene, usePlace } from './DayCycle'
+import { Cyberpunk, Mystic, Xianxia } from './ThemeScenes5'
+import { KoiPond, PixelQuest, Ukiyo } from './ThemeScenes6'
+import { onFrame } from '../frames'
 
 /** Backdrop palette for the current settings, quota and intensity (shared with the floating window) */
 export function useAmbient(settings: Settings | null, intensity: Intensity) {
@@ -92,7 +95,6 @@ function RippleField({ intensity, level, pulse, theme, vivid }: { intensity: Int
     }
     resize()
     addEventListener('resize', resize)
-    let raf = 0
     let last = performance.now()
     const tick = (t: number) => {
       const dt = Math.min(0.05, (t - last) / 1000)
@@ -138,11 +140,10 @@ function RippleField({ intensity, level, pulse, theme, vivid }: { intensity: Int
         }
         return true
       })
-      raf = requestAnimationFrame(tick)
     }
-    raf = requestAnimationFrame(tick)
+    const stop = onFrame(60, (_dt, now) => tick(now), 'ripples')
     return () => {
-      cancelAnimationFrame(raf)
+      stop()
       removeEventListener('resize', resize)
     }
   }, [level])
@@ -257,6 +258,12 @@ export function Backdrop({ theme, paint, animated }: { theme: string; paint: str
       {style === 'lantern' && <Lanterns intensity={intensity} level={level} pulse={pulse} size={lastUpdate?.addedTokens ?? 0} vivid={vivid} dark={theme === 'dark'} key={`ln-${theme}`} />}
       {style === 'daylight' && <DayCycleScene intensity={intensity} level={level} pulse={pulse} size={lastUpdate?.addedTokens ?? 0} vivid={vivid} place={place} />}
       {style === 'bauhaus' && <Bauhaus intensity={intensity} level={level} pulse={pulse} size={lastUpdate?.addedTokens ?? 0} vivid={vivid} dark={theme === 'dark'} key={`bh-${theme}`} />}
+      {style === 'mystic' && <Mystic intensity={intensity} level={level} pulse={pulse} size={lastUpdate?.addedTokens ?? 0} vivid={vivid} />}
+      {style === 'cyber' && <Cyberpunk intensity={intensity} level={level} pulse={pulse} size={lastUpdate?.addedTokens ?? 0} vivid={vivid} />}
+      {style === 'xianxia' && <Xianxia intensity={intensity} level={level} pulse={pulse} size={lastUpdate?.addedTokens ?? 0} vivid={vivid} />}
+      {style === 'koi' && <KoiPond intensity={intensity} level={level} pulse={pulse} size={lastUpdate?.addedTokens ?? 0} vivid={vivid} dark={theme === 'dark'} key={`k-${theme}`} />}
+      {style === 'ukiyo' && <Ukiyo intensity={intensity} level={level} pulse={pulse} size={lastUpdate?.addedTokens ?? 0} vivid={vivid} dark={theme === 'dark'} key={`u-${theme}`} />}
+      {style === 'pixel' && <PixelQuest intensity={intensity} level={level} pulse={pulse} size={lastUpdate?.addedTokens ?? 0} vivid={vivid} />}
       {style === 'claude' && <ClaudeGlow intensity={intensity} level={level} pulse={pulse} size={lastUpdate?.addedTokens ?? 0} vivid={vivid} dark={theme === 'dark'} key={`c-${theme}`} />}
       {style === 'codex' && <CodexNight intensity={intensity} level={level} pulse={pulse} size={lastUpdate?.addedTokens ?? 0} vivid={vivid} dark={theme === 'dark'} key={`x-${theme}`} />}
       <span className="backdrop-tint" />

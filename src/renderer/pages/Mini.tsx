@@ -12,7 +12,7 @@ import { useQuotaMotion } from '../components/QuotaMotion'
 import { Starburst } from '../components/Starburst'
 import { CodexMark, SourceMark } from '../components/CodexMark'
 import { BlackHole, MiniGalaxy } from '../components/Cosmos'
-import { Abyss, Borealis, InkWash, NeonGrid } from '../components/ThemeScenes'
+import { hasPocket, PocketOrb, pocketDark, PocketScene } from '../components/Pocket'
 import { clock, countdown, useApp, useData, useMotionLevel, useNow, useSource, useToolQuotas } from '../state'
 
 const quotaColor = (pct: number, pauseAt: number | null) =>
@@ -309,9 +309,8 @@ function CapsuleMini({ d }: { d: MiniData }) {
   )
 }
 
-/** main-window backdrops that also flow inside the floating window */
+/** main-window backdrops that also flow inside the floating window (theme packs bring pocket scenes of their own) */
 const ANIMATED: BackdropStyle[] = ['flow', 'stars', 'aurora', 'ripples']
-const SCENES: BackdropStyle[] = ['neon', 'borealis', 'abyss', 'ink']
 
 /** The main window's flowing light, inside the panel */
 function MiniFlow({ d, dark, scale }: { d: MiniData; dark: boolean; scale: number }) {
@@ -331,7 +330,7 @@ function MiniFlow({ d, dark, scale }: { d: MiniData; dark: boolean; scale: numbe
   )
 }
 
-function OrbMini({ d, paint, scale, glass, cosmic }: { d: MiniData; paint: string; scale: number; glass: boolean; cosmic: boolean }) {
+function OrbMini({ d, paint, scale, glass, cosmic, pocket, dark }: { d: MiniData; paint: string; scale: number; glass: boolean; cosmic: boolean; pocket: BackdropStyle | null; dark: boolean }) {
   const pour = usePour(d)
   const motion = useMotionLevel()
   const level = d.five ? d.five.utilization / 100 : d.live ? d.live.today.cost / d.live.capacity : 0
@@ -341,10 +340,25 @@ function OrbMini({ d, paint, scale, glass, cosmic }: { d: MiniData; paint: strin
       {cosmic ? (
         // the cosmos theme: a black hole whose accretion disk is the 5h window
         <BlackHole key={paint} pct={d.five ? d.five.utilization : null} intensity={d.intensity} level={motion} pulse={d.beat} pixelScale={scale} />
+      ) : pocket ? (
+        // a theme pack: its own scene in the circle, the 5h window as a ring of light round the rim
+        <PocketOrb
+          key={paint}
+          style={pocket}
+          dark={dark}
+          intensity={d.intensity}
+          level={motion}
+          pulse={d.beat}
+          size={d.lastUpdate?.addedTokens ?? 0}
+          pct={d.five ? d.five.utilization : null}
+          vivid={d.settings?.backdropVivid ?? 0.7}
+          place={d.settings?.skyPlace ?? null}
+          pixelScale={scale}
+        />
       ) : (
         <EnergyTank shape="orb" level={level} intensity={d.intensity} pour={pour} theme={paint} pixelScale={scale} glass={glass} />
       )}
-      <div className={`orb-text${cosmic ? ' cosmic' : level > 0.58 ? ' on-liquid' : ''}`}>
+      <div className={`orb-text${cosmic ? ' cosmic' : pocket ? ' pocket' : level > 0.58 ? ' on-liquid' : ''}`}>
         <b className="serif">{d.five ? `${Math.round(d.five.utilization)}%` : d.money(d.live?.today.cost ?? 0)}</b>
         <span>{d.paused.length ? '守卫暂停中' : d.five ? (d.source === 'codex' ? 'Codex 5h' : '5h 额度') : '今日费用'}</span>
         <small>
@@ -364,9 +378,10 @@ export function Mini({ theme, paint }: { theme: string; paint: string }) {
   const alert = useAlert(d.five ? d.five.utilization : null, d.pauseAt)
   // the cosmos backdrop follows into the floating window: a mini galaxy, or a black hole as the orb
   const cosmic = d.settings?.backdrop === 'galaxy'
-  // theme-pack scenes play inside the panel too
-  const scene = d.settings && SCENES.includes(d.settings.backdrop) ? d.settings.backdrop : null
-  const flowing = !!d.settings && (cosmic || !!scene || ANIMATED.includes(d.settings.backdrop))
+  // a theme pack plays its own pocket scene inside the panel, the text over it in the scene's own tone
+  const pocket = !cosmic && hasPocket(d.settings?.backdrop) ? d.settings!.backdrop : null
+  const pdark = pocket ? pocketDark(pocket, theme === 'dark') : false
+  const flowing = !!d.settings && (cosmic || !!pocket || ANIMATED.includes(d.settings.backdrop))
 
   useEffect(() => {
     document.documentElement.classList.add('mini-root')
@@ -382,6 +397,7 @@ export function Mini({ theme, paint }: { theme: string; paint: string }) {
     `lv${d.intensity}`,
     flowing ? 'flowing' : '',
     cosmic ? 'cosmic' : '',
+    pocket ? `pocket ${pdark ? 'pocket-dark' : 'pocket-light'}` : '',
     d.paused.length ? 'paused' : '',
     alert ? 'alert' : '',
     d.settings?.miniClickThrough ? 'through' : ''
@@ -395,18 +411,23 @@ export function Mini({ theme, paint }: { theme: string; paint: string }) {
         window.api.miniMenu()
       }}
     >
-      {flowing && !cosmic && !scene && <MiniFlow d={d} dark={theme === 'dark'} scale={scale} />}
-      {scene && (
+      {flowing && !cosmic && !pocket && <MiniFlow d={d} dark={theme === 'dark'} scale={scale} />}
+      {pocket && mode !== 'orb' && (
         <div className="mini-flow" aria-hidden>
-          {scene === 'neon' ? (
-            <NeonGrid intensity={d.intensity} level={motion} pulse={d.beat} vivid={d.settings!.backdropVivid} />
-          ) : scene === 'borealis' ? (
-            <Borealis intensity={d.intensity} level={motion} pulse={d.beat} vivid={d.settings!.backdropVivid} />
-          ) : scene === 'abyss' ? (
-            <Abyss intensity={d.intensity} level={motion} pulse={d.beat} vivid={d.settings!.backdropVivid} />
-          ) : (
-            <InkWash intensity={d.intensity} level={motion} pulse={d.beat} vivid={d.settings!.backdropVivid} />
-          )}
+          <PocketScene
+            key={paint}
+            style={pocket}
+            shape={mode === 'capsule' ? 'capsule' : 'card'}
+            dark={theme === 'dark'}
+            intensity={d.intensity}
+            level={motion}
+            pulse={d.beat}
+            size={d.lastUpdate?.addedTokens ?? 0}
+            pct={d.five ? d.five.utilization : null}
+            vivid={d.settings!.backdropVivid}
+            place={d.settings!.skyPlace}
+            pixelScale={scale}
+          />
         </div>
       )}
       {cosmic && mode !== 'orb' && (
@@ -416,7 +437,7 @@ export function Mini({ theme, paint }: { theme: string; paint: string }) {
       )}
       {motion > 0 && d.beat > 0 && <span key={d.beat} className="mini-sheen" aria-hidden />}
       {mode === 'orb' ? (
-        <OrbMini d={d} paint={paint} scale={scale} glass={flowing} cosmic={cosmic} />
+        <OrbMini d={d} paint={paint} scale={scale} glass={flowing} cosmic={cosmic} pocket={pocket} dark={theme === 'dark'} />
       ) : mode === 'capsule' ? (
         <CapsuleMini d={d} />
       ) : (

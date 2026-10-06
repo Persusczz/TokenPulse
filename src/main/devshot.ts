@@ -1,7 +1,8 @@
 import { execFileSync } from 'node:child_process'
 import { appendFile, mkdir, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { screen, type BrowserWindow } from 'electron'
+import { nativeImage as images, screen, type BrowserWindow } from 'electron'
+import { PACK_KEYS, PACKS } from '@shared/packs'
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -40,10 +41,11 @@ export async function runDevShots(dir: string, main: BrowserWindow, mini: Browse
   // a Chromium trace of the overview, to see where the frame time goes
   if (process.env.TP_SHOTS === 'trace') {
     const { contentTracing } = await import('electron')
-    await set({ backdrop: 'flow', theme: 'dark', themePack: 'none', motion: 'standard', glassCards: true, lightFx: true, sourceFilter: 'claude' })
+    const pack = process.env.TP_TRACE_PACK ?? 'none'
+    await set({ backdrop: pack === 'none' ? 'flow' : pack, theme: 'dark', themePack: pack, motion: 'standard', glassCards: true, lightFx: true, sourceFilter: 'claude' })
     await js(click('概览'))
-    await wait(3000)
-    await contentTracing.startRecording({ included_categories: ['devtools.timeline', 'disabled-by-default-devtools.timeline', 'disabled-by-default-devtools.timeline.invalidationTracking', 'disabled-by-default-devtools.timeline.stack'] })
+    await wait(9000)
+    await contentTracing.startRecording({ included_categories: process.env.TP_TRACE_CATS ? process.env.TP_TRACE_CATS.split(',') : ['devtools.timeline', 'disabled-by-default-devtools.timeline', 'disabled-by-default-devtools.timeline.stack', 'v8.execute', 'disabled-by-default-v8.cpu_profiler'] })
     await wait(3000)
     const path = await contentTracing.stopRecording(join(dir, 'trace.json'))
     await log({ trace: path })
@@ -64,6 +66,660 @@ export async function runDevShots(dir: string, main: BrowserWindow, mini: Browse
       }
     }
     await log(out)
+    await set({ themePack: 'none', theme: 'system', backdrop: 'flow', accent: 'clay', sourceFilter: 'all' })
+    done()
+    return
+  }
+
+  // the README's pictures: TP_SHOTS=readme (TP_SHOTS_ONLY=pages,tasks,packs,day,pockets), then copy <dir>/readme/* to docs/screenshots
+  if (process.env.TP_SHOTS === 'readme') {
+    const only = (process.env.TP_SHOTS_ONLY ?? '').split(',').filter(Boolean)
+    const want = (group: string) => !only.length || only.includes(group)
+    const out = join(dir, 'readme')
+    await mkdir(out, { recursive: true })
+    /** JPEG (scaled down to `width` px when given, or cut to `rect`); a `.png` name keeps the see-through windows' alpha */
+    const save = async (win: BrowserWindow, name: string, width?: number, rect?: Electron.Rectangle | null) => {
+      let img = await win.webContents.capturePage(rect ?? undefined)
+      if (width && img.getSize().width > width) img = img.resize({ width, quality: 'best' })
+      const png = name.endsWith('.png')
+      if (png) {
+        // cut the see-through margin around the window's content (re-read at scale 1 so sizes are pixels)
+        img = images.createFromBuffer(img.toPNG())
+        const { width: w, height: h } = img.getSize()
+        const px = img.toBitmap()
+        let [x0, y0, x1, y1] = [w, h, -1, -1]
+        for (let y = 0; y < h; y++)
+          for (let x = 0; x < w; x++)
+            if (px[(y * w + x) * 4 + 3] > 8) {
+              x0 = Math.min(x0, x)
+              x1 = Math.max(x1, x)
+              y0 = Math.min(y0, y)
+              y1 = Math.max(y1, y)
+            }
+        if (x1 >= x0) img = img.crop({ x: x0, y: y0, width: x1 - x0 + 1, height: y1 - y0 + 1 })
+      }
+      await writeFile(join(out, png ? name : `${name}.jpg`), png ? img.toPNG() : img.toJPEG(88))
+    }
+    const top = () => js(`document.querySelector('.main').scrollTo(0, 0)`)
+    const at = async (sel: string) => {
+      await js(scrollTo(sel))
+      await js(`document.querySelector('.main').scrollBy(0, -16)`)
+    }
+    const base = { sourceFilter: 'claude', motion: 'standard', glassCards: true, lightFx: true, themePack: 'none', theme: 'dark', backdrop: 'flow', accent: 'clay', fpsMeter: false }
+    main.setSize(1320, 880)
+    main.center()
+    // no achievement fanfare over the pictures, and the user's own prompts stay unreadable
+    await main.webContents.insertCSS('.celebrate, .toasts, .toast { display: none !important } .dv-session-title, .dv-conv-title { filter: blur(5px) }')
+    await set(base)
+    await wait(6000)
+    if (want('pages')) {
+      await js(click('概览'))
+      await wait(4000)
+      await top()
+      await wait(1500)
+      await save(main, 'overview')
+      for (const [sel, name] of [
+        ['.cycles-card', 'overview-cycles'],
+        ['.rate-card', 'overview-rate']
+      ]) {
+        await at(sel)
+        await wait(1800)
+        await save(main, name)
+      }
+      await set({ sourceFilter: 'codex' })
+      await wait(2500)
+      await top()
+      await wait(1500)
+      await save(main, 'overview-codex')
+      await set({ sourceFilter: 'all', theme: 'light' })
+      await wait(2500)
+      await top()
+      await wait(1500)
+      await save(main, 'overview-light')
+      // the sky without the galaxy overview, whose labels are the user's project folders
+      await set({ ...base, backdrop: 'galaxy' })
+      await js(click('星空'))
+      await wait(4000)
+      await at('.sky-row')
+      await wait(1800)
+      await save(main, 'sky-planets', undefined, await js(`(() => { const r = document.querySelector('.sky-row').getBoundingClientRect(); return { x: Math.round(r.x) - 12, y: Math.round(r.y) - 12, width: Math.round(r.width) + 24, height: Math.round(r.height) + 24 } })()`))
+      // fly into the biggest galaxy: its conversations along the arms
+      await top()
+      await wait(800)
+      await js(
+        `(() => { const c = document.querySelector('.galaxy-canvas'); if (!c) return null; const r = c.getBoundingClientRect(); const o = { clientX: r.left + r.width / 2 - 34, clientY: r.top + r.height * 0.46 + 26, bubbles: true }; c.dispatchEvent(new MouseEvent('mousemove', o)); c.dispatchEvent(new MouseEvent('click', o)); return true })()`
+      )
+      await wait(2400)
+      await save(main, 'sky-dive')
+      for (let k = 0; k < 2; k++) {
+        await js(clickSel('.dv-back'))
+        await wait(400)
+      }
+      await set(base)
+      for (const [page, name] of [
+        ['成就', 'achievements'],
+        ['定价', 'pricing']
+      ]) {
+        await js(click(page))
+        await wait(3000)
+        await top()
+        await wait(800)
+        await save(main, name)
+      }
+      // the pack grid, one of them playing its scene under the pointer
+      await js(`localStorage.setItem('tp.fold.packs', '1'); localStorage.setItem('tp.fold.backdrops', '1')`)
+      await js(click('设置'))
+      await wait(1200)
+      await clickSub('外观与动效')
+      await wait(1600)
+      await js(scrollTo('.packs'))
+      await js(`document.querySelector('.main').scrollBy(0, -110)`)
+      await js(`(() => { const b = document.querySelector('.pack.pack-cyber'); b && b.dispatchEvent(new PointerEvent('pointerover', { bubbles: true })); return !!b })()`)
+      await wait(2600)
+      await save(main, 'settings-packs')
+      await js(`(() => { const b = document.querySelector('.pack.pack-cyber'); b && b.dispatchEvent(new PointerEvent('pointerout', { bubbles: true })); return !!b })()`)
+      await js(`localStorage.removeItem('tp.fold.packs'); localStorage.removeItem('tp.fold.backdrops')`)
+    }
+    // the task queue with a stand-in CLI, so nothing real runs
+    if (want('tasks')) {
+      const svc = (globalThis as { __tpTasks?: import('./tasks').TaskService }).__tpTasks
+      if (svc) {
+        const fake = join(dir, 'fake-cli.cjs')
+        await writeFile(
+          fake,
+          `const out = (o) => process.stdout.write(JSON.stringify(o) + '\\n')
+out({ type: 'system', subtype: 'init', model: 'claude-opus-5-5', cwd: '~/projects/' + require('path').basename(process.cwd()), session_id: 'demo-' + Date.now() })
+let i = 0
+const steps = [['thinking', '先看看 tests 目录里哪些用例失败，再决定从哪里改起'], ['Bash', 'npm test -- --reporter=dot'], ['Read', 'src/main/quota.ts'], ['text', '找到了：刷新时两个请求并发写同一个缓存'], ['Edit', 'src/main/quota.ts'], ['Bash', 'npm test'], ['text', '修好了，正在复查其它调用点']]
+const t = setInterval(() => {
+  const s = steps[i++]
+  if (!s) { clearInterval(t); setInterval(() => {}, 1e4); return }
+  out({ type: 'assistant', message: { content: [s[0] === 'thinking' ? { type: 'thinking', thinking: s[1] } : s[0] === 'text' ? { type: 'text', text: s[1] } : { type: 'tool_use', name: s[0], input: s[0] === 'Bash' ? { command: s[1] } : { file_path: s[1] } }] } })
+}, 500)`
+        )
+        svc.useCommand(() => ({ cmd: 'node', pre: [fake] }))
+        const add = (input: object) => js(`window.api.addTask(${JSON.stringify(input)})`) as Promise<{ id: string }>
+        // stand-in project folders, so the queue shows real ones
+        const here = join(dir, 'projects', 'my-app')
+        const docs = join(dir, 'projects', 'docs-site')
+        for (const d of [here, docs]) await mkdir(d, { recursive: true })
+        const a = await add({ prompt: '把 tests 里失败的用例修好，跑一遍 npm test 确认全部通过', cwd: here, trigger: 'reset', continue: true, verify: 'npm test', retries: 2 })
+        await add({ prompt: '修好以后把这次的改动写进 CHANGELOG', cwd: here, trigger: 'reset', parentId: a.id, continue: true })
+        await add({ prompt: '审查一遍 quota 模块的并发问题，写一份报告', cwd: here, tool: 'codex', trigger: 'reset', permission: 'plan', continue: true })
+        await add({ prompt: '在文档站同步这次的接口变化', cwd: docs, trigger: 'time', at: Date.now() + 5 * 3600_000, continue: false })
+        await add({ prompt: '每晚检查依赖更新并给出升级建议', cwd: here, trigger: 'manual', repeat: true, permission: 'plan' })
+        // both tools' lanes, and a tidy folder in the form
+        await set({ sourceFilter: 'all', taskCwd: 'D:\\projects\\my-app' })
+        await js(click('任务'))
+        await wait(2500)
+        await svc.action(a.id, 'start')
+        await wait(1500)
+        await save(main, 'tasks')
+        await js(`[...document.querySelectorAll('.task-item.running button')].find((b) => b.textContent.trim() === '日志')?.click()`)
+        await wait(3600)
+        await at('.task-tree')
+        await wait(900)
+        await save(main, 'tasks-queue')
+        for (const t of [...svc.tasks]) if (t.status === 'running') await svc.action(t.id, 'stop')
+        await wait(1500)
+        for (const t of [...svc.tasks]) {
+          if (t.status === 'queued') await svc.action(t.id, 'cancel')
+          await svc.action(t.id, 'remove')
+        }
+        await set(base)
+      }
+    }
+    if (want('packs')) {
+      await js(click('概览'))
+      const packs = (process.env.TP_SHOTS_PACKS ?? 'mystic,cyber,xianxia,koi,ukiyo,pixel,lantern,sakura,borealis,abyss,matrix,orrery').split(',')
+      for (const pack of packs as (keyof typeof PACKS)[]) {
+        await set({ themePack: pack, backdrop: PACKS[pack].backdrop, theme: PACKS[pack].theme === 'light' ? 'light' : 'dark' })
+        await wait(4500)
+        await top()
+        await wait(600)
+        await save(main, `pack-${pack}`, 960)
+      }
+      await set(base)
+    }
+    // 昼夜 through one day and the seasons
+    if (want('day')) {
+      const { placeOf, sunTimes } = await import('@shared/astro')
+      const st = sunTimes(Date.now(), placeOf(null))
+      const M = 60_000
+      const day = (t: number | null) => js(`(() => { window.__tpSetDay && window.__tpSetDay(${t === null ? 'null' : t}); return true })()`)
+      const ev = (name: string) => js(`(() => { window.__tpDayEvent && window.__tpDayEvent(${JSON.stringify(name)}); return true })()`)
+      const season = (k: string | null) => js(`(() => { window.__tpSeason = ${k ? JSON.stringify(k) : 'undefined'}; return true })()`)
+      await set({ themePack: 'daylight', theme: 'dark', backdrop: 'daylight' })
+      await js(click('概览'))
+      await wait(1800)
+      await top()
+      await day(st.rise! + 35 * M)
+      await wait(800)
+      await ev('balloon')
+      await wait(4000)
+      await save(main, 'day-morning', 960)
+      await day(st.noon)
+      await wait(800)
+      await ev('plane')
+      await wait(9000)
+      await save(main, 'day-noon', 960)
+      await ev('shower')
+      await wait(12000)
+      await ev('rainbow')
+      await wait(3000)
+      await save(main, 'day-rainbow', 960)
+      await day(st.set! + 18 * M)
+      await wait(4000)
+      await save(main, 'day-dusk', 960)
+      await season('summer')
+      await day(st.set! + 3 * 60 * M)
+      await wait(800)
+      await ev('aurora')
+      await ev('sat')
+      await wait(9000)
+      await save(main, 'day-night', 960)
+      await season('winter')
+      await day(st.noon - 100 * M)
+      await wait(3500)
+      await save(main, 'day-winter', 960)
+      await season(null)
+      await day(null)
+      await set(base)
+    }
+    // the floating window as card, capsule and orb, and the island, in a few packs
+    if (want('pockets')) {
+      const { BrowserWindow: BW } = await import('electron')
+      const find = (hash: string) => BW.getAllWindows().find((x) => !x.isDestroyed() && x.webContents.getURL().includes(hash))
+      await set({ island: true, showMini: true, miniMode: 'card', miniScale: 1 })
+      await wait(3000)
+      for (const pack of (process.env.TP_SHOTS_PACKS ?? 'none,cyber,ukiyo,koi,daylight,mystic').split(',') as (keyof typeof PACKS)[]) {
+        await set({ themePack: pack, backdrop: PACKS[pack].backdrop, theme: PACKS[pack].theme === 'light' ? 'light' : 'dark', miniMode: 'card' })
+        await wait(2200)
+        let m = find('#/mini')
+        const isl = find('#/island')
+        if (m) fakeUpdate(m, 2_400_000)
+        if (isl) fakeUpdate(isl, 2_400_000)
+        await wait(900)
+        if (m) await save(m, `mini-${pack}-card.png`)
+        if (isl) await save(isl, `island-${pack}.png`)
+        for (const mode of ['capsule', 'orb'] as const) {
+          await set({ miniMode: mode })
+          await wait(1600)
+          m = find('#/mini')
+          if (m) await save(m, `mini-${pack}-${mode}.png`)
+        }
+        if (isl) {
+          isl.webContents.sendInputEvent({ type: 'mouseMove', x: 230, y: 18 })
+          await wait(1100)
+          await save(isl, `island-${pack}-open.png`)
+          isl.webContents.sendInputEvent({ type: 'mouseLeave', x: 5, y: 190 })
+          await wait(500)
+        }
+      }
+      await set({ island: false, miniMode: 'card' })
+    }
+    await set({ themePack: 'none', theme: 'system', backdrop: 'flow', accent: 'clay', sourceFilter: 'all' })
+    done()
+    return
+  }
+
+  // 2.11: the six new packs, and the richer day / night
+  if (process.env.TP_SHOTS === 'v212') {
+    const only = process.env.TP_SHOTS_ONLY ?? ''
+    await set({ sourceFilter: 'claude', motion: 'standard', glassCards: true, lightFx: true })
+    await wait(6000)
+    // the window and its scroll areas against the screen's work area, on a tall sidebar
+    if (!only || only === 'layout') {
+      await set({ themePack: 'daylight', theme: 'dark', backdrop: 'daylight' })
+      await js(click('设置'))
+      await wait(1500)
+      const measure = async (name: string) => {
+        await wait(900)
+        const b = main.getBounds()
+        await log({
+          [name]: {
+            bounds: b,
+            work: screen.getDisplayMatching(b).workArea,
+            inner: await js(`({ w: innerWidth, h: innerHeight })`),
+            shell: await js(rectOf('.shell')),
+            side: await js(`(() => { const s = document.querySelector('.side'); return { h: s.clientHeight, scroll: s.scrollHeight } })()`),
+            main: await js(`(() => { const s = document.querySelector('.main'); return { h: s.clientHeight, scroll: s.scrollHeight, rect: s.getBoundingClientRect().height } })()`)
+          }
+        })
+        await js(`document.querySelector('.main').scrollTo(0, 1e6)`)
+        await wait(400)
+        await shot(main, name)
+      }
+      main.setSize(1320, 880)
+      await measure('400-layout-normal')
+      main.setSize(1100, 640)
+      await measure('401-layout-short')
+      main.maximize()
+      await measure('402-layout-max')
+      main.unmaximize()
+      main.setSize(1320, 880)
+    }
+    // the day/night pack at the real time
+    if (!only || only === 'daytime') {
+      await set({ themePack: 'daylight', theme: 'dark', backdrop: 'daylight' })
+      await js(click('概览'))
+      await wait(3000)
+      await log({
+        daytime: await js(
+          `({ now: new Date().toString(), tz: Intl.DateTimeFormat().resolvedOptions().timeZone, offset: new Date().getTimezoneOffset(), clock: document.querySelector('.day-clock-text')?.textContent })`
+        )
+      })
+      await shot(main, '410-daytime')
+    }
+    // frame pacing by pack and page: frame rate, the 95th-percentile frame, the share of frames that took 1.5x the usual
+    if (!only || only === 'fps') {
+      const frames = () =>
+        js(
+          `new Promise((done) => { const d = []; let p = performance.now(); const t0 = p; const f = (n) => { d.push(n - p); p = n; if (n - t0 < 3000) requestAnimationFrame(f); else { d.sort((a, b) => a - b); const med = d[d.length >> 1]; const mean = d.reduce((a, b) => a + b, 0) / d.length; done({ fps: Math.round(1000 / mean), med: +med.toFixed(1), p95: +d[Math.floor(d.length * 0.95)].toFixed(1), max: +d[d.length - 1].toFixed(1), jank: +((d.filter((x) => x > med * 1.5).length / d.length) * 100).toFixed(1) }) } }; requestAnimationFrame(f) })`
+        )
+      const packs = (process.env.TP_SHOTS_PACKS ?? 'none,daylight,mystic,cyber,xianxia,koi,ukiyo,pixel,lantern,abyss').split(',')
+      for (const pack of packs) {
+        await set({ themePack: pack, backdrop: pack === 'none' ? 'galaxy' : pack, theme: pack === 'ukiyo' ? 'light' : 'dark' })
+        const row: Record<string, unknown> = {}
+        for (const page of ['概览', '设置']) {
+          await js(click(page))
+          await wait(3500)
+          await js(`window.__tpFrames?.()`)
+          row[page] = { ...(await frames()), loops: await js(`(() => { const s = window.__tpFrames?.(); return s ? s.refresh + 'Hz ' + s.loops.map((l) => l.name + ':' + (l.runs / 3).toFixed(0) + '/' + l.cost.toFixed(1)).join(' ') : '' })()`) }
+        }
+        await log({ [`frames-${pack}`]: row })
+      }
+    }
+    // what the GPU-bound packs cost under each setting
+    if (only === 'fpsx') {
+      const frames = async () => {
+        await js(`window.__tpFrames?.()`)
+        const page = await js(
+          `new Promise((done) => { const d = []; let p = performance.now(); const t0 = p; const f = (n) => { d.push(n - p); p = n; if (n - t0 < 3000) requestAnimationFrame(f); else { d.sort((a, b) => a - b); const mean = d.reduce((a, b) => a + b, 0) / d.length; done({ fps: Math.round(1000 / mean), p95: +d[Math.floor(d.length * 0.95)].toFixed(1), jank: +((d.filter((x) => x > 10.5).length / d.length) * 100).toFixed(1) }) } }; requestAnimationFrame(f) })`
+        )
+        const st = await js(`(() => { const s = window.__tpFrames?.(); return s ? { missed: +(s.missed * 100).toFixed(1), q: s.quality, hz: s.refresh } : null })()`)
+        return { ...page, ...st }
+      }
+      for (const pack of (process.env.TP_SHOTS_PACKS ?? 'daylight,ukiyo,mystic').split(',')) {
+        const base = { themePack: pack, backdrop: pack, theme: pack === 'ukiyo' ? 'light' : 'dark', glassCards: true, motion: 'standard', frameCap: 'auto' }
+        await set(base)
+        await js(click('概览'))
+        await wait(3000)
+        const row: Record<string, unknown> = { base: await frames() }
+        await set({ ...base, glassCards: false })
+        await wait(1500)
+        row.noGlass = await frames()
+        await set({ ...base, motion: 'subtle' })
+        await wait(1500)
+        row.subtle = await frames()
+        await set({ ...base, frameCap: '30' })
+        await wait(1500)
+        row.cap30 = await frames()
+        await js(`window.__tpQuality?.(1)`)
+        await wait(1500)
+        row.q1 = await frames()
+        await js(`window.__tpQuality?.(2)`)
+        await wait(1500)
+        row.q2 = await frames()
+        await js(`window.__tpQuality?.(0)`)
+        await wait(6000)
+        row.base2 = await frames()
+        await wait(4000)
+        row.base3 = await frames()
+        // left to itself for a while: where 自动 settles
+        await wait(14000)
+        row.auto = await frames()
+        await log({ [`fpsx-${pack}`]: row })
+      }
+    }
+    // the frame-rate meter and its settings
+    if (!only || only === 'meter') {
+      await set({ themePack: 'daylight', backdrop: 'daylight', theme: 'dark', fpsMeter: true, frameCap: 'auto' })
+      await js(click('概览'))
+      await wait(4000)
+      await shot(main, '440-meter')
+      const r = await js(rectOf('.fps-meter'))
+      if (r) {
+        main.webContents.sendInputEvent({ type: 'mouseMove', x: r.x + 20, y: r.y + 10 })
+        await wait(1300)
+        await shot(main, '441-meter-open', { x: Math.max(0, r.x - 120), y: Math.max(0, r.y - 260), width: 360, height: 320 })
+      }
+      await js(click('设置'))
+      await wait(1500)
+      await js(`(() => { const el = [...document.querySelectorAll('.row-label, .set-label, label, span')].find((x) => x.textContent?.trim() === '动画帧率'); el?.scrollIntoView({ block: 'center' }); return !!el })()`)
+      await wait(800)
+      await shot(main, '442-settings-frames')
+      await set({ fpsMeter: false })
+    }
+    // each pack's pocket scene: the floating window as card, capsule and orb, the island compact and open
+    if (!only || only === 'pockets') {
+      const { BrowserWindow: BW } = await import('electron')
+      const find = (hash: string) => BW.getAllWindows().find((x) => !x.isDestroyed() && x.webContents.getURL().includes(hash))
+      const packs = (process.env.TP_SHOTS_PACKS ?? PACK_KEYS.filter((k) => k !== 'none').join(',')).split(',')
+      await set({ island: true, showMini: true, miniMode: 'card', miniScale: 1 })
+      await wait(3000)
+      for (const pack of packs as (keyof typeof PACKS)[]) {
+        const theme = PACKS[pack].theme === 'light' ? 'light' : 'dark'
+        await set({ themePack: pack, backdrop: PACKS[pack].backdrop, theme, miniMode: 'card' })
+        await wait(2200)
+        let m = find('#/mini')
+        const isl = find('#/island')
+        if (m) fakeUpdate(m, 2_400_000)
+        if (isl) fakeUpdate(isl, 2_400_000)
+        await wait(700)
+        if (m) await shot(m, `500-${pack}-card`)
+        if (isl) await shot(isl, `500-${pack}-island`)
+        await set({ miniMode: 'capsule' })
+        await wait(1600)
+        m = find('#/mini')
+        if (m) await shot(m, `500-${pack}-capsule`)
+        await set({ miniMode: 'orb' })
+        await wait(1600)
+        m = find('#/mini')
+        if (m) {
+          fakeUpdate(m, 1_200_000)
+          await wait(600)
+          await shot(m, `500-${pack}-orb`)
+        }
+        if (isl) {
+          isl.webContents.sendInputEvent({ type: 'mouseMove', x: 230, y: 18 })
+          await wait(1000)
+          await shot(isl, `500-${pack}-detail`)
+          isl.webContents.sendInputEvent({ type: 'mouseLeave', x: 5, y: 190 })
+          await wait(500)
+        }
+        // 昼夜 at noon and at night too
+        if (pack === 'daylight') {
+          const day = new Date()
+          for (const [name, hour] of [['noon', 12.5], ['night', 23]] as const) {
+            day.setHours(Math.floor(hour), (hour % 1) * 60, 0, 0)
+            await set({ miniMode: 'card' })
+            await wait(1500)
+            m = find('#/mini')
+            for (const x of [m, isl]) await x?.webContents.executeJavaScript(`window.__tpSetDay?.(${day.getTime()})`)
+            await set({ backdrop: 'plain' })
+            await wait(400)
+            await set({ backdrop: 'daylight' })
+            await wait(1800)
+            m = find('#/mini')
+            if (m) await shot(m, `501-daylight-${name}-card`)
+            if (isl) await shot(isl, `501-daylight-${name}-island`)
+          }
+          for (const x of [find('#/mini'), isl]) await x?.webContents.executeJavaScript(`window.__tpSetDay?.(null)`)
+        }
+      }
+      await set({ island: false, miniMode: 'card' })
+    }
+    // 额度窗口账单 on the overview
+    if (!only || only === 'cycles') {
+      await set({ themePack: 'none', theme: 'dark', backdrop: 'flow' })
+      for (const src of ['claude', 'all'] as const) {
+        await set({ sourceFilter: src })
+        await js(click('概览'))
+        await wait(2500)
+        await log({ [`cycles-${src}`]: await js(`window.api.getQuotaCycles().then((l) => l.map((x) => ({ s: x.source, five: x.five.map((c) => [new Date(c.start).toISOString().slice(5, 16), Math.round(c.tokens / 1e3), +c.cost.toFixed(2), c.pct, c.current, c.estimated]), seven: x.seven.map((c) => [new Date(c.start).toISOString().slice(5, 16), Math.round(c.tokens / 1e3), +c.cost.toFixed(2), c.pct, c.current, c.estimated]) })))`) })
+        await js(scrollTo('.cycles-card'))
+        await js(`document.querySelector('.main').scrollBy(0, -20)`)
+        await wait(1400)
+        await shot(main, `430-cycles-${src}`)
+      }
+      await js(`(() => { const c = document.querySelectorAll('.cy-5h .cy-col'); c[Math.max(0, c.length - 4)]?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); return c.length })()`)
+      await wait(500)
+      await shot(main, '431-cycles-hover')
+      await js(click('金额'))
+      await wait(900)
+      await shot(main, '432-cycles-cost')
+      await set({ theme: 'light' })
+      await wait(1200)
+      await shot(main, '433-cycles-light')
+      await set({ themePack: 'cyber', backdrop: 'cyber', theme: 'dark' })
+      await wait(2500)
+      await js(scrollTo('.cycles-card'))
+      await wait(600)
+      await shot(main, '434-cycles-cyber')
+      await set({ sourceFilter: 'claude' })
+    }
+    // the native title-bar buttons over each pack: a real screen grab of the window's top-right corner
+    if (!only || only === 'titlebar') {
+      const grab = (name: string) => {
+        const b = main.getBounds()
+        const k = screen.getDisplayMatching(b).scaleFactor
+        const w = Math.round(420 * k)
+        const h = Math.round(70 * k)
+        const x = Math.round((b.x + b.width - 420) * k)
+        const y = Math.round(b.y * k)
+        const out = join(dir, `${name}.png`)
+        const ps = [
+          'Add-Type -AssemblyName System.Drawing',
+          `Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public class Dpi { [DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); }'`,
+          '[Dpi]::SetProcessDPIAware() | Out-Null',
+          `$b = New-Object System.Drawing.Bitmap ${w}, ${h}`,
+          '$g = [System.Drawing.Graphics]::FromImage($b)',
+          `$g.CopyFromScreen(${x}, ${y}, 0, 0, $b.Size)`,
+          `$b.Save('${out.replace(/'/g, "''")}')`
+        ].join('; ')
+        execFileSync('powershell', ['-NoProfile', '-Command', ps])
+      }
+      main.setAlwaysOnTop(true)
+      main.focus()
+      for (const [pack, theme] of [['none', 'dark'], ['none', 'light'], ['cyber', 'dark'], ['ukiyo', 'light'], ['mystic', 'dark'], ['daylight', 'dark'], ['pixel', 'dark'], ['sakura', 'light']] as const) {
+        const backdrop = pack === 'none' ? 'flow' : pack
+        await set({ themePack: pack, theme, backdrop })
+        await js(click('概览'))
+        await wait(2600)
+        grab(`420-title-${pack}-${theme}`)
+      }
+      main.setAlwaysOnTop(false)
+    }
+    done()
+    return
+  }
+
+  if (process.env.TP_SHOTS === 'v211') {
+    const only = process.env.TP_SHOTS_ONLY ?? ''
+    await set({ sourceFilter: 'claude', motion: 'standard', glassCards: true, lightFx: true })
+    // let the launch's achievement fanfare pass
+    await wait(6000)
+    const packs = (process.env.TP_SHOTS_PACKS ?? 'mystic,cyber,xianxia,koi,ukiyo,pixel').split(',')
+    if (!only || only === 'packs') {
+      for (const pack of packs) {
+        const theme = pack === 'ukiyo' ? 'light' : 'dark'
+        await js(click('概览'))
+        await wait(900)
+        await set({ themePack: pack, theme, backdrop: pack, glassCards: true })
+        await wait(420)
+        await shot(main, `300-${pack}-entrance`)
+        await wait(3800)
+        await shot(main, `301-${pack}-overview`)
+        fakeUpdate(main, 3_000_000)
+        await wait(1300)
+        await shot(main, `302-${pack}-pulse`)
+        await wait(2600)
+        await shot(main, `303-${pack}-after`)
+        await log({ [`fps-${pack}`]: await measureFps() })
+        await js(click('会话'))
+        await wait(280)
+        await shot(main, `304-${pack}-turn`)
+        await wait(1800)
+        await js(click('设置'))
+        await wait(2200)
+        await shot(main, `305-${pack}-settings`)
+      }
+      // the other theme of the two that have one
+      for (const [pack, theme] of [
+        ['koi', 'light'],
+        ['ukiyo', 'dark']
+      ] as const) {
+        await set({ themePack: pack, theme, backdrop: pack })
+        await js(click('概览'))
+        await wait(3500)
+        await shot(main, `306-${pack}-${theme}`)
+      }
+    }
+    // does switching packs move the overview? (it should stay at the top)
+    if (only === 'scroll') {
+      const top = () => js(`document.querySelector('.main').scrollTop`)
+      for (const pack of ['mystic', 'xianxia', 'koi', 'xianxia']) {
+        await js(click('概览'))
+        await wait(1500)
+        const before = await top()
+        await set({ themePack: pack, theme: 'dark', backdrop: pack })
+        const after: number[] = []
+        for (let k = 0; k < 8; k++) {
+          await wait(500)
+          after.push(await top())
+        }
+        await log({ pack, before, after })
+      }
+    }
+    // frame rate by pack on a quiet page and on the overview
+    if (only === 'fps') {
+      const out: Record<string, number> = {}
+      for (const pack of ['none', 'daylight', ...packs]) {
+        await set({ themePack: pack, theme: pack === 'ukiyo' ? 'light' : 'dark', backdrop: pack === 'none' ? 'flow' : pack, glassCards: true })
+        for (const page of ['设置', '概览']) {
+          await js(click(page))
+          await wait(3000)
+          out[`${pack}/${page}`] = await measureFps()
+        }
+      }
+      await log(out)
+    }
+    if (!only || only === 'day') {
+      const { placeOf, sunTimes } = await import('@shared/astro')
+      const st = sunTimes(Date.now(), placeOf(null))
+      const M = 60_000
+      const day = (at: number | null) => js(`(() => { window.__tpSetDay && window.__tpSetDay(${at === null ? 'null' : at}); return true })()`)
+      const ev = (name: string) => js(`(() => { window.__tpDayEvent && window.__tpDayEvent(${JSON.stringify(name)}); return true })()`)
+      const season = (k: string | null) => js(`(() => { window.__tpSeason = ${k ? JSON.stringify(k) : 'undefined'}; return true })()`)
+      await set({ themePack: 'daylight', theme: 'dark', backdrop: 'daylight', accent: 'clay' })
+      await js(click('概览'))
+      await wait(1800)
+      await day(st.rise! + 35 * M)
+      await wait(800)
+      await ev('balloon')
+      await wait(4000)
+      await shot(main, '320-day-morning-balloons')
+      await day(st.noon)
+      await wait(800)
+      await ev('plane')
+      await wait(9000)
+      await shot(main, '321-day-noon-plane-hawks')
+      await ev('shower')
+      await wait(12000)
+      await shot(main, '322-day-shower')
+      await ev('rainbow')
+      await wait(3000)
+      await shot(main, '323-day-rainbow')
+      await day(st.set! + 18 * M)
+      await wait(4000)
+      await shot(main, '324-day-dusk-bats')
+      await season('summer')
+      await day(st.set! + 3 * 60 * M)
+      await wait(800)
+      await ev('aurora')
+      await ev('sat')
+      await wait(9000)
+      await shot(main, '325-day-night-aurora-fireflies')
+      for (const k of ['winter', 'spring', 'autumn', 'summer']) {
+        await season(k)
+        await day(st.noon - 100 * M)
+        await wait(3000)
+        await shot(main, `326-day-${k}`)
+      }
+      await season('winter')
+      await day(st.set! + 4 * 60 * M)
+      await wait(3000)
+      await shot(main, '327-day-winter-night')
+      await season(null)
+      await day(null)
+    }
+    if (!only || only === 'picker') {
+      await set({ themePack: 'none', theme: 'dark', backdrop: 'galaxy', accent: 'clay' })
+      await js(`localStorage.setItem('tp.fold.packs', '1'); localStorage.setItem('tp.fold.backdrops', '1')`)
+      await js(click('设置'))
+      await wait(900)
+      await clickSub('外观与动效')
+      await wait(1600)
+      await js(scrollTo('.packs'))
+      await wait(900)
+      await shot(main, '310-packs')
+      // a pack under the pointer plays its own scene
+      const hover = (sel: string) => js(`(() => { const b = document.querySelector(${JSON.stringify(sel)}); b && b.dispatchEvent(new PointerEvent('pointerover', { bubbles: true })); return !!b })()`)
+      const leave = (sel: string) => js(`(() => { const b = document.querySelector(${JSON.stringify(sel)}); b && b.dispatchEvent(new PointerEvent('pointerout', { bubbles: true })); return !!b })()`)
+      for (const k of ['mystic', 'cyber', 'koi', 'daylight']) {
+        await hover(`.pack.pack-${k}`)
+        await wait(2400)
+        await shot(main, `311-pack-hover-${k}`)
+        await leave(`.pack.pack-${k}`)
+      }
+      await js(`(() => { const r = [...document.querySelectorAll('.bd-cat-name')].find((x) => x.textContent === '幻境'); r && r.scrollIntoView({ block: 'center' }); return !!r })()`)
+      await wait(800)
+      await hover('.bd-tile.bd-xianxia')
+      await wait(2400)
+      await shot(main, '312-backdrops')
+      await js(`localStorage.removeItem('tp.fold.packs'); localStorage.removeItem('tp.fold.backdrops')`)
+    }
     await set({ themePack: 'none', theme: 'system', backdrop: 'flow', accent: 'clay', sourceFilter: 'all' })
     done()
     return

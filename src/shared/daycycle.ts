@@ -7,7 +7,8 @@ import { moonPhase, moonPosition, sunPosition, sunTimes, type Place } from './as
  * Everything is interpolated from the sun's altitude, so the change is as
  * gradual as the real one: dawn takes about an hour, and so does dusk.
  *
- * Four phases, by the sun:
+ * Four phases, by the sun (what the colours follow; the words people use
+ * for the time of day are finer, see `labelOf`):
  *   早晨 morning  from nautical dawn (−12°) until the sun is well up
  *   中午 noon     the sun high (above `high`, a share of today's noon height)
  *   傍晚 dusk     from the sun getting low until nautical dusk (−12°)
@@ -219,28 +220,98 @@ export function uiColors(s: SkyState): Record<string, string> {
   }
 }
 
-/**
- * When the phase next changes after t (searched in 5-minute steps, then to
- * the minute), and to what; null when it doesn't within two days (polar day
- * or night).
- */
-export function nextPhase(t: number, place: Place): { at: number; phase: DayPhase } | null {
-  const ph = (x: number) => {
-    const s = sunPosition(x, place)
-    return phaseOf(s.alt, x < sunTimes(x, place).noon, highAlt(x, place))
-  }
-  const now = ph(t)
+/** the first change of f after t (5-minute steps, then to the minute); null when nothing changes within two days */
+function nextChange<T>(t: number, f: (x: number) => T): { at: number; value: T } | null {
+  const now = f(t)
   for (let x = t + 5 * 60_000; x < t + 48 * 3600_000; x += 5 * 60_000) {
-    const p = ph(x)
-    if (p === now) continue
+    const v = f(x)
+    if (v === now) continue
     let lo = x - 5 * 60_000
     let hi = x
     while (hi - lo > 60_000) {
       const mid = (lo + hi) / 2
-      if (ph(mid) === now) lo = mid
+      if (f(mid) === now) lo = mid
       else hi = mid
     }
-    return { at: hi, phase: p }
+    return { at: hi, value: v }
   }
   return null
+}
+
+/** When the phase next changes after t, and to what; null when it doesn't within two days (polar day or night) */
+export function nextPhase(t: number, place: Place): { at: number; phase: DayPhase } | null {
+  const n = nextChange(t, (x) => phaseOf(sunPosition(x, place).alt, x < sunTimes(x, place).noon, highAlt(x, place)))
+  return n && { at: n.at, phase: n.value }
+}
+
+/**
+ * What a person calls the time of day: the sun decides dawn, morning, dusk
+ * and night, the clock splits the high sun into 上午 / 中午 / 下午 and the
+ * dark into 夜晚 / 深夜 / 凌晨. `hour` is the local clock, fractional.
+ */
+export function labelOf(alt: number, rising: boolean, high: number, hour: number): string {
+  if (alt < -6) return rising ? (hour < 1.5 ? '深夜' : '凌晨') : hour >= 22 ? '深夜' : '夜晚'
+  if (alt < 0) return rising ? '黎明' : '黄昏'
+  if (alt < high) return rising ? '早晨' : '傍晚'
+  return hour < 11 ? '上午' : hour < 13 ? '中午' : '下午'
+}
+
+/** the clock at the place: this computer's, unless the place lies far from its time zone, then the place's own sun time */
+function hourAt(t: number, place: Place): number {
+  const d = new Date(t)
+  const local = d.getHours() + d.getMinutes() / 60
+  const solar = (((t / 3_600_000 + place.lon / 15) % 24) + 24) % 24
+  const diff = Math.abs(local - solar)
+  return Math.min(diff, 24 - diff) <= 2.5 ? local : solar
+}
+
+/** the time of day at t, as a person would call it */
+export function dayLabel(t: number, place: Place): string {
+  return labelOf(sunPosition(t, place).alt, t < sunTimes(t, place).noon, highAlt(t, place), hourAt(t, place))
+}
+
+/** when the time of day is next called something else, and what */
+export function nextLabel(t: number, place: Place): { at: number; label: string } | null {
+  const n = nextChange(t, (x) => dayLabel(x, place))
+  return n && { at: n.at, label: n.value }
+}
+
+// ---------------------------------------------------------------- seasons
+
+/** the 24 solar terms, from the spring equinox (the sun's ecliptic longitude 0°) in 15° steps */
+export const TERMS = ['春分', '清明', '谷雨', '立夏', '小满', '芒种', '夏至', '小暑', '大暑', '立秋', '处暑', '白露', '秋分', '寒露', '霜降', '立冬', '小雪', '大雪', '冬至', '小寒', '大寒', '立春', '雨水', '惊蛰']
+
+export type Season = 'spring' | 'summer' | 'autumn' | 'winter'
+export const SEASON_NAME: Record<Season, string> = { spring: '春', summer: '夏', autumn: '秋', winter: '冬' }
+
+export interface SeasonState {
+  /** the sun's ecliptic longitude, degrees (turned half a year south of the equator) */
+  lon: number
+  /** the solar term now and the next one */
+  term: string
+  next: string
+  season: Season
+  /** how much of each season is in the air, summing to 1: pure in the middle of a season, half and half at its 立 term */
+  k: Record<Season, number>
+}
+
+/**
+ * The season by the sun, the Chinese way: spring from 立春 to 立夏 and so on,
+ * each centred on its equinox or solstice. South of the equator the seasons
+ * (and the terms' names) are half a year on.
+ */
+export function seasonAt(t: number, lat: number): SeasonState {
+  const lon = (sunPosition(t, { name: '', lat: 0, lon: 0 }).lon + (lat < 0 ? 180 : 0)) % 360
+  const i = Math.floor(lon / 15) % 24
+  const centres: [Season, number][] = [
+    ['spring', 0],
+    ['summer', 90],
+    ['autumn', 180],
+    ['winter', 270]
+  ]
+  const raw = centres.map(([s, c]) => [s, clamp01((60 - Math.abs(((lon - c + 540) % 360) - 180)) / 30)] as const)
+  const sum = raw.reduce((a, [, v]) => a + v, 0) || 1
+  const k = Object.fromEntries(raw.map(([s, v]) => [s, v / sum])) as Record<Season, number>
+  const season = raw.reduce((a, b) => (b[1] > a[1] ? b : a))[0]
+  return { lon, term: TERMS[i], next: TERMS[(i + 1) % 24], season, k }
 }

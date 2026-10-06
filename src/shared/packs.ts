@@ -20,13 +20,73 @@ export const PACKS: Record<ThemePack, { label: string; desc: string; theme: Them
   },
   daylight: {
     label: '昼夜',
-    desc: '山湖的一整天，跟着真实的太阳走：早晨的粉色晨雾、中午的蓝天白云、傍晚的晚霞和湖面金光、深夜的星河和月光，一点点过渡；界面的颜色也随天色变化。点侧栏的天色钟，40 秒看完一天',
+    desc: '山湖的一整天，跟着真实的太阳和节气走：清晨热气球升空、晨雾漫过湖面，正午飞机拉出航迹、鹰在天上盘旋、帆船过湖，偶尔一阵过云雨后挂起彩虹；傍晚晚霞与蝙蝠，深夜星河、卫星和萤火，用量火热时拉起极光。春花、夏絮、秋叶、冬雪随季节飘落，界面颜色随天色变化。点侧栏的天色钟，40 秒看完一天',
     theme: 'dark',
     backdrop: 'daylight',
     accent: 'clay',
     swatch: ['#226ed0', '#ffcf4d', '#ff7f3e'],
     font: "'Segoe UI Variable Display', 'Segoe UI', sans-serif",
     entrance: '日升月落'
+  },
+  mystic: {
+    label: '诡秘世界',
+    desc: '绯红之月下的维多利亚雾都：月亮外一圈封印法阵缓缓转动，灰雾一层层漫过街巷，煤气灯在雾里明灭，塔罗牌从雾中浮起、翻面，渡鸦掠过月面；侧边栏的钟楼走着真实的时间。新用量翻开一张金光闪闪的塔罗牌，钟声敲响',
+    theme: 'dark',
+    backdrop: 'mystic',
+    accent: 'sakura',
+    swatch: ['#0c0810', '#c4283c', '#c9a45c'],
+    font: "'Palatino Linotype', 'Book Antiqua', 'Source Serif 4 Variable', serif",
+    entrance: '灰雾涌起'
+  },
+  cyber: {
+    label: '赛博朋克',
+    desc: '雨夜的不夜城：三层摩天楼的窗格明明灭灭，霓虹招牌竖着挂下侧边栏，探照灯扫过霓虹染红的雾霾，飞行车拖着光轨穿梭，中央大楼顶上的全息广告牌转着线框体、打出广告词。新用量让广告牌信号故障，打出这批 Token，一辆巡逻车呼啸而过',
+    theme: 'dark',
+    backdrop: 'cyber',
+    accent: 'clay',
+    swatch: ['#07060e', '#fcee0a', '#00f0ff'],
+    font: "Bahnschrift, 'Segoe UI', sans-serif",
+    entrance: '信号故障'
+  },
+  xianxia: {
+    label: '云海仙山',
+    desc: '一轮皓月下的云海：石峰浮在流动的云层上微微起伏，侧边栏悬着一座带亭子和飞瀑的浮岛，仙鹤排成一行从月前飞过，灵光点点上升。每批新用量划过一道御剑飞行的剑光，用量大时三剑齐飞',
+    theme: 'dark',
+    backdrop: 'xianxia',
+    accent: 'mint',
+    swatch: ['#0a1622', '#4fd1b5', '#e9c46a'],
+    font: "KaiTi, STKaiti, 'Source Serif 4 Variable', serif",
+    entrance: '御剑飞过'
+  },
+  koi: {
+    label: '锦鲤池',
+    desc: '俯瞰一方锦鲤池：红白、大正三色、黄金、丹顶等八种锦鲤摆着身子和鳍游动，水底卵石上光纹流动，睡莲和荷花缓缓漂移，花瓣浮在水面。每批新用量撒下一把鱼食，锦鲤争相游来；用量大时游来一条金色锦鲤',
+    theme: 'dark',
+    backdrop: 'koi',
+    accent: 'clay',
+    swatch: ['#0b3c39', '#ff6b4a', '#ff9ec4'],
+    font: "'Source Serif 4 Variable', KaiTi, serif",
+    entrance: '锦鲤游过'
+  },
+  ukiyo: {
+    label: '浮世绘',
+    desc: '木版画的海：天顶一抹普鲁士蓝、一轮红日、淡淡的霞带，远处雪山，一排排浪头翻着白沫，小船随浪起伏，千鸟成行飞过；侧边栏一道巨浪涨起、卷起浪爪、拍碎，周而复始。新用量从浪尖甩出一片浪花。深色模式是夜版画',
+    theme: 'light',
+    backdrop: 'ukiyo',
+    accent: 'ocean',
+    swatch: ['#efe2c4', '#1f3b63', '#cf4a33'],
+    font: "'Yu Mincho', 'Source Serif 4 Variable', SimSun, serif",
+    entrance: '浪花拍岸'
+  },
+  pixel: {
+    label: '像素冒险',
+    desc: '8-bit 的世界：抖动渐变的天空随时辰变成白天、黄昏或夜晚，方块云、雪山、松林和草地层层视差滚动；标题旁浮着一座砖块小岛，小小冒险家在金币间跑跳。每批新用量顶开一个问号砖，蹦出金币和这批 Token 数',
+    theme: 'dark',
+    backdrop: 'pixel',
+    accent: 'clay',
+    swatch: ['#1b1030', '#fcbc3c', '#2ec4b6'],
+    font: "'Cascadia Code', Consolas, monospace",
+    entrance: '像素过场'
   },
   claude: {
     label: 'Claude 暖光',

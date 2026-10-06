@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import shape from '@shared/starburst.json'
 import type { Intensity } from '@shared/types'
 import { useMotionLevel } from '../state'
+import { onFrame } from '../frames'
 
 const RAD = Math.PI / 180
 /** rotation speed (deg/s) and ray "breathing" amplitude per intensity level */
@@ -81,7 +82,6 @@ export function Starburst({
 
   useEffect(() => {
     if (!animated || reduced) return
-    let raf = 0
     let last = performance.now()
     const tick = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000)
@@ -115,10 +115,9 @@ export function Starburst({
         el.setAttribute('r', Math.max(0, p.r * Math.min(1, p.life * 2)).toFixed(3))
         el.setAttribute('opacity', Math.max(0, Math.min(1, p.life * 1.6)).toFixed(2))
       }
-      raf = requestAnimationFrame(tick)
     }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
+    const stop = onFrame(30, (_dt, now) => tick(now), 'mark')
+    return () => stop()
   }, [animated, reduced])
 
   const glow = animated ? [0, 3, 7, 12][intensity] : 0

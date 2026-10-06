@@ -1,5 +1,5 @@
 import { motion } from 'motion/react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { fmtInt, fmtTokens } from '@shared/format'
 import type { Bucket, GroupStat, HeatCell, RangeSummary } from '@shared/types'
@@ -35,8 +35,25 @@ export function Legend({ items }: { items: { label: string; color: string }[] })
   )
 }
 
+/**
+ * True for a moment after the chart appears or `key` changes, false
+ * afterwards: the bars grow in when a range or metric is picked, not again
+ * for every batch of live usage (each replay re-renders the chart frame by
+ * frame, which while a tool works went on almost without pause).
+ */
+function useEntrance(key: string): boolean {
+  const [on, setOn] = useState(true)
+  useEffect(() => {
+    setOn(true)
+    const t = setTimeout(() => setOn(false), 1100)
+    return () => clearTimeout(t)
+  }, [key])
+  return on
+}
+
 export function TrendChart({ summary, metric }: { summary: RangeSummary; metric: 'cost' | 'tokens' }) {
   const { money } = useApp()
+  const animate = useEntrance(`${summary.range}|${metric}`)
   const fmt = metric === 'cost' ? (v: number) => money(v) : (v: number) => fmtTokens(v)
   const keys = TOKEN_SERIES.map((s) => (metric === 'cost' ? s.costKey : s.key))
   const unit = summary.bucketUnit
@@ -110,6 +127,7 @@ export function TrendChart({ summary, metric }: { summary: RangeSummary; metric:
                 strokeWidth={1}
                 maxBarSize={24}
                 radius={i === keys.length - 1 ? [4, 4, 0, 0] : 0}
+                isAnimationActive={animate}
                 animationDuration={700}
               />
             ))}
@@ -148,6 +166,7 @@ export function modelColors(names: string[]): (name: string) => string {
 
 export function ModelDonut({ models, total }: { models: GroupStat[]; total: number }) {
   const { money } = useApp()
+  const animate = useEntrance('')
   const data = useMemo(() => {
     if (models.length <= 6) return models
     const rest = models.slice(5)
@@ -180,6 +199,7 @@ export function ModelDonut({ models, total }: { models: GroupStat[]; total: numb
               paddingAngle={pieData.length > 1 ? 2 : 0}
               cornerRadius={4}
               stroke="none"
+              isAnimationActive={animate}
               animationDuration={800}
             >
               {(pieData.length ? pieData : [{ name: '—' }]).map((d) => (

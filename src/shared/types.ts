@@ -636,6 +636,39 @@ export interface QuotaRate {
   current: boolean
 }
 
+/** One quota window (5 hours or 7 days) and what was used in it */
+export interface QuotaCycle {
+  kind: '5h' | '7d'
+  start: number
+  end: number
+  tokens: number
+  cost: number
+  /** responses */
+  messages: number
+  sessions: number
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+  /** the provider's reading, percent: the highest for a closed window, the latest for the open one; null when never read */
+  pct: number | null
+  /** when it reached 100%, if it did */
+  hitAt: number | null
+  /** open now */
+  current: boolean
+  /** bounds worked out from the logs, not read from the provider */
+  estimated: boolean
+  /** the most expensive models in it */
+  models: { name: string; cost: number; tokens: number }[]
+}
+
+/** A tool's 5-hour and 7-day windows, oldest first */
+export interface QuotaCycles {
+  source: UsageSource
+  five: QuotaCycle[]
+  seven: QuotaCycle[]
+}
+
 /** How a scheduled task may use tools (Claude Code --permission-mode); inherit = the user's own settings */
 export type TaskPermission = 'inherit' | 'auto' | 'acceptEdits' | 'bypassPermissions' | 'plan'
 
@@ -873,6 +906,8 @@ export interface RangeOverview {
 export type ThemeSetting = 'system' | 'light' | 'dark'
 /** how much decorative motion to show; 'off' also applies when the OS asks for reduced motion */
 export type MotionLevel = 'off' | 'subtle' | 'standard' | 'rich'
+/** animation frame rate: each animation at its own rate, all at most 30 or 60, or as fast as the display */
+export type FrameCap = 'auto' | '30' | '60' | 'max'
 export type BackdropStyle =
   | 'plain'
   | 'galaxy'
@@ -903,6 +938,12 @@ export type BackdropStyle =
   | 'lantern'
   | 'bauhaus'
   | 'daylight'
+  | 'mystic'
+  | 'cyber'
+  | 'xianxia'
+  | 'koi'
+  | 'ukiyo'
+  | 'pixel'
 /** a whole look at once: colours, backdrop and fonts; 'none' = Claude's own */
 export type ThemePack =
   | 'none'
@@ -929,6 +970,12 @@ export type ThemePack =
   | 'ink'
   | 'abyss'
   | 'daylight'
+  | 'mystic'
+  | 'cyber'
+  | 'xianxia'
+  | 'koi'
+  | 'ukiyo'
+  | 'pixel'
 /** where the sky is drawn for */
 export interface SkyPlace {
   name: string
@@ -962,6 +1009,9 @@ export interface Settings {
   /** keep a copy of parsed usage so history survives Claude Code's log cleanup */
   archiveEnabled: boolean
   motion: MotionLevel
+  frameCap: FrameCap
+  /** a small frame-rate meter in the corner of the main window */
+  fpsMeter: boolean
   /** theme colour preset */
   accent: AccentKey
   backdrop: BackdropStyle
@@ -1195,6 +1245,8 @@ export interface TokenPulseApi {
   getStarMap(days: number): Promise<StarMap>
   /** what each 5-hour window's quota bought, over `days` */
   getQuotaRates(days: number): Promise<QuotaRate[]>
+  /** each tool on view: its 5-hour and 7-day windows with the usage in each */
+  getQuotaCycles(): Promise<QuotaCycles[]>
   /** counts a use of an app feature (for achievements) */
   bumpCounter(name: 'palette'): void
   /** newly unlocked achievements */
@@ -1250,6 +1302,8 @@ export interface TokenPulseApi {
   getWindowHistory(days: number): Promise<WindowHistory>
   onWaste(cb: (w: WasteAlert) => void): () => void
   setThemeColors(colors: { bg: string; fg: string }): void
+  /** the refresh rate of the display the window is on (0 when unknown) */
+  displayHz(): Promise<number>
   onUpdate(cb: (e: UpdateEvent) => void): () => void
   onQuota(cb: (q: QuotaInfo) => void): () => void
   onPricing(cb: (p: PricingInfo) => void): () => void

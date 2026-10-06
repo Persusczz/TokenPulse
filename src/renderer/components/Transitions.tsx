@@ -17,6 +17,8 @@ import type { MotionScale } from '../state'
  * - 星轨 star trails sweep round · 雨夜 a curtain of rain · 萤火 fireflies rise
  * - 熔岩灯 blobs well up · 冰晶 facets catch the light · 数字雨 code falls · 烟花 a burst
  * - 天灯 lanterns rise · 包豪斯 shapes slide in and snap · 昼夜 the sun arcs over and sets, the moon follows
+ * - 诡秘世界 fog rolls in round a turning arcanum · 赛博朋克 the signal breaks up · 云海仙山 a flying sword
+ * - 锦鲤池 koi swim across · 浮世绘 a wave sweeps in · 像素冒险 a retro block wipe
  */
 
 const EASE = [0.16, 1, 0.3, 1] as const
@@ -188,6 +190,43 @@ const PAGE: Partial<Record<BackdropStyle, PageMotion>> = {
     exit: { opacity: 0, x: 18, rotate: 0.5 },
     transition: { duration: 0.32, ease: [0.7, 0, 0.2, 1] }
   },
+  mystic: {
+    initial: { opacity: 0, y: 10, filter: 'blur(8px) grayscale(0.6) brightness(0.8)' },
+    animate: { opacity: 1, y: 0, filter: 'blur(0px) grayscale(0) brightness(1)' },
+    exit: { opacity: 0, y: -6, filter: 'blur(6px) grayscale(0.5)' },
+    transition: { duration: 0.48, ease: EASE }
+  },
+  cyber: {
+    initial: { opacity: 0, x: 18, skewX: 4, filter: 'saturate(2) hue-rotate(-30deg) brightness(1.4)' },
+    animate: { opacity: 1, x: 0, skewX: 0, filter: 'saturate(1) hue-rotate(0deg) brightness(1)' },
+    exit: { opacity: 0, x: -14, skewX: -3, filter: 'saturate(2) hue-rotate(30deg) brightness(1.2)' },
+    transition: { duration: 0.26, ease: [0.7, 0, 0.2, 1] }
+  },
+  xianxia: {
+    initial: { opacity: 0, y: -16, filter: 'blur(8px) brightness(1.25)' },
+    animate: { opacity: 1, y: 0, filter: 'blur(0px) brightness(1)' },
+    exit: { opacity: 0, y: 10, filter: 'blur(6px)' },
+    transition: { duration: 0.5, ease: EASE }
+  },
+  koi: {
+    initial: { opacity: 0, scale: 0.985, filter: 'blur(5px) hue-rotate(-14deg)' },
+    animate: { opacity: 1, scale: 1, filter: 'blur(0px) hue-rotate(0deg)' },
+    exit: { opacity: 0, scale: 1.01, filter: 'blur(4px)' },
+    transition: { duration: 0.44, ease: EASE }
+  },
+  ukiyo: {
+    initial: { opacity: 0, x: -24, filter: 'blur(3px) sepia(0.5)' },
+    animate: { opacity: 1, x: 0, filter: 'blur(0px) sepia(0)' },
+    exit: { opacity: 0, x: 18, filter: 'blur(3px) sepia(0.4)' },
+    transition: { duration: 0.4, ease: EASE }
+  },
+  pixel: {
+    initial: { opacity: 0, scale: 0.96 },
+    animate: { opacity: 1, scale: 1 },
+    exit: { opacity: 0, scale: 1.02 },
+    // in steps, like an old console
+    transition: { duration: 0.3, ease: (v: number) => Math.round(v * 5) / 5 }
+  },
   paper: {
     initial: { opacity: 0, rotateY: -14, x: 26, transformPerspective: 1400, transformOrigin: 'left center' },
     animate: { opacity: 1, rotateY: 0, x: 0, transformPerspective: 1400, transformOrigin: 'left center' },
@@ -246,7 +285,13 @@ const LIFE: Partial<Record<BackdropStyle, number>> = {
   fireworks: 1600,
   lantern: 1800,
   bauhaus: 1100,
-  daylight: 1700
+  daylight: 1700,
+  mystic: 1600,
+  cyber: 900,
+  xianxia: 1400,
+  koi: 1700,
+  ukiyo: 1500,
+  pixel: 1000
 }
 
 const SPARK_COLORS = ['#ff5a78', '#ffbe50', '#78c8ff', '#b478ff', '#78ffaa']
@@ -568,6 +613,84 @@ function ShotView({ s }: { s: Shot }) {
           {big && <i className="tr-moonarc" />}
         </div>
       )
+    case 'mystic':
+      return (
+        <div className={cls} style={box}>
+          <i className="tr-fog" />
+          <i className="tr-fog late" />
+          <i className="tr-seal" />
+          {big && <i className="tr-arcanum" />}
+          {bits.slice(0, big ? 18 : 10).map((b, i) => (
+            <i key={i} className="tr-ember" style={{ left: `${b.x}%`, animationDelay: `${(b.d * 0.8).toFixed(2)}s`, animationDuration: `${(0.9 + b.t * 0.5).toFixed(2)}s` }} />
+          ))}
+        </div>
+      )
+    case 'cyber':
+      return (
+        <div className={cls} style={box}>
+          <i className="tr-scanline" />
+          {bits.slice(0, big ? 12 : 7).map((b, i) => (
+            <i
+              key={i}
+              className={`tr-slice ${['yellow', 'cyan', 'pink'][i % 3]}`}
+              style={{ top: `${b.y}%`, height: `${Math.round(b.r * 1.1)}px`, animationDelay: `${(b.d * 0.5).toFixed(2)}s`, ['--dx' as string]: `${Math.round((b.x - 50) * 0.6)}px` }}
+            />
+          ))}
+          {big && <span className="tr-glitch-text">NIGHT CITY // TOKENPULSE</span>}
+        </div>
+      )
+    case 'xianxia':
+      return (
+        <div className={cls} style={box}>
+          <i className="tr-cloud" />
+          <i className="tr-cloud late" />
+          <i className="tr-sword" />
+          {big && <i className="tr-sword second" />}
+          {bits.slice(0, 14).map((b, i) => (
+            <i key={i} className="tr-mote" style={{ left: `${b.x}%`, top: `${30 + b.y * 0.6}%`, animationDelay: `${(0.2 + b.d).toFixed(2)}s` }} />
+          ))}
+        </div>
+      )
+    case 'koi':
+      return (
+        <div className={cls} style={box}>
+          {bits.slice(0, big ? 5 : 3).map((b, i) => (
+            <i key={i} className={`tr-koi k${i % 3}`} style={{ top: `${18 + i * 16 + b.y * 0.1}%`, animationDelay: `${(i * 0.12).toFixed(2)}s`, animationDuration: `${(1.2 + b.t * 0.3).toFixed(2)}s` }} />
+          ))}
+          {bits.slice(0, big ? 4 : 2).map((b, i) => (
+            <i key={`r${i}`} className="tr-pond-ring" style={{ left: `${b.x}%`, top: `${b.y}%`, animationDelay: `${(b.d + 0.2).toFixed(2)}s` }} />
+          ))}
+        </div>
+      )
+    case 'ukiyo':
+      return (
+        <div className={cls} style={box}>
+          <i className="tr-print-wave" />
+          {bits.slice(0, big ? 22 : 12).map((b, i) => (
+            <i key={i} className="tr-foam" style={{ left: `${b.x}%`, top: `${40 + b.y * 0.5}%`, width: b.r * 0.9, height: b.r * 0.9, animationDelay: `${(0.25 + b.d).toFixed(2)}s` }} />
+          ))}
+        </div>
+      )
+    case 'pixel': {
+      const cols = 14
+      const rows = 8
+      return (
+        <div className={cls} style={box}>
+          {Array.from({ length: cols * rows }, (_, i) => {
+            const c = i % cols
+            const r = Math.floor(i / cols)
+            return (
+              <i
+                key={i}
+                className="tr-px"
+                style={{ left: `${(c / cols) * 100}%`, top: `${(r / rows) * 100}%`, width: `calc(${100 / cols}% + 1px)`, height: `calc(${100 / rows}% + 1px)`, animationDelay: `${((c + r) * 0.022).toFixed(3)}s` }}
+              />
+            )
+          })}
+          {big && <span className="tr-1up">START!</span>}
+        </div>
+      )
+    }
     case 'bauhaus':
       return (
         <div className={cls} style={box}>

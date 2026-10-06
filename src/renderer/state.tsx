@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { fmtMoney, type MoneyOpts } from '@shared/format'
 import type { CodexQuota, GuardState, LoadState, PricingInfo, QuotaInfo, QuotaWindow, Settings, SourceView, UpdateEvent, UsageSource } from '@shared/types'
+import { setFrameCap } from './frames'
 
 const api = window.api
 
@@ -165,6 +166,7 @@ export function useHtmlFlags(main: boolean): void {
   useEffect(() => {
     const d = document.documentElement.dataset
     d.motion = (['off', 'subtle', 'standard', 'rich'] as const)[level]
+    if (settings) setFrameCap(settings.frameCap)
     if (settings) d.accent = settings.accent
     d.source = source
     if (settings && settings.themePack !== 'none') d.pack = settings.themePack
@@ -176,7 +178,7 @@ export function useHtmlFlags(main: boolean): void {
       if (settings.glassCards && settings.backdrop !== 'plain') d.glass = ''
       else delete d.glass
     }
-  }, [level, main, source, settings?.accent, settings?.backdrop, settings?.windowMaterial, settings?.glassCards, settings?.themePack]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [level, main, source, settings?.accent, settings?.backdrop, settings?.windowMaterial, settings?.glassCards, settings?.themePack, settings?.frameCap]) // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 export interface ToolQuota {
@@ -272,6 +274,17 @@ export function usePaintKey(theme: 'light' | 'dark'): string {
 /** Reads a CSS custom property; re-read when the theme changes */
 export function cssVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+}
+
+/** any CSS colour as #rrggbb (alpha dropped), for the native parts of the window */
+export function hexColor(css: string, fallback = '#808080'): string {
+  const probe = document.createElement('i')
+  probe.style.color = css
+  if (!probe.style.color) return fallback
+  document.body.appendChild(probe)
+  const m = /rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/.exec(getComputedStyle(probe).color)
+  probe.remove()
+  return m ? `#${m.slice(1, 4).map((v) => Number(v).toString(16).padStart(2, '0')).join('')}` : fallback
 }
 
 /** "1:23:45" / "12:05" countdown to `t` */

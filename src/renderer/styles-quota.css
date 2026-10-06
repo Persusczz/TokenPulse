@@ -271,3 +271,428 @@ svg.q-rewind .q-arc {
 .isl-bar em.q-rewind {
   color: var(--rewind);
 }
+
+/* ---------- 额度窗口账单: each 5-hour and 7-day window, what it used (QuotaCycles.tsx) ---------- */
+.cycles-card {
+  margin-bottom: 16px;
+}
+.cy-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cy-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+@media (max-width: 1180px) {
+  .cy-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.cy-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px 16px 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+  overflow: hidden;
+}
+/* a soft glow of the accent behind the numbers */
+.cy-panel::before {
+  content: '';
+  position: absolute;
+  left: -18%;
+  top: -55%;
+  width: 70%;
+  height: 120%;
+  background: radial-gradient(closest-side, rgba(var(--accent-rgb), 0.16), transparent);
+  pointer-events: none;
+}
+.cy-panel > * {
+  position: relative;
+}
+.cy-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  flex-wrap: wrap;
+}
+.cy-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--text);
+}
+.cy-glyph {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.6);
+}
+.cy-7d .cy-glyph {
+  border-radius: 3px;
+}
+.cy-when {
+  font-size: 12px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.cy-when b {
+  color: var(--text-2);
+  font-weight: 600;
+}
+.cy-now {
+  display: flex;
+  align-items: flex-end;
+  gap: 24px;
+  min-height: 62px;
+}
+.cy-num {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.cy-label {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.cy-num b {
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.15;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.cy-num small {
+  margin-top: -2px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.cy-num.cost b {
+  font-size: 24px;
+  color: var(--accent-strong);
+}
+.cy-quota {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  margin-left: auto;
+  flex: none;
+}
+.cy-quota svg {
+  position: absolute;
+  inset: 0;
+  transform: rotate(-90deg);
+}
+.cy-q-track {
+  fill: none;
+  stroke: var(--surface-2);
+  stroke-width: 3.5;
+}
+.cy-q-arc {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 4px rgba(var(--accent-rgb), 0.5));
+}
+.cy-quota.warm .cy-q-arc {
+  stroke: var(--serious);
+}
+.cy-quota.hot .cy-q-arc {
+  stroke: var(--critical);
+}
+.cy-quota span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.1;
+}
+.cy-quota b {
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.cy-quota small {
+  font-size: 10px;
+  color: var(--text-3);
+}
+.cy-empty {
+  display: grid;
+  place-items: center start;
+  min-height: 62px;
+  color: var(--text-3);
+}
+.cy-compare {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 36px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.cy-compare b {
+  color: var(--text-2);
+}
+.cy-compare b.up {
+  color: var(--accent-strong);
+}
+
+/* the windows as columns: value on top, start below, the average as a dashed line */
+.cy-chart {
+  --xh: 30px;
+  --vh: 15px;
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+  gap: 4px;
+  height: 160px;
+  container-type: inline-size;
+}
+.cy-chart::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: var(--xh);
+  border-top: 1px solid var(--grid);
+  pointer-events: none;
+}
+.cy-avg {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  border-top: 1px dashed color-mix(in srgb, var(--text-3) 75%, transparent);
+  pointer-events: none;
+  transition: bottom 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.cy-avg::after {
+  content: '平均';
+  position: absolute;
+  right: 0;
+  top: -15px;
+  padding: 0 3px;
+  border-radius: 4px;
+  font-size: 9.5px;
+  color: var(--text-3);
+  background: color-mix(in srgb, var(--surface-solid, var(--bg)) 70%, transparent);
+}
+.cy-col {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.cy-col.new-day::before {
+  content: '';
+  position: absolute;
+  left: -2.5px;
+  top: 8px;
+  bottom: 2px;
+  border-left: 1px dashed var(--grid);
+}
+.cy-bar {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 0;
+}
+.cy-bar i {
+  position: relative;
+  display: block;
+  width: min(100%, 28px);
+  border-radius: 6px 6px 2px 2px;
+  background: linear-gradient(to top, rgba(var(--accent-rgb), 0.32), rgba(var(--accent-rgb), 0.72));
+  transform-origin: bottom;
+  animation: cy-grow 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+  transition:
+    height 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+    filter 0.2s;
+  overflow: hidden;
+}
+@keyframes cy-grow {
+  from {
+    transform: scaleY(0);
+  }
+}
+.cy-val {
+  height: var(--vh);
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 10px;
+  line-height: var(--vh);
+  color: var(--text-3);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.cy-x {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: var(--xh);
+  padding-top: 4px;
+  overflow: hidden;
+  font-size: 10px;
+  line-height: 1.25;
+  color: var(--text-3);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.cy-x em {
+  font-style: normal;
+  font-size: 9.5px;
+  color: var(--text-2);
+}
+/* worked out from the logs: hatched */
+.cy-col.est .cy-bar i {
+  background: repeating-linear-gradient(135deg, rgba(var(--accent-rgb), 0.55) 0 4px, rgba(var(--accent-rgb), 0.26) 4px 8px);
+}
+/* ran out: a red cap */
+.cy-col.hit .cy-bar i {
+  box-shadow: inset 0 3px 0 var(--critical);
+}
+/* the open window: full colour, glowing, light rising through it */
+.cy-col.current .cy-bar i {
+  background: linear-gradient(to top, var(--accent), var(--accent-hi));
+  box-shadow: 0 0 14px rgba(var(--accent-rgb), 0.55);
+}
+.cy-col.current .cy-bar i::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0;
+  height: 40%;
+  background: linear-gradient(to top, transparent, rgba(255, 255, 255, 0.5), transparent);
+  animation: cy-rise 2.6s linear infinite;
+}
+@keyframes cy-rise {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(-250%);
+  }
+}
+:root[data-motion='off'] .cy-col.current .cy-bar i::after {
+  animation: none;
+}
+.cy-col.current .cy-val,
+.cy-col.current .cy-x {
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+.cy-col:hover .cy-bar i,
+.cy-col.on .cy-bar i {
+  filter: brightness(1.15) saturate(1.1);
+}
+.cy-col.on .cy-x,
+.cy-col.on .cy-val {
+  color: var(--text);
+}
+.cy-col.on .cy-x::after {
+  content: '';
+  width: 14px;
+  height: 2px;
+  margin-top: 1px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+@container (max-width: 430px) {
+  .cy-val {
+    visibility: hidden;
+  }
+  .cy-col.on .cy-val,
+  .cy-col.current .cy-val {
+    visibility: visible;
+    overflow: visible;
+  }
+}
+
+.cy-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 76px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  font-size: 12px;
+  color: var(--text-2);
+}
+.cy-d-range {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.cy-d-stats b {
+  color: var(--text);
+  font-weight: 600;
+}
+.cy-d-mix {
+  display: flex;
+  align-items: center;
+  gap: 4px 12px;
+  flex-wrap: wrap;
+  color: var(--text-3);
+}
+.cy-mix {
+  display: inline-flex;
+  vertical-align: middle;
+  width: 110px;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+.cy-mix i {
+  display: block;
+  height: 100%;
+}
+.cy-mix-output {
+  background: var(--s1);
+}
+.cy-mix-input {
+  background: var(--s2);
+}
+.cy-mix-read {
+  background: var(--s3);
+}
+.cy-mix-write {
+  background: var(--s4);
+}
+.cy-model b {
+  color: var(--text-2);
+  font-weight: 600;
+}
+.cy-detail .badge {
+  font-weight: 500;
+}
+.cy-detail .badge.hot {
+  border-color: transparent;
+  background: rgba(208, 59, 59, 0.16);
+  color: var(--critical);
+}

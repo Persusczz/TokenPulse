@@ -1,0 +1,1019 @@
+/* 2.11: 诡秘世界, 赛博朋克, 云海仙山, 锦鲤池, 浮世绘, 像素冒险 (ThemeScenes5/6.tsx) */
+
+/* ---------- palettes ---------- */
+html:root[data-pack='mystic'][data-theme] {
+  color-scheme: dark;
+  --bg: #0c0810;
+  --bg-side: #0a060d;
+  --surface: #170f19;
+  --surface-solid: #170f19;
+  --surface-2: #21141f;
+  --border: #35202d;
+  --border-strong: #4f2d3d;
+  --text: #f4ebe6;
+  --text-2: #d2bfb8;
+  --text-3: #95807e;
+  --grid: #251620;
+  --axis: #4f2d3d;
+  --accent-rgb: 216, 52, 74;
+  --accent: #d8344a;
+  --accent-strong: #e85a6c;
+  --accent-hi: #e6c27a;
+  --accent-soft: rgba(216, 52, 74, 0.16);
+  --accent-wash: rgba(216, 52, 74, 0.07);
+  --s1: #d8344a;
+  --s2: #c9a45c;
+  --s3: #9a7bd0;
+  --s4: #6fa0b8;
+  --q1: #251620;
+  --q2: #4a1a28;
+  --q3: #8a2436;
+  --q4: #d8344a;
+  --q5: #f0b0b8;
+  --serif: 'Palatino Linotype', 'Book Antiqua', 'Source Serif 4 Variable', 'Noto Serif SC', serif;
+  --radius: 8px;
+  --radius-sm: 5px;
+}
+html:root[data-pack='mystic'][data-glass] {
+  --surface: rgba(22, 13, 22, 0.6);
+  --surface-2: rgba(36, 20, 32, 0.55);
+  --border: rgba(201, 164, 92, 0.16);
+}
+:root[data-pack='mystic'] .card {
+  box-shadow:
+    inset 0 0 0 1px rgba(201, 164, 92, 0.08),
+    inset 0 1px 0 rgba(230, 194, 122, 0.12),
+    0 12px 34px rgba(0, 0, 0, 0.45);
+}
+:root[data-pack='mystic'] .page-title,
+:root[data-pack='mystic'] .hero-number {
+  letter-spacing: 0.02em;
+  text-shadow:
+    0 0 22px rgba(216, 52, 74, 0.45),
+    0 1px 0 rgba(0, 0, 0, 0.6);
+}
+:root[data-pack='mystic'] .card-title .serif {
+  color: #e6c27a;
+}
+
+html:root[data-pack='cyber'][data-theme] {
+  color-scheme: dark;
+  --bg: #07060e;
+  --bg-side: #06050c;
+  --surface: #0f0d1c;
+  --surface-solid: #0f0d1c;
+  --surface-2: #171430;
+  --border: #2a2350;
+  --border-strong: #3e3472;
+  --text: #f3f1ff;
+  --text-2: #c5c0e2;
+  --text-3: #8782ad;
+  --grid: #1b1838;
+  --axis: #3e3472;
+  --accent-rgb: 252, 238, 10;
+  --accent: #fcee0a;
+  --accent-strong: #fff35c;
+  --accent-hi: #00f0ff;
+  --accent-soft: rgba(252, 238, 10, 0.14);
+  --accent-wash: rgba(252, 238, 10, 0.06);
+  --s1: #fcee0a;
+  --s2: #00f0ff;
+  --s3: #ff2a6d;
+  --s4: #b46cff;
+  --q1: #1b1838;
+  --q2: #3a3920;
+  --q3: #8a8420;
+  --q4: #fcee0a;
+  --q5: #fffbb0;
+  --serif: Bahnschrift, 'Segoe UI Variable Display', 'Microsoft YaHei UI', sans-serif;
+  --sans: Bahnschrift, 'Segoe UI Variable Text', 'Segoe UI', 'Microsoft YaHei UI', sans-serif;
+  --radius: 3px;
+  --radius-sm: 2px;
+  --shadow: 0 8px 26px rgba(0, 0, 0, 0.5);
+}
+html:root[data-pack='cyber'][data-glass] {
+  --surface: rgba(14, 12, 30, 0.64);
+  --surface-2: rgba(24, 20, 50, 0.56);
+  --border: rgba(0, 240, 255, 0.16);
+}
+:root[data-pack='cyber'] .card {
+  box-shadow:
+    inset 3px 0 0 rgba(252, 238, 10, 0.85),
+    0 8px 26px rgba(0, 0, 0, 0.5);
+}
+:root[data-pack='cyber'] .page-title,
+:root[data-pack='cyber'] .hero-number {
+  letter-spacing: 0.03em;
+  text-shadow:
+    2px 0 0 rgba(0, 240, 255, 0.55),
+    -2px 0 0 rgba(255, 42, 109, 0.55);
+}
+:root[data-pack='cyber'] .card-title .serif {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #00f0ff;
+}
+/* yellow buttons need dark letters */
+:root[data-pack='cyber'] .btn.primary,
+:root[data-pack='cyber'] .try.run b,
+:root[data-pack='cyber'] .task-drop-label,
+:root[data-pack='pixel'] .btn.primary,
+:root[data-pack='pixel'] .try.run b,
+:root[data-pack='pixel'] .task-drop-label {
+  color: #120c1e;
+}
+
+html:root[data-pack='xianxia'][data-theme] {
+  color-scheme: dark;
+  --bg: #0a1622;
+  --bg-side: #08131d;
+  --surface: #0f1f2c;
+  --surface-solid: #0f1f2c;
+  --surface-2: #142837;
+  --border: #1f3a4a;
+  --border-strong: #2e5266;
+  --text: #eef6f2;
+  --text-2: #bed4ce;
+  --text-3: #809c98;
+  --grid: #16293a;
+  --axis: #2e5266;
+  --accent-rgb: 79, 209, 181;
+  --accent: #4fd1b5;
+  --accent-strong: #7ae0c9;
+  --accent-hi: #e9c46a;
+  --accent-soft: rgba(79, 209, 181, 0.15);
+  --accent-wash: rgba(79, 209, 181, 0.07);
+  --s1: #4fd1b5;
+  --s2: #e9c46a;
+  --s3: #8fb8ff;
+  --s4: #f28b82;
+  --q1: #16293a;
+  --q2: #1f4a4a;
+  --q3: #2f8a7a;
+  --q4: #4fd1b5;
+  --q5: #c8f5ea;
+  --serif: KaiTi, STKaiti, 'Source Serif 4 Variable', serif;
+  --radius: 16px;
+}
+html:root[data-pack='xianxia'][data-glass] {
+  --surface: rgba(13, 30, 42, 0.56);
+  --surface-2: rgba(20, 40, 55, 0.5);
+  --border: rgba(200, 245, 234, 0.14);
+}
+:root[data-pack='xianxia'] .page-title,
+:root[data-pack='xianxia'] .hero-number {
+  text-shadow: 0 0 20px rgba(79, 209, 181, 0.4);
+}
+
+html:root[data-pack='koi'][data-theme] {
+  color-scheme: dark;
+  --bg: #062624;
+  --bg-side: #052220;
+  --surface: #0b3331;
+  --surface-solid: #0b3331;
+  --surface-2: #0f3e3b;
+  --border: #1a504c;
+  --border-strong: #276a64;
+  --text: #f0faf6;
+  --text-2: #c0ddd6;
+  --text-3: #84aaa2;
+  --grid: #10403c;
+  --axis: #276a64;
+  --accent-rgb: 255, 122, 82;
+  --accent: #ff7a52;
+  --accent-strong: #ff9670;
+  --accent-hi: #ffd34d;
+  --accent-soft: rgba(255, 122, 82, 0.15);
+  --accent-wash: rgba(255, 122, 82, 0.07);
+  --s1: #ff7a52;
+  --s2: #ffd34d;
+  --s3: #ff9ec4;
+  --s4: #7fd6c2;
+  --q1: #10403c;
+  --q2: #3a4a3a;
+  --q3: #8a5a40;
+  --q4: #ff7a52;
+  --q5: #ffc2a8;
+  --radius: 20px;
+}
+html:root[data-pack='koi'][data-glass] {
+  --surface: rgba(8, 44, 42, 0.55);
+  --surface-2: rgba(14, 58, 55, 0.5);
+  --border: rgba(190, 240, 230, 0.14);
+}
+:root[data-pack='koi'] .page-title,
+:root[data-pack='koi'] .hero-number {
+  text-shadow: 0 1px 16px rgba(0, 20, 18, 0.6);
+}
+
+html:root[data-pack='ukiyo'][data-theme] {
+  color-scheme: light;
+  --bg: #efe2c4;
+  --bg-side: #e8d9b8;
+  --surface: #f8efdc;
+  --surface-solid: #f8efdc;
+  --surface-2: #efe3c9;
+  --border: #d8c6a0;
+  --border-strong: #bfa878;
+  --text: #1c2433;
+  --text-2: #3f4759;
+  --text-3: #7a7465;
+  --grid: #e3d4b2;
+  --axis: #bfa878;
+  --accent-rgb: 31, 78, 133;
+  --accent: #1f4e85;
+  --accent-strong: #173d69;
+  --accent-hi: #cf4a33;
+  --accent-soft: rgba(31, 78, 133, 0.12);
+  --accent-wash: rgba(31, 78, 133, 0.06);
+  --s1: #1f4e85;
+  --s2: #cf4a33;
+  --s3: #3f8a7a;
+  --s4: #c99a3a;
+  --q1: #e8dbbd;
+  --q2: #b8c6d6;
+  --q3: #6f8fb4;
+  --q4: #1f4e85;
+  --q5: #0f2a4a;
+  --serif: 'Yu Mincho', 'Source Serif 4 Variable', SimSun, serif;
+  --radius: 4px;
+  --radius-sm: 3px;
+}
+html:root[data-pack='ukiyo'][data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #1a2740;
+  --bg-side: #172238;
+  --surface: #213150;
+  --surface-solid: #213150;
+  --surface-2: #283a5c;
+  --border: #34486c;
+  --border-strong: #4a628c;
+  --text: #f4ede0;
+  --text-2: #cfc8b8;
+  --text-3: #9a9484;
+  --grid: #2a3c5c;
+  --axis: #4a628c;
+  --accent-rgb: 242, 227, 176;
+  --accent: #e8c870;
+  --accent-strong: #f2dc98;
+  --accent-soft: rgba(232, 200, 112, 0.16);
+  --accent-wash: rgba(232, 200, 112, 0.07);
+  --s1: #e8c870;
+  --q1: #2a3c5c;
+  --q4: #e8c870;
+  --q5: #f8ecc4;
+}
+html:root[data-pack='ukiyo'][data-glass] {
+  --surface: rgba(248, 239, 220, 0.86);
+  --surface-2: rgba(239, 227, 201, 0.8);
+  --border: rgba(31, 59, 99, 0.2);
+}
+html:root[data-pack='ukiyo'][data-theme='dark'][data-glass] {
+  --surface: rgba(30, 44, 72, 0.7);
+  --surface-2: rgba(40, 58, 92, 0.6);
+  --border: rgba(242, 227, 176, 0.16);
+}
+:root[data-pack='ukiyo'] .card {
+  border-width: 1.5px;
+  box-shadow: 3px 3px 0 rgba(31, 59, 99, 0.14);
+}
+:root[data-pack='ukiyo'] .page-title {
+  letter-spacing: 0.04em;
+}
+
+html:root[data-pack='pixel'][data-theme] {
+  color-scheme: dark;
+  --bg: #1b1030;
+  --bg-side: #160d28;
+  --surface: #24173e;
+  --surface-solid: #24173e;
+  --surface-2: #2e1e4e;
+  --border: #45306e;
+  --border-strong: #5f4494;
+  --text: #fff8e8;
+  --text-2: #d8caf0;
+  --text-3: #9c8cc0;
+  --grid: #2c1d4a;
+  --axis: #5f4494;
+  --accent-rgb: 252, 188, 60;
+  --accent: #fcbc3c;
+  --accent-strong: #ffd36a;
+  --accent-hi: #2ec4b6;
+  --accent-soft: rgba(252, 188, 60, 0.15);
+  --accent-wash: rgba(252, 188, 60, 0.07);
+  --s1: #fcbc3c;
+  --s2: #2ec4b6;
+  --s3: #ff6b6b;
+  --s4: #8a7cff;
+  --q1: #2c1d4a;
+  --q2: #4a3a3a;
+  --q3: #9a7a2a;
+  --q4: #fcbc3c;
+  --q5: #fff1b0;
+  --serif: 'Cascadia Code', Consolas, 'Microsoft YaHei UI', monospace;
+  --radius: 0px;
+  --radius-sm: 0px;
+}
+html:root[data-pack='pixel'][data-glass] {
+  --surface: rgba(30, 18, 54, 0.66);
+  --surface-2: rgba(46, 30, 78, 0.6);
+  --border: rgba(255, 241, 176, 0.18);
+}
+:root[data-pack='pixel'] .card {
+  border-width: 2px;
+  box-shadow: 4px 4px 0 rgba(8, 4, 18, 0.55);
+}
+:root[data-pack='pixel'] .btn {
+  border-radius: 0;
+  box-shadow: 2px 2px 0 rgba(8, 4, 18, 0.5);
+}
+:root[data-pack='pixel'] .page-title,
+:root[data-pack='pixel'] .hero-number {
+  text-shadow: 3px 3px 0 rgba(8, 4, 18, 0.7);
+}
+
+/* ---------- previews: the backdrop tiles and the pack cards ---------- */
+.bd-mystic .bd-prev,
+.pack-mystic .pack-preview {
+  background-image:
+    radial-gradient(circle at 64% 34%, #e0465a 0 8px, rgba(220, 40, 60, 0.35) 11px, transparent 20px),
+    radial-gradient(circle at 64% 34%, transparent 15px, rgba(201, 164, 92, 0.5) 15.5px 16.5px, transparent 17px),
+    linear-gradient(transparent 62%, rgba(150, 138, 170, 0.5) 74%, rgba(150, 138, 170, 0.15) 90%),
+    linear-gradient(80deg, transparent 20%, #0b070e 20% 24%, transparent 24% 60%, #0b070e 60% 62%, transparent 62%),
+    linear-gradient(transparent 80%, #0b070e 80%),
+    linear-gradient(#06040a, #2a0f1f);
+}
+.bd-cyber .bd-prev,
+.pack-cyber .pack-preview {
+  background-image:
+    linear-gradient(90deg, transparent 14%, #ff2a6d 14% 16%, transparent 16% 74%, #00f0ff 74% 75.5%, transparent 75.5%),
+    linear-gradient(transparent 22%, rgba(252, 238, 10, 0.85) 22% 25%, transparent 25%),
+    repeating-linear-gradient(90deg, rgba(255, 210, 90, 0.35) 0 2px, transparent 2px 6px),
+    repeating-linear-gradient(0deg, transparent 0 3px, #0b0819 3px 6px),
+    linear-gradient(#05040c, #3a0d2e);
+}
+.bd-xianxia .bd-prev,
+.pack-xianxia .pack-preview {
+  background-image:
+    radial-gradient(circle at 70% 28%, #fff6dc 0 7px, rgba(255, 236, 190, 0.35) 10px, transparent 18px),
+    linear-gradient(transparent 60%, rgba(220, 216, 240, 0.9) 78%),
+    radial-gradient(ellipse 9% 70% at 28% 92%, #1e3d44 98%, transparent),
+    radial-gradient(ellipse 7% 52% at 46% 92%, #3d6070 98%, transparent),
+    radial-gradient(ellipse 8% 64% at 88% 96%, #1e3d44 98%, transparent),
+    linear-gradient(#081426, #2c5466 62%, #c9a77a);
+}
+.bd-koi .bd-prev,
+.pack-koi .pack-preview {
+  background-image:
+    radial-gradient(ellipse 13px 5px at 34% 56%, #ff6b4a 50%, #f6f1e7 55% 98%, transparent),
+    radial-gradient(ellipse 10px 4px at 66% 34%, #f2b53c 98%, transparent),
+    radial-gradient(circle at 80% 72%, #ff9ec4 0 3px, #4f9a46 4px 11px, transparent 12px),
+    radial-gradient(circle at 18% 24%, #3f8a3a 0 8px, transparent 9px),
+    radial-gradient(circle at 55% 45%, #135650, #052120);
+}
+.bd-ukiyo .bd-prev,
+.pack-ukiyo .pack-preview {
+  background-image:
+    radial-gradient(circle at 70% 30%, #cf4a33 0 7px, transparent 7.5px),
+    radial-gradient(circle at 10px 0, transparent 7px, #f8f2e4 7.5px 9px, transparent 9.5px),
+    linear-gradient(transparent 58%, #2f5a88 58%),
+    linear-gradient(rgba(31, 59, 99, 0.9), rgba(31, 59, 99, 0) 30%),
+    linear-gradient(#efe2c4, #efe2c4);
+  background-size: auto, 20px 20px, auto, auto, auto;
+  background-position: 0 0, 0 calc(58% - 2px), 0 0, 0 0, 0 0;
+}
+.bd-ukiyo .bd-prev {
+  background-repeat: no-repeat, repeat-x, no-repeat, no-repeat, no-repeat;
+}
+.pack-ukiyo .pack-preview {
+  background-repeat: no-repeat, repeat-x, no-repeat, no-repeat, no-repeat !important;
+}
+.bd-pixel .bd-prev,
+.pack-pixel .pack-preview {
+  background-image:
+    linear-gradient(90deg, transparent 46%, #5a2a1a 46% 47%, #fcbc3c 47% 55%, #5a2a1a 55% 56%, transparent 56%),
+    linear-gradient(transparent 82%, #52b04a 82% 86%, #8a5a32 86%),
+    linear-gradient(#24184a 0 18%, #4f2872 18% 36%, #a0407a 36% 54%, #ea7f64 54% 72%, #f6ab5c 72%);
+  background-size: 100% 30%, auto, auto;
+  background-position: 0 30%, 0 0, 0 0;
+  image-rendering: pixelated;
+}
+.bd-pixel .bd-prev {
+  background-repeat: no-repeat;
+}
+.pack-mystic .pack-fx,
+.pack-cyber .pack-fx,
+.pack-xianxia .pack-fx,
+.pack-koi .pack-fx,
+.pack-pixel .pack-fx {
+  color: rgba(255, 255, 255, 0.85);
+}
+.pack-mystic .pack-preview,
+.pack-cyber .pack-preview,
+.pack-xianxia .pack-preview,
+.pack-koi .pack-preview,
+.pack-pixel .pack-preview {
+  background-repeat: no-repeat;
+}
+
+/* ---------- entrances ---------- */
+.tr-mystic .tr-fog {
+  inset: -10% -40%;
+  background:
+    radial-gradient(40% 30% at 30% 60%, rgba(150, 138, 170, 0.55), transparent 70%),
+    radial-gradient(35% 28% at 62% 48%, rgba(130, 118, 150, 0.5), transparent 70%),
+    radial-gradient(30% 25% at 82% 66%, rgba(170, 160, 190, 0.45), transparent 70%);
+  filter: blur(10px);
+  animation: tr-fog 1.5s ease-in-out both;
+}
+.tr-mystic .tr-fog.late {
+  animation-delay: 0.18s;
+  transform: scaleX(-1);
+}
+@keyframes tr-fog {
+  0% {
+    translate: -40% 0;
+    opacity: 0;
+  }
+  35% {
+    opacity: 1;
+  }
+  100% {
+    translate: 30% 0;
+    opacity: 0;
+  }
+}
+.tr-mystic .tr-seal {
+  left: 50%;
+  top: 46%;
+  width: 46vmin;
+  height: 46vmin;
+  translate: -50% -50%;
+  border-radius: 50%;
+  border: 1.5px solid rgba(201, 164, 92, 0.6);
+  box-shadow:
+    inset 0 0 0 9px rgba(0, 0, 0, 0),
+    inset 0 0 0 10px rgba(216, 52, 74, 0.45),
+    0 0 40px rgba(216, 52, 74, 0.25);
+  animation: tr-seal 1.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes tr-seal {
+  0% {
+    transform: scale(0.4) rotate(-60deg);
+    opacity: 0;
+  }
+  40% {
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.15) rotate(40deg);
+    opacity: 0;
+  }
+}
+.tr-mystic .tr-arcanum {
+  left: 50%;
+  top: 46%;
+  width: 92px;
+  height: 152px;
+  margin: -76px 0 0 -46px;
+  border-radius: 6px;
+  border: 2px solid #c9a45c;
+  background:
+    radial-gradient(circle at 50% 50%, transparent 22px, rgba(230, 194, 122, 0.8) 23px 24px, transparent 25px),
+    linear-gradient(135deg, #6a1020, #2a0510);
+  box-shadow: 0 0 40px 10px rgba(255, 200, 120, 0.35);
+  animation: tr-arcanum 1.8s cubic-bezier(0.3, 0, 0.2, 1) both;
+}
+@keyframes tr-arcanum {
+  0% {
+    transform: perspective(600px) translateY(40px) rotateY(0) scale(0.6);
+    opacity: 0;
+  }
+  25% {
+    opacity: 1;
+  }
+  70% {
+    transform: perspective(600px) translateY(0) rotateY(540deg) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: perspective(600px) translateY(-20px) rotateY(540deg) scale(1.05);
+    opacity: 0;
+  }
+}
+.tr-mystic .tr-ember {
+  bottom: -4%;
+  width: 3px;
+  height: 3px;
+  background: #ff6a5a;
+  box-shadow: 0 0 6px 2px rgba(255, 80, 80, 0.6);
+  animation: tr-ember 1.2s ease-out both;
+}
+@keyframes tr-ember {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(12px, calc(var(--h) * -0.7));
+    opacity: 0;
+  }
+}
+
+.tr-cyber .tr-scanline {
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 3px;
+  background: #00f0ff;
+  box-shadow:
+    0 0 18px 4px rgba(0, 240, 255, 0.6),
+    0 -40px 60px rgba(0, 240, 255, 0.12);
+  animation: tr-scanline 0.7s cubic-bezier(0.6, 0, 0.4, 1) both;
+}
+@keyframes tr-scanline {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(var(--h));
+    opacity: 0.2;
+  }
+}
+.tr-cyber .tr-slice {
+  left: 0;
+  right: 0;
+  mix-blend-mode: screen;
+  animation: tr-slice 0.45s steps(4) both;
+}
+.tr-slice.yellow {
+  background: rgba(252, 238, 10, 0.5);
+}
+.tr-slice.cyan {
+  background: rgba(0, 240, 255, 0.45);
+}
+.tr-slice.pink {
+  background: rgba(255, 42, 109, 0.45);
+}
+@keyframes tr-slice {
+  0% {
+    transform: translateX(var(--dx));
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
+  }
+  60% {
+    transform: translateX(calc(var(--dx) * -1));
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 0;
+  }
+}
+.tr-cyber .tr-glitch-text {
+  left: 50%;
+  top: 44%;
+  translate: -50% -50%;
+  font: 700 clamp(22px, 4.4vw, 54px) / 1 Bahnschrift, 'Segoe UI', sans-serif;
+  letter-spacing: 0.12em;
+  color: #fcee0a;
+  white-space: nowrap;
+  text-shadow:
+    3px 0 0 rgba(0, 240, 255, 0.8),
+    -3px 0 0 rgba(255, 42, 109, 0.8);
+  animation: tr-glitch-text 1s steps(8) both;
+}
+@keyframes tr-glitch-text {
+  0% {
+    opacity: 0;
+    clip-path: inset(40% 0 40% 0);
+  }
+  20% {
+    opacity: 1;
+    clip-path: inset(0 0 60% 0);
+    transform: translateX(-6px);
+  }
+  40% {
+    clip-path: inset(30% 0 0 0);
+    transform: translateX(6px);
+  }
+  60% {
+    clip-path: inset(0);
+    transform: none;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    clip-path: inset(48% 0 48% 0);
+  }
+}
+
+.tr-xianxia .tr-cloud {
+  left: -30%;
+  bottom: 8%;
+  width: 90%;
+  height: 40%;
+  background:
+    radial-gradient(30% 40% at 30% 60%, rgba(230, 226, 245, 0.8), transparent 70%),
+    radial-gradient(28% 36% at 55% 50%, rgba(230, 226, 245, 0.7), transparent 70%),
+    radial-gradient(26% 34% at 78% 62%, rgba(230, 226, 245, 0.75), transparent 70%);
+  filter: blur(6px);
+  animation: tr-cloud 1.4s ease-in-out both;
+}
+.tr-xianxia .tr-cloud.late {
+  bottom: 30%;
+  left: 20%;
+  opacity: 0.7;
+  animation-delay: 0.15s;
+}
+@keyframes tr-cloud {
+  0% {
+    transform: translateX(-20%);
+    opacity: 0;
+  }
+  40% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(30%);
+    opacity: 0;
+  }
+}
+.tr-xianxia .tr-sword {
+  left: -60%;
+  top: 30%;
+  width: 60%;
+  height: 4px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, transparent, rgba(160, 255, 230, 0.5) 60%, #f0fffa 96%, transparent);
+  box-shadow: 0 0 16px 3px rgba(120, 255, 220, 0.5);
+  rotate: -9deg;
+  animation: tr-sword 0.95s cubic-bezier(0.5, 0, 0.3, 1) both;
+}
+.tr-xianxia .tr-sword.second {
+  top: 52%;
+  rotate: -14deg;
+  animation-delay: 0.22s;
+}
+@keyframes tr-sword {
+  from {
+    transform: translateX(0);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  to {
+    transform: translateX(260%);
+    opacity: 0.2;
+  }
+}
+.tr-xianxia .tr-mote {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #b4ffe8;
+  box-shadow: 0 0 10px 3px rgba(120, 255, 210, 0.6);
+  animation: tr-mote 1.1s ease-out both;
+}
+@keyframes tr-mote {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  30% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-40px) scale(0.4);
+    opacity: 0;
+  }
+}
+
+.tr-koi .tr-koi {
+  left: -12%;
+  width: 84px;
+  height: 26px;
+  border-radius: 60% 40% 40% 60% / 50% 50% 50% 50%;
+  background:
+    radial-gradient(circle at 70% 45%, #e2412c 0 7px, transparent 8px),
+    radial-gradient(circle at 38% 55%, #e2412c 0 9px, transparent 10px),
+    #f6f1e7;
+  box-shadow: 6px 9px 0 rgba(0, 20, 20, 0.25);
+  animation: tr-swim 1.4s cubic-bezier(0.45, 0, 0.3, 1) both;
+}
+.tr-koi .tr-koi::after {
+  content: '';
+  position: absolute;
+  left: -20px;
+  top: 3px;
+  width: 24px;
+  height: 20px;
+  background: rgba(246, 241, 231, 0.75);
+  clip-path: polygon(0 0, 100% 50%, 0 100%, 30% 50%);
+  animation: tr-tail 0.3s ease-in-out infinite alternate;
+}
+.tr-koi .tr-koi.k1 {
+  background:
+    radial-gradient(circle at 50% 50%, #fff6c8 0 4px, transparent 9px),
+    #f2b53c;
+}
+.tr-koi .tr-koi.k1::after {
+  background: rgba(250, 210, 120, 0.75);
+}
+.tr-koi .tr-koi.k2 {
+  background:
+    radial-gradient(circle at 76% 50%, #e2412c 0 6px, transparent 7px),
+    #f6f1e7;
+}
+@keyframes tr-swim {
+  0% {
+    transform: translate(0, 0) rotate(4deg);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  50% {
+    transform: translate(60vw, -3vh) rotate(-4deg);
+  }
+  100% {
+    transform: translate(125vw, 2vh) rotate(3deg);
+    opacity: 0.6;
+  }
+}
+@keyframes tr-tail {
+  from {
+    transform: skewY(-14deg);
+  }
+  to {
+    transform: skewY(14deg);
+  }
+}
+.tr-koi .tr-pond-ring {
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  border: 2px solid rgba(225, 255, 248, 0.7);
+  animation: tr-pond-ring 1.3s ease-out both;
+}
+@keyframes tr-pond-ring {
+  from {
+    transform: scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: scale(14);
+    opacity: 0;
+  }
+}
+
+.tr-ukiyo .tr-print-wave {
+  left: -10%;
+  bottom: -10%;
+  width: 120%;
+  height: 70%;
+  border-radius: 46% 54% 0 0 / 34% 40% 0 0;
+  background: linear-gradient(#1f3b63, #2f5a88);
+  border-top: 6px solid #f8f2e4;
+  box-shadow: inset 0 14px 0 -8px rgba(190, 215, 240, 0.5);
+  animation: tr-print-wave 1.4s cubic-bezier(0.5, 0, 0.3, 1) both;
+}
+:root[data-theme='dark'] .tr-ukiyo .tr-print-wave {
+  background: linear-gradient(#1c335a, #132442);
+}
+@keyframes tr-print-wave {
+  0% {
+    transform: translate(-60%, 40%) rotate(-6deg);
+    opacity: 0;
+  }
+  35% {
+    opacity: 0.92;
+  }
+  55% {
+    transform: translate(0, 0) rotate(0);
+    opacity: 0.92;
+  }
+  100% {
+    transform: translate(40%, 50%) rotate(4deg);
+    opacity: 0;
+  }
+}
+.tr-ukiyo .tr-foam {
+  border-radius: 50%;
+  background: #fbf6ea;
+  box-shadow: 0 0 0 1.5px rgba(31, 59, 99, 0.4);
+  animation: tr-foam 1s ease-out both;
+}
+@keyframes tr-foam {
+  0% {
+    transform: scale(0) translateY(0);
+    opacity: 0;
+  }
+  30% {
+    transform: scale(1.2) translateY(-20px);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.6) translateY(30px);
+    opacity: 0;
+  }
+}
+
+.tr-pixel .tr-px {
+  background: #1b1030;
+  box-shadow: inset 0 0 0 2px #2c1d4a;
+  animation: tr-px 0.8s steps(4) both;
+}
+@keyframes tr-px {
+  0% {
+    transform: scale(0);
+  }
+  35%,
+  55% {
+    transform: scale(1);
+  }
+  100% {
+    transform: scale(0);
+  }
+}
+.tr-pixel .tr-1up {
+  left: 50%;
+  top: 46%;
+  translate: -50% -50%;
+  font: 700 clamp(28px, 5vw, 64px) / 1 'Cascadia Code', Consolas, monospace;
+  color: #fcbc3c;
+  text-shadow: 4px 4px 0 #5a2a1a;
+  letter-spacing: 0.1em;
+  animation: tr-1up 1.1s steps(6) both;
+}
+@keyframes tr-1up {
+  0% {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  30%,
+  70% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+}
+
+/* ---------- live previews: a pack's or backdrop's own scene under the pointer ---------- */
+.scene-preview {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  animation: scene-preview-in 0.45s ease-out both;
+}
+.scene-preview-stage {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 400%;
+  height: 400%;
+  transform: scale(0.25);
+  transform-origin: 0 0;
+}
+@keyframes scene-preview-in {
+  from {
+    opacity: 0;
+    transform: scale(1.06);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.pack-preview > i,
+.pack-preview > b,
+.pack-preview > em {
+  position: relative;
+  z-index: 1;
+}
+.pack-preview > b,
+.pack-preview > em {
+  position: absolute;
+}
+.pack.previewing .pack-preview > b {
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+}
+.pack.previewing,
+.bd-tile.previewing {
+  transform: translateY(-3px) scale(1.02);
+  box-shadow:
+    0 0 0 2px rgba(var(--accent-rgb), 0.35),
+    var(--shadow);
+}
+
+/* ---------- pocket scenes: each pack's own animation in the floating window and the island (Pocket.tsx) ---------- */
+canvas.pocket-canvas,
+canvas.pocket-orb {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.mini.pocket,
+.mini.pocket.flowing {
+  background: transparent;
+}
+/* the text takes the scene's own tone, whatever the theme */
+.mini.pocket.pocket-dark {
+  --text: #f6f3ec;
+  --text-2: #dcd7cb;
+  --text-3: #aaa496;
+  --surface-2: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: var(--text);
+}
+.mini.pocket.pocket-light {
+  --text: #1d1b17;
+  --text-2: #45413a;
+  --text-3: #6d685e;
+  --surface-2: rgba(0, 0, 0, 0.1);
+  border-color: rgba(0, 0, 0, 0.1);
+  color: var(--text);
+}
+.mini.pocket-dark .mini-main,
+.mini.pocket-dark .mini-foot,
+.mini.pocket-dark .cap-tokens,
+.mini.pocket-dark .cap-quota,
+.mini.pocket-dark .mini-rate {
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+}
+.mini.pocket-light .mini-main,
+.mini.pocket-light .mini-foot,
+.mini.pocket-light .cap-tokens,
+.mini.pocket-light .cap-quota,
+.mini.pocket-light .mini-rate {
+  text-shadow: 0 1px 6px rgba(255, 255, 255, 0.75);
+}
+.mini.pocket .mini-trail path {
+  opacity: 0.04;
+}
+.mini.pocket .mini-trail path.line {
+  opacity: 0.25;
+}
+.mini-orb.pocket,
+.mini-orb.pocket.lv1,
+.mini-orb.pocket.lv2,
+.mini-orb.pocket.lv3 {
+  background: transparent;
+  border: 0;
+}
+.orb-text.pocket b {
+  color: var(--text);
+  text-shadow: 0 0 10px rgba(var(--accent-rgb), 0.7), 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+.mini-orb.pocket-dark .orb-text.pocket b {
+  color: #fff;
+}
+.orb-text.pocket span,
+.orb-text.pocket small {
+  color: var(--text-2);
+}
+.island.pocket {
+  background: #0b0b0e;
+}
+.island .isl-scene {
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+.island.pocket .isl-compact,
+.island.pocket .isl-event,
+.island.pocket .isl-detail {
+  position: relative;
+  z-index: 1;
+}
+.island.pocket .isl-tokens,
+.island.pocket .isl-pct,
+.island.pocket .isl-text b {
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.7);
+}
+canvas.isl-emblem {
+  flex: none;
+  width: 22px;
+  height: 22px;
+}
+canvas.isl-emblem.big {
+  width: 30px;
+  height: 30px;
+}

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { Intensity } from '@shared/types'
 import { cssVar, useMotionLevel } from '../state'
+import { onFrame } from '../frames'
 
 interface Drop {
   x: number
@@ -662,17 +663,15 @@ export function EnergyTank({
       s.draw(0)
       return () => ro.disconnect()
     }
-    let raf = 0
     let last = performance.now()
     const loop = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000)
       last = now
       s.draw(dt)
-      raf = requestAnimationFrame(loop)
     }
-    raf = requestAnimationFrame(loop)
+    const stop = onFrame(60, (_dt, now) => loop(now), 'tank')
     return () => {
-      cancelAnimationFrame(raf)
+      stop()
       ro.disconnect()
     }
   }, [reduced, shape, pixelScale])

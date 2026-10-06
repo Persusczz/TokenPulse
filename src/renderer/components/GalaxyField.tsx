@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { Intensity } from '@shared/types'
 import type { MotionScale } from '../state'
+import { onFrame } from '../frames'
 
 const VERT = `attribute vec2 p; void main() { gl_Position = vec4(p, 0.0, 1.0); }`
 
@@ -782,18 +783,9 @@ export function GalaxyField({
     addEventListener('pointermove', move, { passive: true })
     if (!level) return () => (ro.disconnect(), removeEventListener('pointermove', move), document.removeEventListener('tp-nova', nova), document.removeEventListener('tp-warp', warp))
 
-    let raf = 0
-    let last = performance.now()
-    const tick = (now: number) => {
-      raf = requestAnimationFrame(tick)
-      if (now - last < 24) return
-      const dt = Math.min(0.06, (now - last) / 1000)
-      last = now
-      s.draw(dt)
-    }
-    raf = requestAnimationFrame(tick)
+    const stop = onFrame(40, (dt) => s.draw(Math.min(0.06, dt)), 'galaxy')
     return () => {
-      cancelAnimationFrame(raf)
+      stop()
       ro.disconnect()
       removeEventListener('pointermove', move)
       document.removeEventListener('tp-nova', nova)
