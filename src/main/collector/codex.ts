@@ -2,8 +2,9 @@ import { existsSync } from 'node:fs'
 import { open, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
-import type { CodexQuota, PromptMark, QuotaWindow, UsageEntry } from '@shared/types'
+import type { CodexQuota, PromptMark, QuotaWindow, ToolAction, UsageEntry } from '@shared/types'
 import { noteWeek, type LoggedWeek } from '../windowHistory'
+import { codexFileChange, codexHeadAction, codexItemType } from './actions'
 import { PROMPT_CHARS } from './parser'
 import { listJsonl } from './store'
 
@@ -103,6 +104,8 @@ export interface CodexLine {
   prompt?: PromptMark
   /** model_context_window reported with the token counts */
   window?: number
+  /** a file change the AI made */
+  action?: ToolAction
 }
 
 /** Text the user typed; Codex wraps replies to its own questions and context in tags */
@@ -159,6 +162,10 @@ export function parseCodexLine(line: string, f: CodexFile): CodexLine | null {
       return { entry: toEntry(`codex:${id}`, ts, p.usage, f, p.session_id) }
     }
     case 'event_msg': {
+      if (p.type === 'item_completed' && p.item?.type === 'FileChange') {
+        const action = codexFileChange(j, f.sessionId, f.cwd ? basename(f.cwd) : 'Codex')
+        return action ? { action } : null
+      }
       if (p.type === 'item_completed' && p.item?.type === 'UserMessage' && ts) {
         const text = Array.isArray(p.item.content)
           ? p.item.content
@@ -196,15 +203,20 @@ export function parseCodexLine(line: string, f: CodexFile): CodexLine | null {
 /**
  * Reads lines from `offset`, decoding only those whose head names a record we
  * use: response items can be megabytes each, and there may be a gigabyte of them.
+ * Other tool calls (commands carry their whole output) go to `onHead` as their
+ * first few hundred bytes.
  */
-export async function readWanted(path: string, offset: number, size: number, onLine: (line: string) => void): Promise<number> {
+export async function readWanted(path: string, offset: number, size: number, onLine: (line: string) => void, onHead?: (head: string) => void): Promise<number> {
   const fh = await open(path, 'r')
   let pos = offset
   let carry: Buffer = Buffer.alloc(0)
   const take = (data: Buffer, a: number, b: number) => {
     const head = data.toString('latin1', a, Math.min(b, a + HEAD))
     if (WANTED.some((w) => head.includes(w))) return onLine(data.toString('utf8', a, b))
-    if (head.includes('"item_completed"') && data.toString('latin1', a, Math.min(b, a + ITEM_HEAD)).includes('"UserMessage"')) onLine(data.toString('utf8', a, b))
+    if (!head.includes('"item_completed"')) return
+    const h2 = data.toString('latin1', a, Math.min(b, a + ITEM_HEAD))
+    if (h2.includes('"UserMessage"') || h2.includes('"item":{"type":"FileChange"')) onLine(data.toString('utf8', a, b))
+    else if (onHead && codexItemType(h2)) onHead(data.toString('utf8', a, Math.min(b, a + ITEM_HEAD)))
   }
   try {
     while (pos < size) {
@@ -256,6 +268,8 @@ const SAME_WINDOW_MS = 10 * 60_000
 export class CodexStore {
   readonly entries = new Map<string, UsageEntry>()
   readonly prompts = new Map<string, PromptMark>()
+  /** the tool calls, by item id */
+  readonly actions = new Map<string, ToolAction>()
   /** the 5-hour windows seen in rate_limits, oldest first */
   readonly windows: CodexWindow[] = []
   /** the 7-day windows seen in rate_limits, with their peaks, oldest first */
@@ -323,9 +337,12 @@ export class CodexStore {
     if (size === f.offset) return []
     const file = f
     let added: UsageEntry[] = []
+    const act = (a: ToolAction | null) => a && !this.actions.has(a.key) && this.actions.set(a.key, a)
+    const onHead = (head: string) => act(codexHeadAction(head, file.sessionId, file.cwd ? basename(file.cwd) : 'Codex'))
     file.offset = await readWanted(path, file.offset, size, (line) => {
       const r = parseCodexLine(line, file)
       if (!r) return
+      if (r.action) return act(r.action)
       if (r.prompt) {
         // the same message can be logged twice by some versions
         const prev = this.lastPrompt.get(path)
@@ -349,7 +366,7 @@ export class CodexStore {
       this.revision++
       added.push(e)
       if (r.fallback) file.fallback.push(e.key)
-    })
+    }, onHead)
     return added
   }
 

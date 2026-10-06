@@ -648,20 +648,6 @@
     0 0 0 2px rgba(var(--accent-rgb), 0.55),
     0 0 18px rgba(var(--accent-rgb), 0.4);
 }
-.upd-row-notes {
-  display: block;
-}
-.upd-notes.compact {
-  max-height: 320px;
-  margin-top: 10px;
-  padding: 14px 18px;
-  overflow: auto;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: rgba(var(--accent-rgb), 0.04);
-  font-size: 13px;
-}
-
 /* the sidebar pill opens the dialog in every state */
 .update-pill {
   cursor: pointer;

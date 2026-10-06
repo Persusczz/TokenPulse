@@ -941,6 +941,66 @@ export interface ModelRow {
   promptCost: number
 }
 
+/** What a tool call did: ran a command, read or searched code, changed files, went online, started a subagent, used an MCP tool */
+export type ActionKind = 'run' | 'read' | 'edit' | 'web' | 'agent' | 'mcp' | 'other'
+
+/** One tool call the AI made: a Claude Code tool_use, or a completed Codex item */
+export interface ToolAction {
+  /** the tool_use / item id */
+  key: string
+  ts: number
+  sessionId: string
+  project: string
+  source: UsageSource
+  kind: ActionKind
+  /** as shown: Bash, Read, Edit, Shell, apply_patch, server · tool… */
+  name: string
+  /** lines written and taken out (edits only) */
+  added?: number
+  removed?: number
+  /** the files an edit touched, with its lines in each */
+  files?: { path: string; added: number; removed: number }[]
+}
+
+/** The overview's "AI 做了什么": the tool calls over a range */
+export interface ActionStats {
+  total: number
+  kinds: { kind: ActionKind; count: number }[]
+  /** the most used tools */
+  tools: { name: string; kind: ActionKind; source: UsageSource; count: number }[]
+  added: number
+  removed: number
+  /** distinct files edited */
+  files: number
+  /** the files edited most */
+  topFiles: { path: string; name: string; project: string; edits: number; added: number; removed: number }[]
+  /** questions asked in the range, to say how many calls one question set off */
+  prompts: number
+  /** the oldest tool call still in the logs (Claude Code keeps 30 days) */
+  since: number | null
+}
+
+/** The overview's personal records, over everything in the logs */
+export interface PersonalRecords {
+  bestDay: { t: number; tokens: number } | null
+  costDay: { t: number; cost: number } | null
+  /** the longest run of days in a row with use, and the run going on now (0 if none) */
+  streak: { days: number; from: number; to: number } | null
+  current: number
+  bestHour: { t: number; tokens: number } | null
+  bigSession: { id: string; project: string; source: UsageSource; start: number; tokens: number; cost: number } | null
+  promptDay: { t: number; prompts: number } | null
+  costPrompt: { ts: number; cost: number; text: string; sessionId: string } | null
+  codeDay: { t: number; added: number; removed: number } | null
+  /** today's numbers, to set against the records */
+  today: { tokens: number; cost: number; prompts: number; added: number; hour: number }
+  /** per day with use, per question, and a typical conversation */
+  avg: { dayTokens: number; dayCost: number; promptCost: number; promptTokens: number; promptsPerDay: number; sessionMinutes: number }
+  /** days with use, and the first one */
+  days: number
+  since: number | null
+}
+
 /** What the 22 cards of the 塔罗 page draw: each card is one picture of your usage */
 export interface TarotDeck {
   source: SourceView
@@ -1458,6 +1518,8 @@ export interface TokenPulseApi {
   getCalendar(): Promise<CalendarDay[]>
   getTimeline(): Promise<SessionSpan[]>
   getModelRows(range: RangeKey): Promise<ModelRow[]>
+  getActions(range: RangeKey): Promise<ActionStats>
+  getRecords(): Promise<PersonalRecords>
   codexUsageState(): Promise<CodexUsageState>
   codexSignIn(): Promise<{ ok: boolean; error?: string; email?: string | null }>
   codexSignOut(): Promise<void>

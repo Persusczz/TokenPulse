@@ -34,6 +34,7 @@ import type {
   Pace,
   PausedTask,
   PromptMark,
+  ToolAction,
   QuotaInfo,
   QuotaCycles,
   QuotaRate,
@@ -92,6 +93,7 @@ import { ARCANA, cardStory } from '@shared/tarot'
 import { cardFace } from '@shared/tarotArt'
 import { buildDeck } from './tarot'
 import { calendarDays, modelRows, todaySessions } from './overviewData'
+import { actionStats, personalRecords } from './activity'
 import { pauseBadge, trayBitmap } from './trayIcon'
 import { attachToDesktop, hwndOf, refreshDesktop } from './wallpaper'
 
@@ -232,6 +234,18 @@ function prompts(): Map<string, PromptMark[]> {
     promptIdx = indexPrompts([...store.prompts.values(), ...codex.prompts.values()])
   }
   return promptIdx
+}
+
+/** the prompts typed in the tools on view */
+function promptMarks(): PromptMark[] {
+  const f = source()
+  return [...store.prompts.values(), ...codex.prompts.values()].filter((p) => f === 'all' || p.source === f)
+}
+
+/** the tool calls made in the tools on view */
+function actionList(): ToolAction[] {
+  const f = source()
+  return [...(f !== 'codex' ? store.actions.values() : []), ...(f !== 'claude' ? codex.actions.values() : [])]
 }
 
 function quotaConfig() {
@@ -2788,6 +2802,16 @@ function registerIpc(): void {
     const r = RANGES.includes(range) ? range : 'today'
     const b = rangeBounds(r, now, view()[0]?.ts ?? null)
     return modelRows(view(), b.start, b.end, modelLabel, costByPrompt(view(), prompts(), b.start, b.end, modelLabel).list)
+  })
+  ipcMain.handle('overview:actions', (_e, range: RangeKey) => {
+    const r = RANGES.includes(range) ? range : 'today'
+    const b = rangeBounds(r, Date.now(), view()[0]?.ts ?? null)
+    const asked = promptMarks().filter((p) => p.ts >= b.start && p.ts < b.end).length
+    return actionStats(actionList(), b.start, b.end, asked)
+  })
+  ipcMain.handle('overview:records', () => {
+    const now = Date.now()
+    return personalRecords(view(), promptMarks(), costByPrompt(view(), prompts(), 0, now + 1, modelLabel).list, actionList(), now)
   })
   ipcMain.handle('titlebar:sample', async (e): Promise<TitleCorner | null> => {
     const win = BrowserWindow.fromWebContents(e.sender)

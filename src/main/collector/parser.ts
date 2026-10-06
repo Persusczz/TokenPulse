@@ -1,12 +1,13 @@
 import { basename } from 'node:path'
-import type { PromptMark, UsageEntry } from '@shared/types'
+import type { PromptMark, ToolAction, UsageEntry } from '@shared/types'
+import { claudeActions } from './actions'
 
 export interface CostState {
   sessionId: string
   totalCostUSD: number
 }
 
-export type ParsedLine = { kind: 'usage'; entry: UsageEntry } | { kind: 'cost'; state: CostState } | { kind: 'prompt'; prompt: PromptMark }
+export type ParsedLine = { kind: 'usage'; entry: UsageEntry; actions: ToolAction[] } | { kind: 'cost'; state: CostState } | { kind: 'prompt'; prompt: PromptMark }
 
 const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
 
@@ -60,7 +61,8 @@ function parsePrompt(obj: any, fallbackProject: string): PromptMark | null {
 }
 
 /**
- * Parse one transcript line. Assistant messages with usage, cost-state
+ * Parse one transcript line. Assistant messages with usage (and the tool
+ * calls on them), cost-state
  * snapshots and the user's own prompts matter; everything else is skipped
  * without a JSON.parse.
  */
@@ -107,15 +109,17 @@ export function parseLine(line: string, fallbackProject: string): ParsedLine | n
   const req = typeof obj.requestId === 'string' ? obj.requestId : ''
   const key = id || req ? `${id}:${req}` : String(obj.uuid ?? `${ts}:${model}`)
   const cwd = typeof obj.cwd === 'string' && obj.cwd ? obj.cwd : ''
+  const project = cwd ? basename(cwd.replace(/[\\/]+$/, '')) || cwd : fallbackProject
 
   return {
     kind: 'usage',
+    actions: claudeActions(obj, ts, project),
     entry: {
       key,
       ts,
       model,
       sessionId: typeof obj.sessionId === 'string' ? obj.sessionId : '',
-      project: cwd ? basename(cwd.replace(/[\\/]+$/, '')) || cwd : fallbackProject,
+      project,
       projectPath: cwd || fallbackProject,
       input: num(u.input_tokens),
       output: num(u.output_tokens),

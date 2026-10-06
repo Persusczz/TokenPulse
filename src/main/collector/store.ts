@@ -1,6 +1,6 @@
 import { open, readdir, stat } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
-import type { PromptMark, UsageEntry } from '@shared/types'
+import type { PromptMark, ToolAction, UsageEntry } from '@shared/types'
 import { parseLine } from './parser'
 
 const CHUNK = 4 << 20
@@ -8,6 +8,8 @@ const CHUNK = 4 << 20
 interface FileState {
   offset: number
   keys: Set<string>
+  /** tool calls first seen in this file */
+  actions: Set<string>
 }
 
 /**
@@ -80,6 +82,8 @@ export class UsageStore {
   readonly reportedCost = new Map<string, number>()
   /** what the user typed, by session + prompt id */
   readonly prompts = new Map<string, PromptMark>()
+  /** the tool calls, by tool_use id (a resumed session repeats them: kept once) */
+  readonly actions = new Map<string, ToolAction>()
   /** bumped whenever entries change */
   revision = 0
   private files = new Map<string, FileState>()
@@ -129,10 +133,11 @@ export class UsageStore {
           this.revision++
         }
       }
+      for (const k of st.actions) this.actions.delete(k)
       st = undefined
     }
     if (!st) {
-      st = { offset: 0, keys: new Set() }
+      st = { offset: 0, keys: new Set(), actions: new Set() }
       this.files.set(path, st)
     }
     if (size === st.offset) return []
@@ -152,6 +157,11 @@ export class UsageStore {
         // a resumed session repeats its history: keep the first sighting
         if (!this.prompts.has(p.prompt.key)) this.prompts.set(p.prompt.key, p.prompt)
         return
+      }
+      for (const a of p.actions) {
+        if (this.actions.has(a.key)) continue
+        this.actions.set(a.key, a)
+        state.actions.add(a.key)
       }
       const e = p.entry
       this.note(e.sessionId, path)

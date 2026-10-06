@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { ACCENT_KEYS, ACCENTS, type AccentKey } from '@shared/accents'
 import { toCurrency } from '@shared/format'
 import { HOTKEYS, hotkeyLabel, type Hotkey, type HotkeyStatus } from '@shared/hotkeys'
@@ -8,9 +8,7 @@ import type { BackdropStyle, CodexUsageState, FrameCap, MiniMode, MotionLevel, Q
 import { CompactPicker } from '../components/CompactPicker'
 import { ScenePreview, useLivePreview } from '../components/ScenePreview'
 import { IconClose } from '../components/Icons'
-import { Markdown } from '../components/Markdown'
 import { APP_ICON, openUpdateDialog } from '../components/UpdateDialog'
-import { parseMarkdown, withoutSections } from '@shared/markdown'
 import { Segmented } from '../components/Segmented'
 import { CITIES, placeOf, sunTimes, type Place } from '@shared/astro'
 import { applyPack } from '../components/CommandPalette'
@@ -1293,7 +1291,6 @@ function MoneyRows({ s, save, source }: { s: Settings; save: Save; source: Sourc
 function UpdateRows({ s, save }: { s: Settings; save: Save }) {
   const u = useUpdate()
   const [busy, setBusy] = useState(false)
-  const notes = useMemo(() => withoutSections(parseMarkdown(u?.latest?.notes ?? ''), /^(下载|验证|校验)$/), [u?.latest?.notes])
   if (!u) return null
   const v = u.latest?.version
   const newer = u.status === 'available' || u.status === 'downloading' || u.status === 'ready'
@@ -1341,12 +1338,6 @@ function UpdateRows({ s, save }: { s: Settings; save: Save }) {
           )}
         </div>
       </div>
-      {u.latest && notes.length > 0 && (
-        <div className="set-row upd-row-notes">
-          <div className="set-label">{newer ? `${v} 更新内容` : v === u.current ? `当前版本 ${v} 的更新内容` : `最新发布 ${v} 的更新内容`}</div>
-          <Markdown blocks={notes} className="upd-notes compact" />
-        </div>
-      )}
       <Row label="启动时检查更新" desc="每次打开 TokenPulse 都会到 GitHub Releases 看一下，有新版本就弹窗展示更新内容；下载和安装都等你点「立即更新」，不会突然重启">
         <Switch on={s.autoUpdate} onChange={(autoUpdate) => save({ autoUpdate })} />
       </Row>

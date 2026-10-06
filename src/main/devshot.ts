@@ -89,6 +89,41 @@ export async function runDevShots(dir: string, main: BrowserWindow, mini: Browse
     return
   }
 
+  // the overview's AI 做了什么 and 个人纪录, over a few ranges, both themes and each tool
+  if (process.env.TP_SHOTS === 'activity') {
+    await main.webContents.insertCSS('.celebrate, .toasts, .toast { display: none !important }')
+    await set({ themePack: 'none', theme: 'dark', backdrop: 'flow', sourceFilter: 'all' })
+    await js(click('概览'))
+    await wait(3000)
+    for (const range of ['今日', '7 天', '全部']) {
+      await js(`[...document.querySelectorAll('.rtab-label')].find((x) => x.textContent === ${JSON.stringify(range)})?.closest('button')?.click()`)
+      await wait(1500)
+      await js(scrollTo('.actions-card'))
+      await wait(1200)
+      await shot(main, `activity-actions-${range}`, await js(rectOf('.actions-card')))
+    }
+    await js(scrollTo('.records-card'))
+    await wait(1200)
+    await shot(main, 'activity-records', await js(rectOf('.records-card')))
+    await set({ theme: 'light' })
+    await wait(1500)
+    await js(scrollTo('.actions-card'))
+    await wait(1000)
+    await shot(main, 'activity-actions-light', await js(rectOf('.actions-card')))
+    await js(scrollTo('.records-card'))
+    await wait(800)
+    await shot(main, 'activity-records-light', await js(rectOf('.records-card')))
+    for (const tool of ['claude', 'codex']) {
+      await set({ theme: 'dark', sourceFilter: tool })
+      await wait(2500)
+      await js(scrollTo('.actions-card'))
+      await wait(1200)
+      await shot(main, `activity-actions-${tool}`, await js(rectOf('.actions-card')))
+    }
+    done()
+    return
+  }
+
   // a launch with a newer release waiting (TP_UPDATE_API): the dialog opens by itself
   if (process.env.TP_SHOTS === 'updlaunch') {
     const u = (globalThis as { __tpUpdater?: import('./updater').Updater }).__tpUpdater!

@@ -1,0 +1,345 @@
+/* ---------- overview: AI 做了什么, 个人纪录 ---------- */
+.actions-card,
+.records-card {
+  margin-bottom: 16px;
+}
+.act-empty {
+  padding: 36px 0;
+  color: var(--text-3);
+  font-size: 13px;
+  text-align: center;
+}
+.act-empty.small {
+  padding: 16px 0;
+  text-align: left;
+}
+.act-verdict {
+  margin: -2px 0 14px;
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+.act-verdict b {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* four numbers */
+.act-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+@media (max-width: 980px) {
+  .act-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.act-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 14px 12px 16px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.act-tile::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--c);
+}
+.act-tile-label {
+  color: var(--text-3);
+  font-size: 12px;
+}
+.act-tile-value {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  color: var(--text);
+  font-family: var(--serif);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+.act-tile-value small {
+  color: var(--text-3);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 400;
+}
+.act-tile-value .act-lines {
+  font-size: 19px;
+}
+.act-tile-sub {
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+.act-lines {
+  display: inline-flex;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.act-lines b {
+  font-weight: 600;
+}
+.act-lines .add {
+  color: var(--good-text);
+}
+.act-lines .del {
+  color: var(--critical);
+}
+
+/* the share of each kind, as one bar */
+.act-bar {
+  display: flex;
+  gap: 2px;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: var(--surface-2);
+}
+.act-bar i {
+  min-width: 3px;
+  flex-basis: 0;
+}
+.act-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 8px 0 18px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.act-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.act-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+.act-legend b {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.act-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 28px;
+}
+@media (max-width: 980px) {
+  .act-body {
+    grid-template-columns: 1fr;
+  }
+}
+.act-sub {
+  margin-bottom: 8px;
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.act-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.act-tool {
+  display: grid;
+  grid-template-columns: minmax(0, 150px) minmax(0, 1fr) 52px;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+}
+.act-tool-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.act-tool-name svg {
+  flex: none;
+}
+.act-tool-bar {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: var(--surface-2);
+}
+.act-tool-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transform-origin: left;
+}
+.act-tool b {
+  color: var(--text-2);
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.act-files {
+  display: flex;
+  flex-direction: column;
+}
+.act-file {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--grid);
+  font-size: 12.5px;
+}
+.act-file:last-child {
+  border-bottom: 0;
+}
+.act-file-name {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.act-file-name em {
+  margin-left: 8px;
+  color: var(--text-3);
+  font-size: 11.5px;
+  font-style: normal;
+}
+.act-file .muted {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.act-note {
+  margin-top: 14px;
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+
+/* 个人纪录 */
+.rec-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (max-width: 1100px) {
+  .rec-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.rec {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  transition: border-color 160ms, background 160ms;
+}
+.rec:disabled {
+  cursor: default;
+}
+.rec.link {
+  cursor: pointer;
+}
+.rec.link:hover {
+  border-color: rgba(var(--accent-rgb), 0.45);
+  background: rgba(var(--accent-rgb), 0.06);
+}
+.rec.beat {
+  border-color: rgba(var(--accent-rgb), 0.55);
+  background: linear-gradient(140deg, rgba(var(--accent-rgb), 0.14), var(--surface-2) 70%);
+}
+.rec-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.rec-label em {
+  padding: 1px 7px;
+  border-radius: 99px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10.5px;
+  font-style: normal;
+  font-weight: 600;
+}
+.rec-value {
+  color: var(--text);
+  font-family: var(--serif);
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+}
+.rec-sub {
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rec-today {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  color: var(--text-3);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.rec-track {
+  flex: 1;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: var(--grid);
+}
+.rec-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transform-origin: left;
+}
+.rec-avg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--grid);
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+.rec-avg b {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}

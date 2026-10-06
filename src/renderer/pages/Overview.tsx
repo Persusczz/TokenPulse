@@ -22,6 +22,7 @@ import { QuotaCard } from '../components/QuotaRings'
 import { CyclesCard } from '../components/QuotaCycles'
 import { QuotaRelationCard } from '../components/QuotaRelation'
 import { CalendarCard, ModelTableCard, TimelineCard } from '../components/OverviewMore'
+import { ActionsCard, RecordsCard } from '../components/OverviewActivity'
 import { coverageNote, RANGE_OPTIONS, RangeTabs, spanText } from '../components/RangeTabs'
 import { RateCard } from '../components/RateCard'
 import { RunawayBanner } from '../components/RunawayBanner'
@@ -355,7 +356,11 @@ export function Overview({ theme }: { theme: string }) {
         {summary ? <TrendChart summary={summary} metric={metric} /> : <div className="chart-box skeleton" />}
       </div>
 
+      <ActionsCard range={range} />
+
       <CalendarCard />
+
+      <RecordsCard />
 
       <div className="grid-2">
         <div className="card">
