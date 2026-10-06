@@ -95,6 +95,7 @@ const api: TokenPulseApi = {
   updateDownload: () => ipcRenderer.invoke('update:download'),
   updateInstall: () => ipcRenderer.invoke('update:install'),
   onAppUpdate: on('update:state'),
+  openExternal: (url) => ipcRenderer.invoke('open:external', url),
   displayHz: () => ipcRenderer.invoke('display:hz'),
   onUpdate: on('data:update'),
   onQuota: on('quota:update'),

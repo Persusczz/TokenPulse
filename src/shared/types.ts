@@ -1230,7 +1230,7 @@ export interface Settings {
   codexEnabled: boolean
   /** read Codex's limits from the ChatGPT account every minute (TokenPulse's login, else Codex CLI's) */
   codexUsageApi: boolean
-  /** look for a new release now and then, and download it in the background (installing waits for a click) */
+  /** look for a new release each time TokenPulse starts and show what's new (downloading and installing wait for a click) */
   autoUpdate: boolean
   /** which tool the app shows: Claude, Codex, or both together */
   sourceFilter: SourceView
@@ -1468,6 +1468,8 @@ export interface TokenPulseApi {
   updateDownload(): Promise<UpdateState>
   updateInstall(): Promise<boolean>
   onAppUpdate(cb: (s: UpdateState) => void): () => void
+  /** opens an http(s) link in the browser */
+  openExternal(url: string): Promise<void>
   /** the refresh rate of the display the window is on (0 when unknown) */
   displayHz(): Promise<number>
   onUpdate(cb: (e: UpdateEvent) => void): () => void

@@ -11,6 +11,7 @@ import { FpsMeter } from './components/FpsMeter'
 import { SideEmblem } from './components/Emblem'
 import { SoundEffects } from './components/SoundEffects'
 import { Toasts } from './components/Toasts'
+import { openUpdateDialog, UpdateDialog } from './components/UpdateDialog'
 import { pageMotion, playPageTransition, playThemeEntrance, SceneTransition } from './components/Transitions'
 import { installEffects } from './effects'
 import { AchievementsPage } from './pages/Achievements'
@@ -40,20 +41,25 @@ const NAV: { id: Page; label: string; icon: typeof IconOverview; key: string; ke
   { id: 'settings', label: '设置', icon: IconSettings, key: '8', keys: 'sz settings' }
 ]
 
-/** a new version, downloading or ready: one click restarts into it */
+/** a new version waiting, downloading or ready: a click opens the update dialog */
 function UpdatePill() {
   const u = useUpdate()
-  if (!u || (u.status !== 'downloading' && u.status !== 'ready')) return null
-  return u.status === 'ready' ? (
-    <button className="update-pill ready" onClick={() => void window.api.updateInstall()} title={u.latest?.notes.slice(0, 400)}>
-      <span>✦ {u.latest?.version} 已就绪</span>
-      <b>重启并更新</b>
+  if (!u?.latest || (u.status !== 'available' && u.status !== 'downloading' && u.status !== 'ready')) return null
+  return (
+    <button className={`update-pill${u.status === 'downloading' ? '' : ' ready'}`} onClick={openUpdateDialog} title="查看更新内容">
+      {u.status === 'downloading' ? (
+        <>
+          <span>正在下载 {u.latest.version}</span>
+          <b>{Math.round((u.progress ?? 0) * 100)}%</b>
+          <i style={{ width: `${Math.round((u.progress ?? 0) * 100)}%` }} />
+        </>
+      ) : (
+        <>
+          <span>✦ {u.latest.version} {u.status === 'ready' ? '已就绪' : '可更新'}</span>
+          <b>{u.status === 'ready' ? '重启并更新' : '查看'}</b>
+        </>
+      )}
     </button>
-  ) : (
-    <div className="update-pill" title="在后台下载，下完会提示">
-      <span>正在下载 {u.latest?.version}</span>
-      <i style={{ width: `${Math.round((u.progress ?? 0) * 100)}%` }} />
-    </div>
   )
 }
 
@@ -372,6 +378,7 @@ function Shell() {
       <SoundEffects />
       <TokenFx />
       <Celebration />
+      <UpdateDialog />
       <Splash />
     </div>
   )

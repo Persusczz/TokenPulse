@@ -26,7 +26,6 @@ function DeckCard({ id, deck, accent, money, i }: { id: number; deck: TarotDeck;
             <span className="deck-back-head">
               <b>{a.numeral}</b> {a.name}
             </span>
-            <span className="deck-back-draws">{a.draws}</span>
             <span className="deck-back-lines">
               {story.map((l, k) => (
                 <span key={k}>{l}</span>
@@ -40,7 +39,6 @@ function DeckCard({ id, deck, accent, money, i }: { id: number; deck: TarotDeck;
         <b>
           {a.numeral} {a.name}
         </b>
-        <span>{a.draws}</span>
       </div>
     </div>
   )

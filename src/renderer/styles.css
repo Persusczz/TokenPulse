@@ -7898,12 +7898,3 @@ html:root[data-pack='paper'][data-glass] {
 .update-pill.ready:hover {
   background: rgba(var(--accent-rgb), 0.28);
 }
-.update-notes {
-  white-space: pre-wrap;
-  max-height: 220px;
-  overflow: auto;
-}
-.update-notes b {
-  display: block;
-  margin-bottom: 4px;
-}

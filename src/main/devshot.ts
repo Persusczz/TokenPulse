@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { appendFile, mkdir, unlink, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { nativeImage as images, screen, type BrowserWindow } from 'electron'
 import { PACK_KEYS, PACKS } from '@shared/packs'
@@ -85,6 +85,63 @@ export async function runDevShots(dir: string, main: BrowserWindow, mini: Browse
     await js(scrollTo('.calendar-card'))
     await wait(1500)
     await shot(main, 'more-calendar-light', await js(rectOf('.calendar-card')))
+    done()
+    return
+  }
+
+  // a launch with a newer release waiting (TP_UPDATE_API): the dialog opens by itself
+  if (process.env.TP_SHOTS === 'updlaunch') {
+    const u = (globalThis as { __tpUpdater?: import('./updater').Updater }).__tpUpdater!
+    await log({ state: u.state.status, latest: u.state.latest?.version ?? null, open: await js(`!!document.querySelector('.upd-box')`) })
+    await shot(main, 'launch-dialog')
+    done()
+    return
+  }
+
+  // the new-version dialog: found, downloading, ready (states sent straight to the page), both themes, then settings and the tarot captions
+  if (process.env.TP_SHOTS === 'updialog') {
+    const notes = process.env.TP_UPDATE_NOTES ? await readFile(process.env.TP_UPDATE_NOTES, 'utf8') : '## 新增\n\n- **一件事**：`code`'
+    const latest = { version: '2.17.0', notes, page: 'https://github.com/Persusczz/TokenPulse/releases/tag/v2.17.0', publishedAt: Date.now(), size: 106_000_000 }
+    const send = (patch: object) => main.webContents.send('update:state', { current: '2.16.0', kind: 'portable', checkedAt: Date.now(), latest, ...patch })
+    await main.webContents.insertCSS('.celebrate, .toasts, .toast { display: none !important }')
+    await set({ themePack: 'none', theme: 'dark', backdrop: 'flow' })
+    await wait(1500)
+    send({ status: 'checking' })
+    await wait(200)
+    send({ status: 'available' })
+    await wait(2000)
+    await shot(main, 'upd-1-available')
+    await js(`document.querySelector('.upd-body')?.scrollTo(0, 420)`)
+    await wait(500)
+    await shot(main, 'upd-1b-scrolled')
+    send({ status: 'downloading', progress: 0.43 })
+    await wait(900)
+    await shot(main, 'upd-2-downloading')
+    send({ status: 'ready', progress: 1 })
+    await wait(900)
+    await shot(main, 'upd-3-ready')
+    await set({ theme: 'light' })
+    send({ status: 'available' })
+    await wait(1600)
+    await js(`document.querySelector('.upd-body')?.scrollTo(0, 0)`)
+    await wait(300)
+    await shot(main, 'upd-4-light')
+    await js(clickSel('.upd-close'))
+    await set({ theme: 'dark' })
+    await js(click('设置'))
+    await wait(800)
+    await clickSub('系统与数据')
+    // the settings row mounted after the states above: send the found version again (the dialog stays shut)
+    await wait(1500)
+    send({ status: 'available' })
+    await wait(800)
+    await shot(main, 'upd-5-settings')
+    await js(click('塔罗'))
+    await wait(2600)
+    await shot(main, 'upd-6-tarot')
+    await js(clickSel('.deck-flip', 1))
+    await wait(1200)
+    await shot(main, 'upd-7-tarot-back')
     done()
     return
   }

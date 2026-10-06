@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ACCENT_KEYS, ACCENTS, type AccentKey } from '@shared/accents'
 import { toCurrency } from '@shared/format'
 import { HOTKEYS, hotkeyLabel, type Hotkey, type HotkeyStatus } from '@shared/hotkeys'
@@ -8,6 +8,9 @@ import type { BackdropStyle, CodexUsageState, FrameCap, MiniMode, MotionLevel, Q
 import { CompactPicker } from '../components/CompactPicker'
 import { ScenePreview, useLivePreview } from '../components/ScenePreview'
 import { IconClose } from '../components/Icons'
+import { Markdown } from '../components/Markdown'
+import { APP_ICON, openUpdateDialog } from '../components/UpdateDialog'
+import { parseMarkdown, withoutSections } from '@shared/markdown'
 import { Segmented } from '../components/Segmented'
 import { CITIES, placeOf, sunTimes, type Place } from '@shared/astro'
 import { applyPack } from '../components/CommandPalette'
@@ -1290,8 +1293,10 @@ function MoneyRows({ s, save, source }: { s: Settings; save: Save; source: Sourc
 function UpdateRows({ s, save }: { s: Settings; save: Save }) {
   const u = useUpdate()
   const [busy, setBusy] = useState(false)
+  const notes = useMemo(() => withoutSections(parseMarkdown(u?.latest?.notes ?? ''), /^(下载|验证|校验)$/), [u?.latest?.notes])
   if (!u) return null
   const v = u.latest?.version
+  const newer = u.status === 'available' || u.status === 'downloading' || u.status === 'ready'
   const status =
     u.status === 'checking'
       ? '正在检查…'
@@ -1305,49 +1310,44 @@ function UpdateRows({ s, save }: { s: Settings; save: Save }) {
               ? `${v} 已下载并校验，重启即可更新`
               : u.status === 'error'
                 ? (u.error ?? '更新出错')
-                : ''
-  const run = async (f: () => Promise<unknown>) => {
+                : '还没有检查'
+  const check = async () => {
     setBusy(true)
-    await f()
+    await window.api.updateCheck()
     setBusy(false)
   }
   return (
     <>
-      <Row
-        label={`版本 ${u.current}`}
-        desc={
-          u.kind === 'portable'
-            ? '便携版：更新时下载新版本、校验 SHA-256，退出后原地替换当前的 exe 再启动（快捷方式和开机自启都不受影响）'
-            : u.kind === 'installer'
-              ? '安装版：更新时下载新的安装包、校验 SHA-256，退出后静默安装并重新启动'
-              : '开发版：只检查，不自动安装'
-        }
-      >
-        <span className={u.status === 'error' ? 'bad-text' : u.status === 'ready' || u.status === 'available' ? 'ok-text' : 'muted'} style={{ fontSize: 12.5 }}>
-          {status}
-        </span>
-        {u.status === 'available' && u.kind !== 'dev' && !u.error && (
-          <button className="btn primary small" disabled={busy} onClick={() => void run(() => window.api.updateDownload())}>
-            下载
-          </button>
-        )}
-        {u.status === 'ready' ? (
-          <button className="btn primary small" onClick={() => void window.api.updateInstall()}>
-            重启并更新
-          </button>
-        ) : (
-          <button className="btn small" disabled={busy || u.status === 'checking' || u.status === 'downloading'} onClick={() => void run(() => window.api.updateCheck())}>
-            检查更新
-          </button>
-        )}
-      </Row>
-      {u.latest && (u.status === 'available' || u.status === 'ready' || u.status === 'downloading') && u.latest.notes && (
-        <div className="set-note update-notes">
-          <b>{u.latest.version} 更新内容</b>
-          {u.latest.notes.slice(0, 900)}
+      <div className={`set-row upd-row${newer ? ' newer' : ''}`}>
+        <div className="upd-row-main">
+          <img className="upd-row-icon" src={APP_ICON} alt="" draggable={false} />
+          <div>
+            <div className="set-label">
+              TokenPulse {u.current}
+              <span className="badge">{u.kind === 'portable' ? '便携版' : u.kind === 'installer' ? '安装版' : '开发版'}</span>
+            </div>
+            <div className={`upd-row-status${u.status === 'error' ? ' bad-text' : newer ? ' ok-text' : ''}`}>{status}</div>
+          </div>
+        </div>
+        <div className="set-ctl">
+          {newer ? (
+            <button className="btn primary small" onClick={openUpdateDialog}>
+              {u.status === 'ready' ? '重启并更新' : u.status === 'downloading' ? '查看进度' : '查看并更新'}
+            </button>
+          ) : (
+            <button className="btn small" disabled={busy || u.status === 'checking'} onClick={() => void check()}>
+              检查更新
+            </button>
+          )}
+        </div>
+      </div>
+      {u.latest && notes.length > 0 && (
+        <div className="set-row upd-row-notes">
+          <div className="set-label">{newer ? `${v} 更新内容` : v === u.current ? `当前版本 ${v} 的更新内容` : `最新发布 ${v} 的更新内容`}</div>
+          <Markdown blocks={notes} className="upd-notes compact" />
         </div>
       )}
-      <Row label="自动更新" desc="启动后和每 6 小时从 GitHub Releases 检查一次，有新版本就在后台下载；安装要等你点「重启并更新」，不会突然重启">
+      <Row label="启动时检查更新" desc="每次打开 TokenPulse 都会到 GitHub Releases 看一下，有新版本就弹窗展示更新内容；下载和安装都等你点「立即更新」，不会突然重启">
         <Switch on={s.autoUpdate} onChange={(autoUpdate) => save({ autoUpdate })} />
       </Row>
     </>

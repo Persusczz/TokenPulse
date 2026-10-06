@@ -1697,17 +1697,18 @@ const updater = new Updater((url, init) => net.fetch(url, init as RequestInit), 
 let updateAnnounced = ''
 updater.on('state', (s) => {
   broadcast('update:state', s)
-  if (s.status === 'ready' && s.latest && updateAnnounced !== s.latest.version) {
+  // finished downloading while TokenPulse was in the background
+  if (s.status === 'ready' && s.latest && updateAnnounced !== s.latest.version && !mainWin?.isFocused()) {
     updateAnnounced = s.latest.version
-    notify(`TokenPulse ${s.latest.version} 已下载`, '点侧边栏的「重启并更新」，或到 设置 → 系统')
+    notify(`TokenPulse ${s.latest.version} 已下载`, '点侧边栏的「重启并更新」即可完成更新')
   }
 })
 
-/** looks for a release now and then and fetches it in the background; installing waits for a click */
-async function autoUpdate(): Promise<void> {
-  if (shotDir || !settings.value.autoUpdate) return
-  const s = await updater.check()
-  if (s.status === 'available' && !s.error && s.kind !== 'dev') await updater.download()
+/** each launch looks for a newer release; the main window then shows what's new and asks before downloading */
+async function checkForUpdate(): Promise<void> {
+  // walkthroughs only check against a local stand-in for GitHub
+  if ((shotDir && !process.env.TP_UPDATE_API) || !settings.value.autoUpdate) return
+  await updater.check()
 }
 
 /** reads Codex's limits from the account (every minute, and on demand) */
@@ -2545,7 +2546,7 @@ async function applySettings(patch: Partial<Settings>): Promise<Settings> {
   }
   if (JSON.stringify(next.extraDirs) !== JSON.stringify(prev.extraDirs) || next.codexEnabled !== prev.codexEnabled) void rescan()
   if (next.codexEnabled !== prev.codexEnabled || next.codexUsageApi !== prev.codexUsageApi) void pollCodexUsage()
-  if (next.autoUpdate && !prev.autoUpdate) void autoUpdate()
+  if (next.autoUpdate && !prev.autoUpdate) void checkForUpdate()
   // Codex switched off while it was the only thing on view
   if (!next.codexEnabled && next.sourceFilter === 'codex') return applySettings({ sourceFilter: 'all' })
   if (next.dailyBudget !== prev.dailyBudget || next.monthlyBudget !== prev.monthlyBudget || next.sourceFilter !== prev.sourceFilter) {
@@ -2594,6 +2595,10 @@ function registerIpc(): void {
     quitting = true
     app.quit()
     return true
+  })
+  // links in release notes open in the browser
+  ipcMain.handle('open:external', (_e, url: string) => {
+    if (typeof url === 'string' && /^https?:\/\//i.test(url)) void shell.openExternal(url)
   })
   ipcMain.handle('codex:sign-in', async () => {
     const r = await codexUsage.signIn((url) => void shell.openExternal(url))
@@ -2899,6 +2904,8 @@ void app.whenReady().then(async () => {
   await Promise.all([settings.load(), pricing.loadCache(), appState.load(), archive.load(), quota.loadCalibration(), tasks.load(), windowLog.load()])
   registerIpc()
   createMain()
+  // every launch asks GitHub for a newer release while the logs are scanned
+  void checkForUpdate()
   createTray()
   if (settings.value.showMini) createMini()
   syncHotkey()
@@ -2913,9 +2920,6 @@ void app.whenReady().then(async () => {
   setInterval(() => void quota.checkStatusline(), 5_000)
   await rescan()
   void pollCodexUsage()
-  // a release check a little after start, then every six hours
-  setTimeout(() => void autoUpdate(), 30_000)
-  setInterval(() => void autoUpdate(), 6 * 3600_000)
   if (pricing.isStale) void pricing.refresh()
   setInterval(() => pricing.isStale && void pricing.refresh(), 3600_000)
   // date rollover, burn-rate decay and tray text

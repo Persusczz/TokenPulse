@@ -96,6 +96,8 @@
   text-align: left;
 }
 .deck-back-head {
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(244, 217, 149, 0.25);
   font-family: 'KaiTi', 'STKaiti', var(--serif);
   font-size: 19px;
   color: #f4d995;
@@ -105,13 +107,6 @@
   font-family: 'Times New Roman', Georgia, serif;
   font-size: 14px;
   font-weight: 400;
-}
-.deck-back-draws {
-  padding-bottom: 8px;
-  border-bottom: 1px solid rgba(244, 217, 149, 0.25);
-  font-size: 11.5px;
-  line-height: 1.5;
-  color: rgba(244, 236, 210, 0.65);
 }
 .deck-back-lines {
   display: flex;
@@ -157,11 +152,6 @@
   font-size: 16px;
   font-weight: 400;
   color: var(--text);
-}
-.deck-caption span {
-  font-size: 11.5px;
-  line-height: 1.45;
-  color: var(--text-3);
 }
 :root[data-motion='off'] .deck-card {
   animation: none;
