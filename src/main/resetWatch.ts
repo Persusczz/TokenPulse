@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { readFile } from 'node:fs/promises'
-import type { CodexResetPost, CodexResets, QuotaCycle, ResetEffect } from '@shared/types'
+import type { ChallengeDay, ChallengeEntry, CodexResetPost, CodexResets, QuotaCycle, ResetEffect, ResetLang, TiboChallenge } from '@shared/types'
 import { writeFileAtomic } from './atomicFile'
 
 /**
@@ -11,6 +11,11 @@ import { writeFileAtomic } from './atomicFile'
  * read-only API: the latest reset, one announced but not yet seen landing,
  * a hint with its chance, and the whole history with links to the posts.
  * Their terms ask for a link back wherever the data is shown.
+ *
+ * Two things the public API doesn't carry come from the site itself: the
+ * posts in other languages (the feed its own pages read, ?locale=…) and
+ * Tibo's 28-day challenge (its /tibo-28 page). Both are extras: when either
+ * fails the card keeps the posts as written and the last challenge it read.
  */
 
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>
@@ -71,6 +76,111 @@ export function statusOf(j: any): Pick<CodexResets, 'latest' | 'scheduled' | 'hi
   }
 }
 
+/** the site's own feed in a language: post id → the post as the site translates it ('hint' = the hint's post) */
+export function localOf(j: any): Record<string, string> {
+  const out: Record<string, string> = {}
+  const add = (e: any, key: unknown = e?.tweet_id) => {
+    const t = tidyText(str(e?.display_text))
+    if (typeof key === 'string' && t) out[key] = t
+  }
+  for (const e of Array.isArray(j?.events) ? j.events : []) add(e)
+  if (j?.scheduled) add(j.scheduled)
+  if (j?.watch) add(j.watch, 'hint')
+  return out
+}
+
+const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' }
+const decode = (t: string) =>
+  t.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e: string) => {
+    if (e[0] !== '#') return ENTITIES[e.toLowerCase()] ?? m
+    const n = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : Number(e.slice(1))
+    return Number.isFinite(n) && n > 0 && n < 0x110000 ? String.fromCodePoint(n) : m
+  })
+const plain = (h: string) => decode(h.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '')).trim()
+const attr = (tag: string, name: string) => tag.match(new RegExp(`\\s${name}="([^"]*)"`))?.[1] ?? null
+const xUrl = (u: string | null) => (u && /^https:\/\/(x|twitter)\.com\//.test(u) ? decode(u) : null)
+const count = (v: string | undefined) => (v !== undefined && /^\d+$/.test(v) ? Number(v) : null)
+
+/** the challenge page's path in a language */
+export const challengePath = (lang: ResetLang) => (lang === 'en' ? '/tibo-28' : `/${lang}/tibo-28`)
+
+/**
+ * Tibo's 28-day challenge, read off the site's /tibo-28 page: the day strip
+ * (each day kept by an improvement or a reset, or still ahead), the log of
+ * what was shipped each day with the site's votes, and the promise itself.
+ * Null when the page has no challenge on it.
+ */
+export function challengeOf(html: string, url: string, now: number): TiboChallenge | null {
+  const clock = html.match(/<[^>]*\sdata-challenge-clock\b[^>]*>/)?.[0]
+  const start = clock ? attr(clock, 'data-start') : null
+  const days = Number(clock ? attr(clock, 'data-days') : NaN)
+  if (!start || !/^\d{4}-\d{2}-\d{2}$/.test(start) || !Number.isInteger(days) || days < 1 || days > 100) return null
+
+  const states = new Map<number, ChallengeDay['state']>()
+  const strip = html.match(/<ol class="challenge-strip"[\s\S]*?<\/ol>/)?.[0] ?? ''
+  for (const m of strip.matchAll(/<li class="([^"]*)"[^>]*>([\s\S]*?)<\/li>/g)) {
+    const day = Number(m[2].match(/challenge-cell-day[^>]*>\s*(\d+)\s*</)?.[1])
+    if (!day) continue
+    const tags = [...m[1].matchAll(/challenge-state--([\w-]+)/g)].map((t) => t[1])
+    states.set(
+      day,
+      tags.includes('reset') ? 'reset' : tags.includes('improvement') ? 'improvement' : tags.includes('upcoming') ? 'upcoming' : tags.some((t) => /miss|broke|fail|skip/.test(t)) ? 'missed' : 'open'
+    )
+  }
+
+  const logs = new Map<number, ChallengeEntry[]>()
+  const ledger = html.match(/<ol class="challenge-ledger"[^>]*>([\s\S]*?)<\/ol>/)?.[1] ?? ''
+  for (const row of ledger.split(/<li class="challenge-row/).slice(1)) {
+    const day = Number(row.match(/^[^>]*\sid="day-(\d+)"/)?.[1])
+    if (!day) continue
+    const entries: ChallengeEntry[] = []
+    for (const a of row.matchAll(/<article class="challenge-entry challenge-entry--([\w-]+)"[^>]*>([\s\S]*?)<\/article>/g)) {
+      const body = a[2]
+      const head = body.match(/<h3[^>]*>([\s\S]*?)<\/h3>/)?.[1] ?? ''
+      const link = head.match(/<a\s[^>]*>/)?.[0]
+      const url = xUrl(link ? attr(link, 'href') : null)
+      const when = Date.parse(body.match(/<time datetime="([^"]*T[^"]*)"/)?.[1] ?? '')
+      const title = plain(head)
+      if (!title) continue
+      entries.push({
+        id: body.match(/data-vote-entry="post:([^"]+)"/)?.[1] ?? url?.match(/status\/(\d+)/)?.[1] ?? `${day}-${entries.length}`,
+        kind: a[1] === 'reset' ? 'reset' : 'improvement',
+        title,
+        text: [...body.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/g)].map((p) => plain(p[1])).filter(Boolean).join('\n'),
+        url,
+        at: Number.isFinite(when) ? when : null,
+        up: count(body.match(/data-vote-choice="1"[\s\S]*?data-value="(\d+)"/)?.[1]),
+        down: count(body.match(/data-vote-choice="-1"[\s\S]*?data-value="(\d+)"/)?.[1])
+      })
+    }
+    logs.set(day, entries)
+  }
+
+  const quote = html.match(/<figure class="challenge-promise"[\s\S]*?(<blockquote[^>]*>)([\s\S]*?)<\/blockquote>/)
+  const first = Date.parse(`${start}T00:00:00Z`)
+  const list: ChallengeDay[] = Array.from({ length: days }, (_, i) => {
+    const day = i + 1
+    const entries = logs.get(day) ?? []
+    const state = states.get(day) ?? (entries.some((e) => e.kind === 'reset') ? 'reset' : entries.length ? 'improvement' : 'upcoming')
+    return { day, date: new Date(first + i * DAY).toISOString().slice(0, 10), state, entries }
+  })
+  return {
+    start,
+    days,
+    list,
+    promise: quote ? { text: plain(quote[2]).replace(/^[“"「]|[”"」]$/g, ''), url: xUrl(attr(quote[1], 'cite')) } : null,
+    url,
+    at: now
+  }
+}
+
+/** still worth reading often: running, or just over (its dates are Pacific; a day either side covers that) */
+export function challengeLive(c: TiboChallenge | null | undefined, now: number): boolean {
+  if (!c) return false
+  const from = Date.parse(`${c.start}T00:00:00Z`)
+  return now >= from - DAY && now < from + (c.days + 2) * DAY
+}
+
 /** /api/v1/resets as posts, newest first */
 export function historyOf(j: any): CodexResetPost[] {
   const list = Array.isArray(j?.data) ? j.data : []
@@ -127,11 +237,24 @@ interface Saved {
   history: CodexResetPost[]
   historyAt: number
   told: string[]
+  local?: Record<string, string>
+  localLang?: ResetLang | null
+  localAt?: number
+  challenge?: TiboChallenge | null
+  challengeLang?: ResetLang | null
+  challengeAt?: number
 }
 
 export class ResetWatchService extends EventEmitter {
-  state: CodexResets = { status: 'off', at: null, latest: null, scheduled: null, hint: null, stats: null, history: [] }
+  state: CodexResets = { status: 'off', at: null, latest: null, scheduled: null, hint: null, stats: null, history: [], lang: 'en', local: {}, challenge: null }
   private historyAt = 0
+  private lang: ResetLang = 'en'
+  /** the translations held, and the language they are in */
+  private local: Record<string, string> = {}
+  private localLang: ResetLang | null = null
+  private localAt = 0
+  private challengeLang: ResetLang | null = null
+  private challengeAt = 0
   private told = new Set<string>()
   /** a file existed: news is told from the first read on; without one the first read only learns what is there */
   private known = false
@@ -142,14 +265,23 @@ export class ResetWatchService extends EventEmitter {
   constructor(
     private fetchFn: Fetch,
     private path: string,
-    private api = `${RESETS_SITE}/api/v1`
+    private api = `${RESETS_SITE}/api/v1`,
+    private site = api.replace(/\/api\/v1\/?$/, '')
   ) {
     super()
   }
 
   private set(patch: Partial<CodexResets>): void {
-    this.state = { ...this.state, ...patch }
+    this.state = { ...this.state, ...patch, lang: this.lang, local: this.localLang === this.lang ? this.local : {} }
     this.emit('state', this.state)
+  }
+
+  /** the language to show posts and the challenge in; a change reads again soon */
+  setLang(lang: ResetLang): void {
+    if (lang === this.lang) return
+    this.lang = lang
+    this.nextAt = 0
+    this.set({})
   }
 
   async load(): Promise<void> {
@@ -157,7 +289,23 @@ export class ResetWatchService extends EventEmitter {
     this.loaded = true
     try {
       const s: Saved = JSON.parse(await readFile(this.path, 'utf8'))
-      this.state = { ...this.state, at: s.at ?? null, latest: s.latest ?? null, scheduled: s.scheduled ?? null, hint: s.hint ?? null, stats: s.stats ?? null, history: Array.isArray(s.history) ? s.history : [] }
+      this.local = s.local && typeof s.local === 'object' ? s.local : {}
+      this.localLang = s.localLang ?? null
+      this.localAt = s.localAt ?? 0
+      this.challengeLang = s.challengeLang ?? null
+      this.challengeAt = s.challengeAt ?? 0
+      this.state = {
+        ...this.state,
+        at: s.at ?? null,
+        latest: s.latest ?? null,
+        scheduled: s.scheduled ?? null,
+        hint: s.hint ?? null,
+        stats: s.stats ?? null,
+        history: Array.isArray(s.history) ? s.history : [],
+        lang: this.lang,
+        local: this.localLang === this.lang ? this.local : {},
+        challenge: s.challenge ?? null
+      }
       this.historyAt = s.historyAt ?? 0
       this.told = new Set(Array.isArray(s.told) ? s.told : [])
       this.known = true
@@ -167,15 +315,67 @@ export class ResetWatchService extends EventEmitter {
   }
 
   private async save(): Promise<void> {
-    const { at, latest, scheduled, hint, stats, history } = this.state
-    const s: Saved = { at, latest, scheduled, hint, stats, history, historyAt: this.historyAt, told: [...this.told].slice(-200) }
+    const { at, latest, scheduled, hint, stats, history, challenge } = this.state
+    const s: Saved = {
+      at,
+      latest,
+      scheduled,
+      hint,
+      stats,
+      history,
+      historyAt: this.historyAt,
+      told: [...this.told].slice(-200),
+      local: this.local,
+      localLang: this.localLang,
+      localAt: this.localAt,
+      challenge,
+      challengeLang: this.challengeLang,
+      challengeAt: this.challengeAt
+    }
     await writeFileAtomic(this.path, JSON.stringify(s)).catch(() => {})
   }
 
-  private async get(path: string): Promise<any> {
-    const res = await this.fetchFn(`${this.api}${path}`, { headers: { Accept: 'application/json', 'User-Agent': 'TokenPulse' }, signal: AbortSignal.timeout(20_000) })
+  private async get(path: string, base = this.api): Promise<any> {
+    const res = await this.fetchFn(`${base}${path}`, { headers: { Accept: 'application/json', 'User-Agent': 'TokenPulse' }, signal: AbortSignal.timeout(20_000) })
     if (!res.ok) throw new Error(res.status === 429 ? '请求太频繁，稍后再试' : `HTTP ${res.status}`)
     return res.json()
+  }
+
+  /** the posts in the chosen language: when it changes, when something shown has none yet (the site may take a while), and daily */
+  private async translate(st: NonNullable<ReturnType<typeof statusOf>>, now: number): Promise<void> {
+    const lang = this.lang
+    if (lang === 'en') return
+    const fresh = this.localLang === lang
+    const missing = [st.latest?.id, st.scheduled?.id, st.hint ? 'hint' : undefined].some((id) => id && !(id in this.local))
+    if (fresh && !(missing && now - this.localAt > 15 * 60_000) && now - this.localAt < DAY) return
+    try {
+      const local = localOf(await this.get(`/api/resets?locale=${encodeURIComponent(lang)}`, this.site))
+      if (this.lang !== lang) return
+      this.local = fresh ? { ...this.local, ...local } : local
+      this.localLang = lang
+      this.localAt = now
+    } catch {
+      /* the posts stay as written */
+    }
+  }
+
+  /** the challenge page: about every read while it runs, daily otherwise (a new one may start) */
+  private async readChallenge(now: number): Promise<void> {
+    const lang = this.lang
+    const often = !this.challengeAt || challengeLive(this.state.challenge, now)
+    if (this.challengeLang === lang && now - this.challengeAt < (often ? 9 * 60_000 : DAY)) return
+    const path = challengePath(lang)
+    try {
+      const res = await this.fetchFn(`${this.site}${path}`, { headers: { Accept: 'text/html', 'User-Agent': 'TokenPulse' }, signal: AbortSignal.timeout(20_000) })
+      if (!res.ok && res.status !== 404) return
+      const challenge = res.ok ? challengeOf(await res.text(), `${RESETS_SITE}${path}`, now) : null
+      if (this.lang !== lang) return
+      this.state = { ...this.state, challenge }
+      this.challengeLang = lang
+      this.challengeAt = now
+    } catch {
+      /* the last one read stays */
+    }
   }
 
   /** time for another read: every 10 minutes, every 3 while a reset is hinted at or announced ahead */
@@ -193,6 +393,7 @@ export class ResetWatchService extends EventEmitter {
   }
 
   private async read(now: number): Promise<ResetNews[]> {
+    const lang = this.lang
     await this.load()
     if (!this.state.at) this.set({ status: 'loading' })
     try {
@@ -205,12 +406,15 @@ export class ResetWatchService extends EventEmitter {
         this.historyAt = now
       }
       if (st.latest && !history.some((p) => p.id === st.latest!.id)) history = [st.latest, ...history]
+      await this.translate(st, now)
+      await this.readChallenge(now)
       this.set({ status: 'ok', at: now, error: undefined, ...st, history })
       const news = newsOf(this.state, this.told, now)
       for (const n of news) this.told.add(newsKey(n))
       const tell = this.known ? news : []
       this.known = true
-      this.nextAt = now + (st.hint || st.scheduled ? 3 : 10) * 60_000
+      // a language picked while this read was out is read right after
+      this.nextAt = this.lang !== lang ? 0 : now + (st.hint || st.scheduled ? 3 : 10) * 60_000
       await this.save()
       return tell
     } catch (e) {

@@ -26,6 +26,7 @@ import { ActionsCard, RecordsCard } from '../components/OverviewActivity'
 import { coverageNote, RANGE_OPTIONS, RangeTabs, spanText } from '../components/RangeTabs'
 import { RateCard } from '../components/RateCard'
 import { ResetWatchCard } from '../components/ResetWatch'
+import { TiboChallengeCard } from '../components/TiboChallenge'
 import { RunawayBanner } from '../components/RunawayBanner'
 import { Segmented } from '../components/Segmented'
 import { StatTile } from '../components/StatTile'
@@ -285,7 +286,12 @@ export function Overview({ theme }: { theme: string }) {
 
       <CyclesCard />
 
-      {source !== 'claude' && hasCodex && settings?.codexResetWatch && <ResetWatchCard />}
+      {source !== 'claude' && hasCodex && settings?.codexResetWatch && (
+        <>
+          <ResetWatchCard />
+          <TiboChallengeCard />
+        </>
+      )}
 
       <QuotaRelationCard />
 

@@ -1,14 +1,16 @@
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useState } from 'react'
-import type { CodexResetPost, CodexResets, CodexUsageState, QuotaCycle } from '@shared/types'
+import type { CodexResetPost, CodexResets, CodexUsageState, QuotaCycle, ResetLang } from '@shared/types'
 import { useApp, useData, useNow } from '../state'
+import { Segmented } from './Segmented'
 
 /**
  * Tibo (@thsottiaux) posts Codex limit resets on X. The card says where things
  * stand (hinted at, announced, just reset, or how long since the last one),
- * the post itself, what it did to the user's own week, and the last twelve
- * weeks of resets over the user's weeks. Posts come from codex-resets.com,
- * which asks for a link back.
+ * the last twelve weeks of resets over the user's weeks, and the post picked
+ * there (the latest by default) with what it did to the user's own week.
+ * Posts come from codex-resets.com, which asks for a link back, in the
+ * language picked (the site's translations; 原文 = as posted).
  */
 
 const HOUR = 3_600_000
@@ -17,18 +19,36 @@ const SPAN = 84 * DAY
 const SITE = 'https://codex-resets.com'
 const PROFILE = 'https://x.com/thsottiaux'
 
-const md = (t: number) => `${new Date(t).getMonth() + 1}/${new Date(t).getDate()}`
-const hm = (t: number) => new Date(t).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
-function ago(t: number, now: number): string {
+export const RESET_LANGS: { value: ResetLang; label: string }[] = [
+  { value: 'en', label: '原文' },
+  { value: 'zh-CN', label: '简体' },
+  { value: 'zh-TW', label: '繁體' },
+  { value: 'ja', label: '日本語' },
+  { value: 'ko', label: '한국어' }
+]
+
+export const md = (t: number) => `${new Date(t).getMonth() + 1}/${new Date(t).getDate()}`
+export const hm = (t: number) => new Date(t).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+export function ago(t: number, now: number): string {
   const d = Math.max(0, now - t)
   if (d < HOUR) return `${Math.max(1, Math.round(d / 60_000))} 分钟前`
   if (d < DAY) return `${Math.round(d / HOUR)} 小时前`
   return `${Math.round(d / DAY)} 天前`
 }
 const days = (ms: number) => (ms / DAY).toFixed(ms < 10 * DAY ? 1 : 0)
-const open = (url: string) => void window.api.openExternal(url)
+export const openLink = (url: string) => void window.api.openExternal(url)
 
 const KIND = (p: CodexResetPost) => (p.observed ? '未发帖' : p.kind === 'banked' ? '存入重置' : '常规重置')
+
+/** the tracker's state, kept current */
+export function useCodexResets(): [CodexResets | null, (r: CodexResets) => void] {
+  const [r, setR] = useState<CodexResets | null>(null)
+  useEffect(() => {
+    void window.api.getCodexResets().then(setR)
+    return window.api.onCodexResets(setR)
+  }, [])
+  return [r, setR]
+}
 
 type Tone = 'hint' | 'due' | 'fresh' | 'calm'
 
@@ -70,14 +90,21 @@ function Mine({ r, post, credits, now }: { r: CodexResets; post: CodexResetPost;
   )
 }
 
-/** twelve weeks: the user's 7-day windows as bars by their peak, each reset a dot above */
+/**
+ * Twelve weeks: the user's 7-day windows as bars by their peak, each reset a
+ * dot above. Hovering a dot only labels it; a click picks it for the post
+ * below (the strip sits above the post, so a longer or shorter post never
+ * moves the dots out from under the pointer).
+ */
 function Strip({ r, weeks, now, pick, onPick }: { r: CodexResets; weeks: QuotaCycle[]; now: number; pick: string | null; onPick: (id: string | null) => void }) {
+  const [tip, setTip] = useState<CodexResetPost | null>(null)
   const from = now - SPAN
-  const x = (t: number) => `${(((Math.max(from, Math.min(now, t)) - from) / SPAN) * 100).toFixed(2)}%`
+  const pct = (t: number) => ((Math.max(from, Math.min(now, t)) - from) / SPAN) * 100
+  const x = (t: number) => `${pct(t).toFixed(2)}%`
   const posts = r.history.filter((p) => p.at >= from && p.at <= now)
   const ticks = Array.from({ length: 7 }, (_, i) => from + (i * SPAN) / 6)
   return (
-    <div className="rs-strip" onMouseLeave={() => onPick(null)}>
+    <div className="rs-strip">
       <div className="rs-weeks">
         {weeks
           .filter((w) => w.end > from)
@@ -90,18 +117,41 @@ function Strip({ r, weeks, now, pick, onPick }: { r: CodexResets; weeks: QuotaCy
             />
           ))}
       </div>
-      <div className="rs-dots">
+      <div className="rs-dots" onMouseLeave={() => setTip(null)}>
         {posts.map((p) => (
           <button
             key={p.id}
             className={`rs-dot ${p.kind}${p.observed ? ' observed' : ''}${pick === p.id ? ' on' : ''}${p.id === r.latest?.id ? ' latest' : ''}`}
             style={{ left: x(p.at) }}
-            onMouseEnter={() => onPick(p.id)}
-            onClick={() => p.url && open(p.url)}
-            aria-label={`${md(p.at)} ${KIND(p)}`}
+            onMouseEnter={() => setTip(p)}
+            onFocus={() => setTip(p)}
+            onBlur={() => setTip(null)}
+            onClick={() => onPick(pick === p.id ? null : p.id)}
+            aria-pressed={pick === p.id}
+            aria-label={`${md(p.at)} ${hm(p.at)} ${KIND(p)}`}
           />
         ))}
         {r.hint && r.hint.until > now && <i className="rs-dot-hint" style={{ left: x(now) }} />}
+        <AnimatePresence>
+          {tip && (
+            <motion.div
+              key={tip.id}
+              // near either end it hangs inwards from the dot, so the card's edge never cuts it
+              className={`rs-tip ${pct(tip.at) < 22 ? 'l' : pct(tip.at) > 78 ? 'r' : 'c'}`}
+              style={{ left: x(tip.at) }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.14 }}
+            >
+              <b>
+                {md(tip.at)} {hm(tip.at)}
+              </b>{' '}
+              · {KIND(tip)}
+              <span>{pick === tip.id ? '再点一下回到最新' : '点一下查看'}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
       <div className="rs-axis">
         {ticks.map((t, i) => (
@@ -115,19 +165,18 @@ function Strip({ r, weeks, now, pick, onPick }: { r: CodexResets; weeks: QuotaCy
 }
 
 export function ResetWatchCard() {
-  const { lastUpdate } = useApp()
+  const { lastUpdate, settings, saveSettings } = useApp()
   const now = useNow(30_000)
-  const [r, setR] = useState<CodexResets | null>(null)
+  const [r, setR] = useCodexResets()
   const [usage, setUsage] = useState<CodexUsageState | null>(null)
   const [busy, setBusy] = useState(false)
   const [pick, setPick] = useState<string | null>(null)
+  const [orig, setOrig] = useState(false)
   const cycles = useData(() => window.api.getQuotaCycles(), [Math.floor((lastUpdate?.at ?? 0) / 600_000)], 600_000)
   const weeks = cycles?.find((c) => c.source === 'codex')?.seven ?? []
   useEffect(() => {
-    void window.api.getCodexResets().then(setR)
     void window.api.codexUsageState().then(setUsage)
-    const offs = [window.api.onCodexResets(setR), window.api.onCodexUsage(setUsage)]
-    return () => offs.forEach((off) => off())
+    return window.api.onCodexUsage(setUsage)
   }, [])
   const refresh = async () => {
     setBusy(true)
@@ -142,19 +191,29 @@ export function ResetWatchCard() {
   const since = r.latest ? now - r.latest.at : 0
   const avg = (r.stats?.avgDays ?? 0) * DAY
   const credits = usage?.status === 'ok' ? (usage.resetCredits ?? null) : null
+  const lang = settings?.codexResetLang ?? r.lang
+  // the site's translation, unless the original was asked for; untranslated posts stay as written
+  const textOf = (id: string, text: string) => {
+    const local = r.lang !== 'en' ? r.local?.[id] : undefined
+    return { text: local && !orig ? local : text, other: local ? (orig ? '看译文' : '看原文') : null }
+  }
+  const shown = hintText ? textOf('hint', hintText.text) : post ? textOf(post.id, post.text) : null
 
   return (
     <div className={`card resets-card rs-${v.tone}`}>
       <div className="card-head">
         <div className="card-title">
           <span className="serif">Tibo 重置播报</span>
-          <button className="rs-handle" onClick={() => open(PROFILE)}>
+          <button className="rs-handle" onClick={() => openLink(PROFILE)}>
             @thsottiaux
           </button>
         </div>
-        <button className="btn small" disabled={busy} onClick={() => void refresh()}>
-          {busy ? '读取中…' : '刷新'}
-        </button>
+        <div className="rs-tools">
+          <Segmented small value={lang} onChange={(codexResetLang) => void saveSettings({ codexResetLang })} options={RESET_LANGS} />
+          <button className="btn small" disabled={busy} onClick={() => void refresh()}>
+            {busy ? '读取中…' : '刷新'}
+          </button>
+        </div>
       </div>
       {empty ? (
         r.status === 'error' ? (
@@ -198,48 +257,68 @@ export function ResetWatchCard() {
             )}
           </div>
 
+          <Strip r={r} weeks={weeks} now={now} pick={pick} onPick={setPick} />
+
           {hintText ? (
             <div className="rs-post hint">
               <div className="rs-post-head">
                 <span className="badge accent">暗示</span>
                 <span className="muted">{ago(hintText.at, now)}</span>
-                {hintText.url && (
-                  <button className="rs-link" onClick={() => open(hintText.url!)}>
-                    在 X 上看原帖 ↗
-                  </button>
-                )}
+                <span className="rs-acts">
+                  {shown?.other && (
+                    <button className="rs-link rs-swap" onClick={() => setOrig((o) => !o)}>
+                      {shown.other}
+                    </button>
+                  )}
+                  {hintText.url && (
+                    <button className="rs-link" onClick={() => openLink(hintText.url!)}>
+                      在 X 上看原帖 ↗
+                    </button>
+                  )}
+                </span>
               </div>
-              <p className="rs-text">{hintText.text}</p>
+              <p className="rs-text">{shown?.text}</p>
             </div>
           ) : (
             post && (
-              <div className="rs-post">
+              <motion.div key={post.id} className="rs-post" initial={{ opacity: 0.4 }} animate={{ opacity: 1 }} transition={{ duration: 0.25 }}>
                 <div className="rs-post-head">
                   <span className={`badge${post.kind === 'banked' ? '' : ' accent'}`}>{r.scheduled?.id === post.id ? '已预告' : KIND(post)}</span>
                   <span className="muted">
                     {md(post.at)} {hm(post.at)} · {ago(post.at, now)}
                   </span>
-                  {post.url && (
-                    <button className="rs-link" onClick={() => open(post.url!)}>
-                      在 X 上看原帖 ↗
-                    </button>
-                  )}
+                  <span className="rs-acts">
+                    {pick && (
+                      <button className="rs-link rs-swap" onClick={() => setPick(null)}>
+                        ← 回到最新
+                      </button>
+                    )}
+                    {shown?.other && (
+                      <button className="rs-link rs-swap" onClick={() => setOrig((o) => !o)}>
+                        {shown.other}
+                      </button>
+                    )}
+                    {post.url && (
+                      <button className="rs-link" onClick={() => openLink(post.url!)}>
+                        在 X 上看原帖 ↗
+                      </button>
+                    )}
+                  </span>
                 </div>
-                <p className="rs-text">{post.text}</p>
+                <p className="rs-text">{shown?.text}</p>
                 <Mine r={r} post={post} credits={post.id === r.latest?.id || post.kind === 'banked' ? credits : null} now={now} />
-              </div>
+              </motion.div>
             )
           )}
-
-          <Strip r={r} weeks={weeks} now={now} pick={pick} onPick={setPick} />
         </>
       )}
       <div className="rs-foot">
         <span>
           数据来自{' '}
-          <button className="rs-link" onClick={() => open(SITE)}>
+          <button className="rs-link" onClick={() => openLink(SITE)}>
             Codex Resets
           </button>
+          {r.lang !== 'en' && !orig ? '，译文由该站提供' : ''}
         </span>
         {r.status === 'error' && !empty ? <span className="bad-text">{r.error}</span> : r.at ? <span>{ago(r.at, now)}更新</span> : null}
       </div>

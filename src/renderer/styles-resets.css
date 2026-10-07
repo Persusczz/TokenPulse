@@ -172,8 +172,19 @@
   gap: 8px;
   font-size: 12px;
 }
-.rs-post-head .rs-link {
+.rs-acts {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
+.rs-swap {
+  color: var(--text-3);
+}
+.rs-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 .rs-text {
   margin: 8px 0 0;
@@ -215,7 +226,7 @@
 /* twelve weeks of resets over the user's weeks */
 .rs-strip {
   position: relative;
-  margin-top: 14px;
+  margin: 4px 0 12px;
 }
 .rs-weeks {
   position: relative;
@@ -261,8 +272,46 @@
   background: var(--surface);
 }
 .rs-dot:hover,
+.rs-dot:focus-visible,
 .rs-dot.on {
   transform: scale(1.45);
+  outline: none;
+}
+.rs-dot.on {
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.3);
+}
+/* a label over the dot under the pointer; it never takes the pointer itself */
+.rs-tip {
+  position: absolute;
+  bottom: calc(100% + 2px);
+  z-index: 3;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-solid, var(--surface));
+  box-shadow: var(--shadow);
+  color: var(--text-2);
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.rs-tip.c {
+  transform: translateX(-50%);
+}
+.rs-tip.l {
+  transform: translateX(-14px);
+}
+.rs-tip.r {
+  transform: translateX(calc(-100% + 14px));
+}
+.rs-tip b {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.rs-tip span {
+  margin-left: 8px;
+  color: var(--text-3);
 }
 .rs-dot.latest::after {
   content: '';
@@ -308,4 +357,303 @@
 }
 .rs-foot .rs-link {
   font-size: 11.5px;
+}
+
+/* ---------- overview: Tibo's 28-day challenge ---------- */
+.ch-card {
+  --ch-good: var(--good);
+  --ch-good-rgb: 12, 163, 12;
+  margin-bottom: 16px;
+}
+.ch-progress {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.ch-promise {
+  margin: -2px 0 14px;
+  padding: 0 0 0 10px;
+  border-left: 2px solid var(--border-strong, var(--border));
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.ch-promise .rs-link {
+  margin-left: 6px;
+  font-size: 12px;
+}
+.ch-body {
+  display: grid;
+  grid-template-columns: minmax(250px, 320px) minmax(0, 1fr);
+  gap: 22px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .ch-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* the month: one cell a day */
+.ch-week,
+.ch-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 5px;
+}
+.ch-week {
+  margin-bottom: 5px;
+  font-size: 11px;
+  color: var(--text-3);
+  text-align: center;
+}
+.ch-cell {
+  position: relative;
+  aspect-ratio: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    background 0.2s,
+    border-color 0.2s;
+}
+.ch-cell b {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.ch-cell small {
+  font-size: 9.5px;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+.ch-cell > i {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  font-size: 10px;
+  font-style: normal;
+  opacity: 0.85;
+}
+.ch-cell:hover {
+  border-color: rgba(var(--accent-rgb), 0.5);
+}
+.ch-cell.ahead {
+  background: transparent;
+  border-style: dashed;
+  color: var(--text-3);
+}
+.ch-cell.improvement {
+  border-color: transparent;
+  background: linear-gradient(150deg, rgba(var(--ch-good-rgb), 0.85), rgba(var(--ch-good-rgb), 0.55));
+  color: #fff;
+}
+.ch-cell.reset {
+  border-color: transparent;
+  background: linear-gradient(150deg, rgba(var(--accent-rgb), 0.95), rgba(var(--accent-rgb), 0.6));
+  color: #fff;
+}
+.ch-cell.missed {
+  border-color: var(--serious);
+  color: var(--serious);
+}
+/* today, nothing yet: a ring breathes around it */
+.ch-cell.today {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.ch-cell.now::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 12px;
+  border: 2px solid var(--accent);
+  opacity: 0;
+  animation: ch-breathe 2.6s ease-out infinite;
+  pointer-events: none;
+}
+@keyframes ch-breathe {
+  from {
+    transform: scale(0.92);
+    opacity: 0.7;
+  }
+  to {
+    transform: scale(1.12);
+    opacity: 0;
+  }
+}
+:root[data-motion='off'] .ch-cell.now::before {
+  animation: none;
+  opacity: 0.5;
+  transform: none;
+}
+.ch-ring {
+  position: absolute;
+  inset: -3px;
+  border-radius: 11px;
+  border: 2px solid var(--text);
+  pointer-events: none;
+}
+
+.ch-tally {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.ch-tally b {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.ch-key i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 5px;
+  border-radius: 3px;
+  vertical-align: -0.5px;
+}
+.ch-key.improvement i,
+.ch-duel .improvement {
+  background: var(--ch-good);
+}
+.ch-key.reset i,
+.ch-duel .reset {
+  background: var(--accent);
+}
+/* improvements against resets, side by side */
+.ch-duel {
+  flex: 1 1 100%;
+  display: flex;
+  gap: 3px;
+  height: 6px;
+}
+.ch-duel i {
+  flex: 1 1 0;
+  min-width: 6px;
+  border-radius: 99px;
+}
+
+/* the day picked */
+.ch-detail-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.ch-detail-head .serif {
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--text);
+}
+.ch-detail-head .badge {
+  align-self: center;
+}
+.ch-entries {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ch-entry {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--ch-good);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.ch-entry.reset {
+  border-left-color: var(--accent);
+}
+.ch-entry-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.ch-kind {
+  flex: 0 0 auto;
+  font-style: normal;
+  font-weight: 700;
+  color: var(--ch-good);
+}
+.ch-entry.reset .ch-kind {
+  color: var(--accent);
+}
+.ch-title {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  text-align: left;
+}
+button.ch-title {
+  cursor: pointer;
+}
+button.ch-title:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.ch-at {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-size: 11.5px;
+}
+.ch-text {
+  margin: 5px 0 0;
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre-line;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ch-votes {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 7px;
+  font-size: 11.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.ch-vote-bar {
+  position: relative;
+  flex: 0 1 120px;
+  height: 4px;
+  border-radius: 99px;
+  background: rgba(var(--accent-rgb), 0.18);
+  overflow: hidden;
+}
+.ch-vote-bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: var(--ch-good);
+}
+.ch-none {
+  padding: 18px 0;
+  color: var(--text-3);
+  font-size: 13px;
 }

@@ -1750,6 +1750,7 @@ async function pollResets(force = false): Promise<void> {
     resetWatch.idle()
     return
   }
+  resetWatch.setLang(s.codexResetLang)
   if (!force && !resetWatch.due()) return
   for (const n of await resetWatch.poll()) tellReset(n)
 }
@@ -1773,6 +1774,8 @@ const cut = (t: string, max: number) => (t.length > max ? `${t.slice(0, max - 1)
 
 function tellReset(n: ResetNews): void {
   if (!settings.value.codexResetNotify) return
+  // in the language the card shows posts in, when the site has it translated already
+  const say = (id: string, text: string) => resetWatch.state.local?.[id] || text
   const quote = (t: string) => `\n<blockquote>${escapeHtml(cut(t, 400))}</blockquote>`
   const link = (url: string | null) => (url ? `\n<a href="${url}">在 X 上看 Tibo 的原帖</a>` : '')
   if (n.kind === 'reset') {
@@ -1780,16 +1783,19 @@ function tellReset(n: ResetNews): void {
     const title = banked ? 'Tibo 往每个账户存了一次重置' : n.post.observed ? 'Codex 额度刚刚重置' : 'Tibo 宣布：Codex 额度已重置'
     const e = banked ? null : codexResets().effects?.[n.post.id]
     const mine = e?.before != null ? `\n你这周的 7 天额度重置前用到 <b>${Math.round(e.before)}%</b>` : ''
-    notify(title, cut(n.post.text, 90))
-    push('quota', `${banked ? '🏦' : '🎉'} <b>${title}</b>${quote(n.post.text)}${mine}${link(n.post.url)}`, banked ? undefined : 'party')
+    const text = say(n.post.id, n.post.text)
+    notify(title, cut(text, 90))
+    push('quota', `${banked ? '🏦' : '🎉'} <b>${title}</b>${quote(text)}${mine}${link(n.post.url)}`, banked ? undefined : 'party')
   } else if (n.kind === 'scheduled') {
     const due = n.post.due ? `，预计 ${clockOf(n.post.due)} 生效` : ''
-    notify(`Tibo 宣布要重置 Codex 额度${due}`, cut(n.post.text, 90))
-    push('quota', `📣 <b>Tibo 宣布要重置 Codex 额度</b>${due}${quote(n.post.text)}${link(n.post.url)}`)
+    const text = say(n.post.id, n.post.text)
+    notify(`Tibo 宣布要重置 Codex 额度${due}`, cut(text, 90))
+    push('quota', `📣 <b>Tibo 宣布要重置 Codex 额度</b>${due}${quote(text)}${link(n.post.url)}`)
   } else {
     const chance = n.hint.chance !== null ? `（可能性 ${n.hint.chance}%）` : ''
-    notify(`Tibo 在暗示重置 Codex 额度${chance}`, cut(n.hint.text, 90))
-    push('quota', `👀 <b>Tibo 在暗示重置 Codex 额度</b>${chance}${n.hint.window ? `\n时间：${escapeHtml(n.hint.window)}` : ''}${quote(n.hint.text)}${link(n.hint.url)}`)
+    const text = say('hint', n.hint.text)
+    notify(`Tibo 在暗示重置 Codex 额度${chance}`, cut(text, 90))
+    push('quota', `👀 <b>Tibo 在暗示重置 Codex 额度</b>${chance}${n.hint.window ? `\n时间：${escapeHtml(n.hint.window)}` : ''}${quote(text)}${link(n.hint.url)}`)
   }
 }
 
@@ -2693,7 +2699,7 @@ async function applySettings(patch: Partial<Settings>): Promise<Settings> {
   }
   if (JSON.stringify(next.extraDirs) !== JSON.stringify(prev.extraDirs) || next.codexEnabled !== prev.codexEnabled) void rescan()
   if (next.codexEnabled !== prev.codexEnabled || next.codexUsageApi !== prev.codexUsageApi) void pollCodexUsage()
-  if (next.codexEnabled !== prev.codexEnabled || next.codexResetWatch !== prev.codexResetWatch) void pollResets(true)
+  if (next.codexEnabled !== prev.codexEnabled || next.codexResetWatch !== prev.codexResetWatch || next.codexResetLang !== prev.codexResetLang) void pollResets(true)
   if (next.autoUpdate && !prev.autoUpdate) void checkForUpdate()
   // Codex switched off while it was the only thing on view
   if (!next.codexEnabled && next.sourceFilter === 'codex') return applySettings({ sourceFilter: 'all' })

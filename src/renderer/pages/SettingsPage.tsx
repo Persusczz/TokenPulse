@@ -9,6 +9,7 @@ import { CompactPicker } from '../components/CompactPicker'
 import { ScenePreview, useLivePreview } from '../components/ScenePreview'
 import { IconClose } from '../components/Icons'
 import { APP_ICON, openUpdateDialog } from '../components/UpdateDialog'
+import { RESET_LANGS } from '../components/ResetWatch'
 import { Segmented } from '../components/Segmented'
 import { CITIES, placeOf, sunTimes, type Place } from '@shared/astro'
 import { applyPack } from '../components/CommandPalette'
@@ -685,13 +686,18 @@ function CodexRows({ s, save }: { s: Settings; save: Save }) {
         <>
           <Row
             label="Tibo 重置播报"
-            desc="在 Codex 概览里跟踪 Tibo（@thsottiaux，Codex 负责人）在 X 上发的额度重置：刚重置、已预告、在暗示，以及你自己的 7 天额度有没有跟着清零。X 的接口要付费，帖子经 codex-resets.com 的公开接口读取，每 10 分钟一次"
+            desc="在 Codex 概览里跟踪 Tibo（@thsottiaux，Codex 负责人）在 X 上发的额度重置：刚重置、已预告、在暗示，以及你自己的 7 天额度有没有跟着清零；他的 28 天挑战进行期间，另有一张卡片记录每天是改进还是重置。X 的接口要付费，帖子经 codex-resets.com 读取，每 10 分钟一次"
           >
             <Switch on={s.codexResetWatch} onChange={(codexResetWatch) => save({ codexResetWatch })} />
           </Row>
           {s.codexResetWatch && (
             <Row label="重置提醒" desc="Tibo 宣布、预告或暗示重置时弹出系统通知；开着 Telegram 的「额度提醒与重置」推送时也发到手机">
               <Switch on={s.codexResetNotify} onChange={(codexResetNotify) => save({ codexResetNotify })} />
+            </Row>
+          )}
+          {s.codexResetWatch && (
+            <Row label="帖子语言" desc="Tibo 的帖子、28 天挑战和提醒里的原文用哪种语言显示。译文由 codex-resets.com 提供，原文 = 照他在 X 上发的">
+              <Segmented small value={s.codexResetLang} onChange={(codexResetLang) => save({ codexResetLang })} options={RESET_LANGS} />
             </Row>
           )}
         </>

@@ -154,6 +154,7 @@ export const DEFAULT_SETTINGS: Settings = {
   codexUsageApi: true,
   codexResetWatch: true,
   codexResetNotify: true,
+  codexResetLang: 'zh-CN',
   autoUpdate: true,
   sourceFilter: 'all',
   themePack: 'none',
@@ -293,6 +294,7 @@ export function sanitize(raw: any, base: Settings): Settings {
   if (raw.taskModel === null || oneOf(raw.taskModel, ['opus', 'sonnet', 'haiku'])) s.taskModel = raw.taskModel
   if (typeof raw.taskCwd === 'string') s.taskCwd = raw.taskCwd.trim()
   if (oneOf(raw.codexTaskPermission, [...PERMISSIONS])) s.codexTaskPermission = raw.codexTaskPermission
+  if (oneOf(raw.codexResetLang, ['en', 'zh-CN', 'zh-TW', 'ja', 'ko'])) s.codexResetLang = raw.codexResetLang
   // Codex model names change often: any short plain name
   if (Number.isFinite(raw.taskRetries)) s.taskRetries = Math.round(Math.min(5, Math.max(0, raw.taskRetries)))
   if (raw.taskTimeoutMin === null) s.taskTimeoutMin = null

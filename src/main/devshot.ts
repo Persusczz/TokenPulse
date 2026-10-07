@@ -15,6 +15,40 @@ const rectOf = (sel: string) =>
   `(() => { const r = document.querySelector(${JSON.stringify(sel)})?.getBoundingClientRect(); return r ? { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) } : null })()`
 
 /**
+ * real mouse input through user32: move onto the point (DIP), let the page see it, maybe click. The
+ * moves go through mouse_event (absolute, over the virtual desktop) rather than SetCursorPos: only
+ * input events pass the low-level mouse hook Electron forwards moves with in click-through mode
+ */
+function realMouse(x: number, y: number, clickIt: boolean): Promise<void> {
+  const p = screen.dipToScreenPoint({ x, y })
+  const vx = execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', 'Add-Type -AssemblyName System.Windows.Forms; $v = [System.Windows.Forms.SystemInformation]::VirtualScreen; "$($v.X) $($v.Y) $($v.Width) $($v.Height)"'])
+    .toString()
+    .trim()
+    .split(' ')
+    .map(Number)
+  const nx = (px: number) => Math.round(((px - vx[0]) * 65535) / (vx[2] - 1))
+  const ny = (py: number) => Math.round(((py - vx[1]) * 65535) / (vx[3] - 1))
+  // MOVE | ABSOLUTE | VIRTUALDESK
+  const move = (px: number, py: number) => `[W.M]::mouse_event(0xC001, ${nx(px)}, ${ny(py)}, 0, [UIntPtr]::Zero)`
+  const ps = [
+    'Add-Type -Namespace W -Name M -MemberDefinition \'[DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, uint d, UIntPtr e);\'',
+    `${move(p.x - 40, p.y)}; Start-Sleep -Milliseconds 150`,
+    ...Array.from({ length: 9 }, (_, i) => `${move(p.x - 40 + i * 5, p.y)}; Start-Sleep -Milliseconds 25`),
+    `Start-Sleep -Milliseconds 350`,
+    clickIt ? `[W.M]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 60; [W.M]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 400` : ''
+  ].join('; ')
+  // async: the main process must keep running while the mouse moves
+  return new Promise<void>((resolve) => execFile('powershell', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(ps, 'utf16le').toString('base64')], { timeout: 20_000 }, () => resolve()))
+}
+
+/** puts the pointer back where it was (DIP) */
+function cursorHome(back: { x: number; y: number }): void {
+  const p = screen.dipToScreenPoint(back)
+  const home = `Add-Type -Namespace W -Name M -MemberDefinition '[DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);'; [W.M]::SetCursorPos(${p.x}, ${p.y}) | Out-Null`
+  execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(home, 'utf16le').toString('base64')])
+}
+
+/**
  * Development aid: with TP_SCREENSHOT=<dir>, walks through the main views and
  * saves PNGs of each, then calls `done`. Never runs otherwise. The app runs
  * with a profile and Claude folder inside <dir>, so enabling the guard here
@@ -100,32 +134,7 @@ export async function runDevShots(dir: string, main: BrowserWindow, mini: Browse
     if (mini) await shot(mini, 'minifix-start')
     await set({ miniClickThrough: through, miniEdgeHide: false })
     await wait(800)
-    /**
-     * real mouse input through user32: move onto the point, let the page see it, click. The moves go
-     * through mouse_event (absolute, over the virtual desktop) rather than SetCursorPos: only input
-     * events pass the low-level mouse hook Electron forwards moves with in click-through mode
-     */
-    const mouse = (x: number, y: number, clickIt: boolean) => {
-      const p = screen.dipToScreenPoint({ x, y })
-      const vx = execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', 'Add-Type -AssemblyName System.Windows.Forms; $v = [System.Windows.Forms.SystemInformation]::VirtualScreen; "$($v.X) $($v.Y) $($v.Width) $($v.Height)"'])
-        .toString()
-        .trim()
-        .split(' ')
-        .map(Number)
-      const nx = (px: number) => Math.round(((px - vx[0]) * 65535) / (vx[2] - 1))
-      const ny = (py: number) => Math.round(((py - vx[1]) * 65535) / (vx[3] - 1))
-      // MOVE | ABSOLUTE | VIRTUALDESK
-      const move = (px: number, py: number) => `[W.M]::mouse_event(0xC001, ${nx(px)}, ${ny(py)}, 0, [UIntPtr]::Zero)`
-      const ps = [
-        'Add-Type -Namespace W -Name M -MemberDefinition \'[DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, uint d, UIntPtr e);\'',
-        `${move(p.x - 40, p.y)}; Start-Sleep -Milliseconds 150`,
-        ...Array.from({ length: 9 }, (_, i) => `${move(p.x - 40 + i * 5, p.y)}; Start-Sleep -Milliseconds 25`),
-        `Start-Sleep -Milliseconds 350`,
-        clickIt ? `[W.M]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 60; [W.M]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 400` : ''
-      ].join('; ')
-      // async: the main process must keep polling the pointer while the mouse moves
-      return new Promise<void>((resolve) => execFile('powershell', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(ps, 'utf16le').toString('base64')], { timeout: 20_000 }, () => resolve()))
-    }
+    const mouse = realMouse
     const button = async (w: BrowserWindow, i: number) => {
       const r = await w.webContents.executeJavaScript(
         `(() => { const b = document.querySelectorAll('.mini-btns button')[${i}]; if (!b) return null; const r = b.getBoundingClientRect(); const z = Number(document.documentElement.style.zoom || 1); return { x: (r.x + r.width / 2) * z, y: (r.y + r.height / 2) * z } })()`
@@ -161,9 +170,7 @@ export async function runDevShots(dir: string, main: BrowserWindow, mini: Browse
     await wait(1000)
     const after = await settingsNow()
     await log({ step: 'close-mini', through, at: close, heard: await heard(findMini()), showMini: after.showMini, miniGone: !findMini() })
-    const p = screen.dipToScreenPoint(back)
-    const home = `Add-Type -Namespace W -Name M -MemberDefinition '[DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);'; [W.M]::SetCursorPos(${p.x}, ${p.y}) | Out-Null`
-    execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(home, 'utf16le').toString('base64')])
+    cursorHome(back)
     // put it back, as the user had it
     await set({ showMini: true })
     await wait(1500)
@@ -188,7 +195,7 @@ export async function runDevShots(dir: string, main: BrowserWindow, mini: Browse
       if (r2) await mouse(Math.round(b.x + r2.x), Math.round(b.y + r2.y), true)
       await wait(800)
       await log({ step: 'island', at: r && { x: Math.round(b.x + r.x), y: Math.round(b.y + r.y) }, heard: await heard(isl), hovered, mainVisible: main.isVisible(), zone: hot() })
-      execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(home, 'utf16le').toString('base64')])
+      cursorHome(back)
     }
     await set({ island: false })
     await wait(500)
@@ -205,22 +212,82 @@ export async function runDevShots(dir: string, main: BrowserWindow, mini: Browse
     await js(scrollTo('.resets-card'))
     await wait(1800)
     await shot(main, 'resets-dark', await js(rectOf('.resets-card')))
-    await log({ resets: await js('window.api.getCodexResets().then((r) => ({ status: r.status, error: r.error, latest: r.latest?.id, hint: !!r.hint, scheduled: !!r.scheduled, history: r.history.length, effects: r.effects }))') })
-    // hovering an older reset shows it in place of the latest
-    await js(`(() => { const d = document.querySelectorAll('.rs-dot'); const el = d[Math.max(0, d.length - 3)]; el && el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); return d.length })()`)
-    await wait(600)
-    await shot(main, 'resets-hover', await js(rectOf('.resets-card')))
+    await log({
+      resets: await js(
+        'window.api.getCodexResets().then((r) => ({ status: r.status, error: r.error, lang: r.lang, local: Object.keys(r.local ?? {}).length, latest: r.latest?.id, hint: !!r.hint, scheduled: !!r.scheduled, history: r.history.length, effects: r.effects, challenge: r.challenge && { start: r.challenge.start, days: r.challenge.days, states: r.challenge.list.map((d) => d.state[0]).join(""), entries: r.challenge.list.reduce((n, d) => n + d.entries.length, 0) } }))'
+      )
+    })
+    // the real pointer resting on an older reset's dot: the post below must hold still (it used to swap back and
+    // forth as the strip moved under the pointer), and a click picks that reset
+    const back = screen.getCursorScreenPoint()
+    const dot = async () => {
+      const r = await js(`(() => { const d = document.querySelectorAll('.rs-dot'); const el = d[Math.max(0, d.length - 3)]; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 } })()`)
+      if (!r) return null
+      const b = main.getContentBounds()
+      const z = main.webContents.getZoomFactor()
+      return { x: Math.round(b.x + r.x * z), y: Math.round(b.y + r.y * z) }
+    }
+    const sample = async (n: number) => {
+      const seen: string[] = []
+      for (let i = 0; i < n; i++) {
+        seen.push(await js(`(() => { const t = document.querySelector('.rs-post .muted')?.textContent ?? '-'; const d = document.querySelectorAll('.rs-dot'); const y = Math.round(d[Math.max(0, d.length - 3)]?.getBoundingClientRect().y ?? -1); return t + ' @' + y + (document.querySelector('.rs-tip') ? ' tip' : '') })()`))
+        await wait(120)
+      }
+      return [...new Set(seen)]
+    }
+    main.show()
+    main.focus()
+    await wait(500)
+    const at = await dot()
+    if (at) {
+      await realMouse(at.x, at.y, false)
+      await log({ step: 'hover', at, seen: await sample(12) })
+      await shot(main, 'resets-hover', await js(rectOf('.resets-card')))
+      await realMouse(at.x, at.y, true)
+      await log({ step: 'click', seen: await sample(12) })
+      await shot(main, 'resets-pick', await js(rectOf('.resets-card')))
+      cursorHome(back)
+      await wait(400)
+      await log({ step: 'away', seen: await sample(4) })
+    }
+    // the posts in other languages
+    for (const lang of ['en', 'ja', 'zh-CN']) {
+      await set({ codexResetLang: lang })
+      await wait(6000)
+      await log({ lang, got: await js(`window.api.getCodexResets().then((r) => ({ lang: r.lang, local: Object.keys(r.local ?? {}).length, title: r.challenge?.list[0]?.entries[0]?.title }))`), text: await js(`document.querySelector('.rs-text')?.textContent?.slice(0, 60)`) })
+      if (lang !== 'zh-CN') await shot(main, `resets-${lang}`, await js(rectOf('.resets-card')))
+    }
+    // the challenge
+    await js(scrollTo('.ch-card'))
+    await wait(1500)
+    await shot(main, 'challenge-dark', await js(rectOf('.ch-card')))
+    await js(clickSel('.ch-cell', 0))
+    await wait(700)
+    await shot(main, 'challenge-day1', await js(rectOf('.ch-card')))
+    await js(clickSel('.ch-cell', 20))
+    await wait(700)
+    await shot(main, 'challenge-ahead', await js(rectOf('.ch-card')))
     await set({ theme: 'light' })
     await wait(1500)
     await js(scrollTo('.resets-card'))
     await wait(800)
     await shot(main, 'resets-light', await js(rectOf('.resets-card')))
+    await js(scrollTo('.ch-card'))
+    await wait(800)
+    await shot(main, 'challenge-light', await js(rectOf('.ch-card')))
     await set({ theme: 'dark', sourceFilter: 'all' })
     await wait(2500)
-    await log({ inAll: await js(`!!document.querySelector('.resets-card')`) })
+    await log({ inAll: await js(`[!!document.querySelector('.resets-card'), !!document.querySelector('.ch-card')]`) })
     await set({ sourceFilter: 'claude' })
     await wait(2500)
-    await log({ inClaude: await js(`!!document.querySelector('.resets-card')`) })
+    await log({ inClaude: await js(`[!!document.querySelector('.resets-card'), !!document.querySelector('.ch-card')]`) })
+    // narrow window: the calendar above the day
+    await set({ sourceFilter: 'codex' })
+    main.setSize(900, 900)
+    await wait(2500)
+    await js(scrollTo('.ch-card'))
+    await wait(800)
+    await shot(main, 'challenge-narrow', await js(rectOf('.ch-card')))
     await js(click('设置'))
     await wait(1500)
     done()

@@ -1,7 +1,7 @@
 {
   "name": "tokenpulse",
   "productName": "TokenPulse",
-  "version": "2.19.0",
+  "version": "2.20.0",
   "description": "Claude token usage and cost monitor",
   "author": "TokenPulse",
   "license": "MIT",

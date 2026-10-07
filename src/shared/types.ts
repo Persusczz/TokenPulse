@@ -386,6 +386,49 @@ export interface CodexResets {
   history: CodexResetPost[]
   /** keyed by post id: the user's own window around each regular reset (filled when asked for) */
   effects?: Record<string, ResetEffect>
+  /** the language posts are shown in ('en' = as posted) */
+  lang: ResetLang
+  /** post id → its text in `lang` as the site translates it ('hint' = the hint's post) */
+  local?: Record<string, string>
+  /** Tibo's 28-day challenge, while the site keeps one */
+  challenge?: TiboChallenge | null
+}
+
+/** the languages codex-resets.com translates into */
+export type ResetLang = 'en' | 'zh-CN' | 'zh-TW' | 'ja' | 'ko'
+
+/** one thing Tibo shipped, or the reset, on a day of the challenge */
+export interface ChallengeEntry {
+  id: string
+  kind: 'reset' | 'improvement'
+  title: string
+  text: string
+  url: string | null
+  at: number | null
+  /** the site's 👏 / 🤷 votes */
+  up: number | null
+  down: number | null
+}
+
+export interface ChallengeDay {
+  day: number
+  /** Tibo's date (Pacific), YYYY-MM-DD */
+  date: string
+  /** reset beats improvement when a day had both; open = today or unknown, nothing yet */
+  state: 'reset' | 'improvement' | 'missed' | 'upcoming' | 'open'
+  entries: ChallengeEntry[]
+}
+
+/** "Over the next 28 days, each day we'll either ship one thing that is a clear improvement … or ship a full reset" */
+export interface TiboChallenge {
+  /** first day, YYYY-MM-DD in Pacific time */
+  start: string
+  days: number
+  list: ChallengeDay[]
+  promise: { text: string; url: string | null } | null
+  /** the page on codex-resets.com */
+  url: string
+  at: number
 }
 
 /** How a quota window is being used against a straight line from its start to its reset */
@@ -1354,6 +1397,8 @@ export interface Settings {
   codexResetWatch: boolean
   /** a desktop notice (and a Telegram push with quota pushes) when Tibo announces or hints at a reset */
   codexResetNotify: boolean
+  /** the language Tibo's posts and the challenge are shown in, as the site translates them */
+  codexResetLang: ResetLang
   /** look for a new release each time TokenPulse starts and show what's new (downloading and installing wait for a click) */
   autoUpdate: boolean
   /** which tool the app shows: Claude, Codex, or both together */

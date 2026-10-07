@@ -1,10 +1,10 @@
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { QuotaCycle } from '../src/shared/types'
 import { resetCreditsOf } from '../src/main/codexUsage'
-import { effectOf, historyOf, newsOf, ResetWatchService, statusOf } from '../src/main/resetWatch'
+import { challengeLive, challengeOf, effectOf, historyOf, localOf, newsOf, ResetWatchService, statusOf } from '../src/main/resetWatch'
 
 const HOUR = 3_600_000
 const DAY = 24 * HOUR
@@ -70,7 +70,7 @@ describe('Tibo reset feed', () => {
   })
 
   it('tells fresh news once: a reset in the last day, one announced ahead, a live hint', () => {
-    const base = { status: 'ok' as const, at: NOW, history: [], ...statusOf(status({ active_watch: WATCH }))! }
+    const base = { status: 'ok' as const, at: NOW, history: [], lang: 'en' as const, ...statusOf(status({ active_watch: WATCH }))! }
     const news = newsOf(base, new Set(), NOW)
     expect(news.map((n) => n.kind)).toEqual(['reset', 'hint'])
     expect(newsOf(base, new Set(['reset:' + LATEST.id, `hint:${Date.parse(WATCH.observed_at)}`]), NOW)).toEqual([])
@@ -79,53 +79,161 @@ describe('Tibo reset feed', () => {
   })
 })
 
+// the site's own feed in Simplified Chinese, and its challenge page
+const LOCAL = {
+  scheduled: null,
+  events: [
+    { tweet_id: LATEST.id, text: LATEST.text, display_text: '因此……重置已经 https://t.co/mHSI0Pcu4M' },
+    { tweet_id: '2106131810921136451', text: 'Reset all propagated. Enjoy.', display_text: '重置已全部传播。享受。' }
+  ],
+  watch: { tweet_id: '1', text: 'the vote is close', display_text: '投票很接近' },
+  stats: {}
+}
+const PAGE = readFileSync(join(__dirname, 'fixtures', 'tibo-28.html'), 'utf8')
+
 /** a stand-in for codex-resets.com */
-function fakeApi(answers: { status: () => object; list?: () => object }) {
+function fakeApi(answers: { status: () => object; list?: () => object; page?: () => Response }) {
   const calls: string[] = []
   const fetchFn = async (url: string) => {
-    calls.push(url.replace('https://api.test', ''))
-    const body = url.includes('/resets') ? (answers.list ?? (() => LIST))() : answers.status()
+    const path = url.replace('https://api.test', '')
+    calls.push(path)
+    if (path.endsWith('tibo-28')) return answers.page ? answers.page() : new Response(PAGE, { status: 200 })
+    const body = path.startsWith('/api/resets?locale=') ? LOCAL : path.includes('/resets') ? (answers.list ?? (() => LIST))() : answers.status()
     return new Response(JSON.stringify(body), { status: 200 })
   }
   return { calls, fetchFn }
 }
+const API = 'https://api.test/api/v1'
 
 describe('reset watch service', () => {
   it('learns what is there on the first read, then tells only what is new, across restarts', async () => {
     const file = join(mkdtempSync(join(tmpdir(), 'tp-rs-')), 'codex-resets.json')
     let st = status()
     const api = fakeApi({ status: () => st })
-    const a = new ResetWatchService(api.fetchFn, file, 'https://api.test')
+    const a = new ResetWatchService(api.fetchFn, file, API)
     expect(await a.poll(NOW)).toEqual([])
     expect(a.state).toMatchObject({ status: 'ok', at: NOW, latest: { id: LATEST.id } })
     expect(a.state.history).toHaveLength(3)
-    expect(api.calls).toEqual(['/status', '/resets?limit=100'])
+    // posts as written: no translations asked for; the challenge page in English
+    expect(api.calls).toEqual(['/api/v1/status', '/api/v1/resets?limit=100', '/tibo-28'])
     // a hint shows up: told, and read again in 3 minutes rather than 10
     st = status({ active_watch: WATCH })
     expect((await a.poll(NOW + 60_000)).map((n) => n.kind)).toEqual(['hint'])
     expect(a.due(NOW + 60_000 + 3 * 60_000)).toBe(true)
-    expect(api.calls.filter((c) => c.startsWith('/resets'))).toHaveLength(1)
+    expect(api.calls.filter((c) => c.startsWith('/api/v1/resets'))).toHaveLength(1)
 
     // after a restart the same hint isn't told again; a new reset is, and the list is read again for it
     const NEXT = reset('2107999999999999999', '2026-10-07T07:00:00.000Z', 'Reset all propagated.')
     st = status({ active_watch: WATCH, latest_reset: NEXT })
-    const b = new ResetWatchService(api.fetchFn, file, 'https://api.test')
+    const b = new ResetWatchService(api.fetchFn, file, API)
     const news = await b.poll(NOW + 2 * HOUR)
     expect(news.map((n) => (n.kind === 'hint' ? 'hint' : n.post.id))).toEqual([NEXT.id])
     expect(b.state.history[0].id).toBe(NEXT.id)
-    expect(api.calls.filter((c) => c.startsWith('/resets'))).toHaveLength(2)
+    expect(api.calls.filter((c) => c.startsWith('/api/v1/resets'))).toHaveLength(2)
   })
 
   it('keeps the last good read when the site fails', async () => {
     const file = join(mkdtempSync(join(tmpdir(), 'tp-rs-')), 'codex-resets.json')
     let fail = false
     const fetchFn = async (url: string) => (fail ? new Response('slow down', { status: 429 }) : new Response(JSON.stringify(url.includes('/resets') ? LIST : status()), { status: 200 }))
-    const w = new ResetWatchService(fetchFn, file, 'https://api.test')
+    const w = new ResetWatchService(fetchFn, file, API)
     await w.poll(NOW)
     fail = true
     expect(await w.poll(NOW + 20 * 60_000)).toEqual([])
     expect(w.state).toMatchObject({ status: 'error', latest: { id: LATEST.id } })
     expect(w.state.error).toContain('请求太频繁')
+  })
+})
+
+describe('posts in another language', () => {
+  it("reads the site's translations by post id, the hint's under 'hint'", () => {
+    expect(localOf(LOCAL)).toEqual({ [LATEST.id]: '因此……重置已经', '2106131810921136451': '重置已全部传播。享受。', hint: '投票很接近' })
+    expect(localOf({ events: [{ tweet_id: 'x', text: 'only English' }] })).toEqual({})
+    expect(localOf(null)).toEqual({})
+  })
+
+  it('asks for the chosen language, and again for another one', async () => {
+    const file = join(mkdtempSync(join(tmpdir(), 'tp-rs-')), 'codex-resets.json')
+    const api = fakeApi({ status: () => status({ active_watch: WATCH }) })
+    const w = new ResetWatchService(api.fetchFn, file, API)
+    w.setLang('zh-CN')
+    await w.poll(NOW)
+    expect(api.calls).toEqual(['/api/v1/status', '/api/v1/resets?limit=100', '/api/resets?locale=zh-CN', '/zh-CN/tibo-28'])
+    expect(w.state.lang).toBe('zh-CN')
+    expect(w.state.local?.[LATEST.id]).toBe('因此……重置已经')
+    expect(w.state.local?.hint).toBe('投票很接近')
+    // the next read has them all: neither asked for again
+    await w.poll(NOW + 3 * 60_000)
+    expect(api.calls.filter((c) => c.startsWith('/api/resets') || c.endsWith('tibo-28'))).toHaveLength(2)
+
+    // English: the posts as written at once, and the English page on the very next read
+    w.setLang('en')
+    expect(w.state.local).toEqual({})
+    expect(w.due(NOW + 4 * 60_000)).toBe(true)
+    await w.poll(NOW + 4 * 60_000)
+    expect(api.calls.at(-1)).toBe('/tibo-28')
+    expect(api.calls.filter((c) => c.startsWith('/api/resets'))).toHaveLength(1)
+
+    // kept across a restart
+    const again = new ResetWatchService(api.fetchFn, file, API)
+    await again.load()
+    expect(again.state.challenge?.days).toBe(28)
+  })
+})
+
+describe("Tibo's 28-day challenge", () => {
+  it('reads the days, what was shipped on each with its votes, and the promise', () => {
+    const c = challengeOf(PAGE, 'https://codex-resets.com/zh-CN/tibo-28', NOW)!
+    expect(c).toMatchObject({ start: '2026-10-05', days: 28, url: 'https://codex-resets.com/zh-CN/tibo-28', at: NOW })
+    expect(c.list).toHaveLength(28)
+    expect(c.list.slice(0, 6).map((d) => d.state)).toEqual(['improvement', 'reset', 'open', 'missed', 'upcoming', 'upcoming'])
+    expect(c.list[27].date).toBe('2026-11-01')
+    const [reset, better] = c.list[1].entries
+    expect(reset).toMatchObject({
+      id: '2107676072871600470',
+      kind: 'reset',
+      title: '所有人的用量额度已重置',
+      url: 'https://x.com/thsottiaux/status/2107676072871600470',
+      at: Date.parse('2026-10-07T03:35:09.000Z'),
+      up: 633,
+      down: 647
+    })
+    expect(reset.text).toContain('\n\n因此……重置已经')
+    expect(better).toMatchObject({ kind: 'improvement', title: 'Decisions API 已公开测试上线', at: null, up: 97, down: 242 })
+    expect(better.text).toBe('开发者可以用 Decisions API 近实时选择模型、工具或动作。<快 10 倍> & 更多')
+    // links only to X; no votes on the page, none made up
+    expect(c.list[0].entries[0]).toMatchObject({ url: null, up: null, down: null })
+    expect(c.promise).toEqual({
+      text: '接下来的 28 天，我们每天要么推出一项对大多数 Codex/Work 用户有用的明显改进，要么进行一次完整的额度重置。让改进开始吧。',
+      url: 'https://x.com/thsottiaux/status/2106845241357824205'
+    })
+  })
+
+  it('has none when the page has no challenge on it', () => {
+    expect(challengeOf('<html><main>Not found</main></html>', 'u', NOW)).toBeNull()
+    expect(challengeOf('<aside data-challenge-clock data-start="soon" data-days="28"></aside>', 'u', NOW)).toBeNull()
+  })
+
+  it('is read often while it runs and for a couple of days after', () => {
+    const c = challengeOf(PAGE, 'u', NOW)!
+    expect(challengeLive(c, NOW)).toBe(true)
+    expect(challengeLive(c, Date.parse('2026-11-02T12:00:00Z'))).toBe(true)
+    expect(challengeLive(c, Date.parse('2026-11-05T12:00:00Z'))).toBe(false)
+    expect(challengeLive(null, NOW)).toBe(false)
+  })
+
+  it('keeps the last one read when the page fails, drops it when the page is gone', async () => {
+    const file = join(mkdtempSync(join(tmpdir(), 'tp-rs-')), 'codex-resets.json')
+    let page = () => new Response(PAGE, { status: 200 })
+    const w = new ResetWatchService(fakeApi({ status: () => status(), page: () => page() }).fetchFn, file, API)
+    await w.poll(NOW)
+    expect(w.state.challenge?.list[1].state).toBe('reset')
+    page = () => new Response('oops', { status: 502 })
+    await w.poll(NOW + 10 * 60_000)
+    expect(w.state).toMatchObject({ status: 'ok', challenge: { days: 28 } })
+    page = () => new Response('gone', { status: 404 })
+    await w.poll(NOW + 20 * 60_000)
+    expect(w.state.challenge).toBeNull()
   })
 })
 
