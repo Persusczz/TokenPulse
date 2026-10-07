@@ -342,6 +342,50 @@ export interface CodexUsageState {
   loggedIn: boolean
   /** Codex CLI is logged in with ChatGPT (~/.codex/auth.json) */
   cliLogin: boolean
+  /** banked resets the account holds and can use (rate_limit_reset_credits), null = not reported */
+  resetCredits?: number | null
+}
+
+/** A Codex limit reset announced by Tibo (@thsottiaux, who leads Codex) on X, as Codex Resets tracks them */
+export interface CodexResetPost {
+  /** the X post's id, or an observed-… id for a reset that came without a post */
+  id: string
+  /** regular: everyone's limits start over; banked: a reset put into every account to use later */
+  kind: 'regular' | 'banked'
+  /** announced, or first seen */
+  at: number
+  text: string
+  url: string | null
+  /** seen happening, no announcement */
+  observed: boolean
+}
+
+/** What a regular reset did to the user's own Codex 7-day window */
+export interface ResetEffect {
+  /** the week's highest reading before the reset, percent (null = no reading then) */
+  before: number | null
+  /** the 7-day window started over after the announcement */
+  restarted: boolean
+  /** there is a reading from after the announcement to tell by */
+  checked: boolean
+}
+
+/** Tibo's reset announcements and hints, read from codex-resets.com (which watches his posts on X) */
+export interface CodexResets {
+  status: 'off' | 'loading' | 'ok' | 'error'
+  /** last good read */
+  at: number | null
+  error?: string
+  latest: CodexResetPost | null
+  /** announced, not seen happening yet */
+  scheduled: (CodexResetPost & { due: number | null }) | null
+  /** a post that hints at a reset, as the tracker reads it */
+  hint: { level: 'elevated' | 'strong'; chance: number | null; window: string; at: number; until: number; text: string; url: string | null } | null
+  stats: { total: number; avgDays: number | null } | null
+  /** newest first */
+  history: CodexResetPost[]
+  /** keyed by post id: the user's own window around each regular reset (filled when asked for) */
+  effects?: Record<string, ResetEffect>
 }
 
 /** How a quota window is being used against a straight line from its start to its reset */
@@ -1180,6 +1224,22 @@ export type { AccentKey }
 export type WindowMaterial = 'none' | 'mica' | 'acrylic'
 export type MiniMode = 'card' | 'capsule' | 'orb'
 
+/**
+ * Where the floating window rests: its position, and how it sits on its
+ * display, so it lands at the same edge on a screen of another size.
+ */
+export interface MiniPlace {
+  x: number
+  y: number
+  /** the display it was on (Electron's display id); absent on positions saved before 2.19 */
+  display?: number
+  /** the nearer side of that display's work area and the window's gap to it, in DIP */
+  h?: 'left' | 'right'
+  dx?: number
+  v?: 'top' | 'bottom'
+  dy?: number
+}
+
 export interface Settings {
   /** USD */
   dailyBudget: number | null
@@ -1191,7 +1251,7 @@ export interface Settings {
   extraDirs: string[]
   launchAtLogin: boolean
   showMini: boolean
-  miniPosition: { x: number; y: number } | null
+  miniPosition: MiniPlace | null
   theme: ThemeSetting
   quotaSource: QuotaSource
   /** local estimate: API-equivalent USD that equals 100% of the 5h window; null = learn from official data */
@@ -1290,6 +1350,10 @@ export interface Settings {
   codexEnabled: boolean
   /** read Codex's limits from the ChatGPT account every minute (TokenPulse's login, else Codex CLI's) */
   codexUsageApi: boolean
+  /** follow Tibo's Codex reset announcements and hints (codex-resets.com) on the Codex overview */
+  codexResetWatch: boolean
+  /** a desktop notice (and a Telegram push with quota pushes) when Tibo announces or hints at a reset */
+  codexResetNotify: boolean
   /** look for a new release each time TokenPulse starts and show what's new (downloading and installing wait for a click) */
   autoUpdate: boolean
   /** which tool the app shows: Claude, Codex, or both together */
@@ -1439,6 +1503,8 @@ export interface TokenPulseApi {
   toggleMini(show?: boolean): void
   /** the floating window's quick-settings menu */
   miniMenu(): void
+  /** where a click-through window (floating window, island) still takes the pointer, in window coordinates */
+  hotspot(r: { x: number; y: number; width: number; height: number } | null): void
   /** Claude's plan, ChatGPT's (Codex), or both added up */
   getValue(source?: SourceView): Promise<ValueReport>
   getForecast(source?: UsageSource): Promise<WeeklyForecast>
@@ -1525,6 +1591,10 @@ export interface TokenPulseApi {
   codexSignOut(): Promise<void>
   codexUsageRefresh(): Promise<CodexUsageState>
   onCodexUsage(cb: (s: CodexUsageState) => void): () => void
+  /** Tibo's reset announcements, with what each did to the user's own Codex week */
+  getCodexResets(): Promise<CodexResets>
+  refreshCodexResets(): Promise<CodexResets>
+  onCodexResets(cb: (r: CodexResets) => void): () => void
   updateState(): Promise<UpdateState>
   updateCheck(): Promise<UpdateState>
   updateDownload(): Promise<UpdateState>

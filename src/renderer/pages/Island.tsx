@@ -8,6 +8,7 @@ import { BlackHole } from '../components/Cosmos'
 import { hasPocket, PocketEmblem, PocketScene } from '../components/Pocket'
 import { useQuotaMotion } from '../components/QuotaMotion'
 import { Starburst } from '../components/Starburst'
+import { useHotspot } from '../hotspot'
 import { clock, countdown, useApp, useData, useMotionLevel, useNow, useSource, useToolQuotas } from '../state'
 
 type Tone = 'accent' | 'warn' | 'alarm' | 'good'
@@ -215,9 +216,13 @@ export function Island() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const mode = ev ? 'event' : hover ? 'detail' : 'compact'
+  // the window lets clicks through everywhere but the pill
+  const pill = useRef<HTMLDivElement>(null)
+  useHotspot(pill)
   return (
     <div className="island-stage">
       <motion.div
+        ref={pill}
         layout
         transition={SPRING}
         style={{ borderRadius: mode === 'compact' ? 20 : 28 }}

@@ -70,6 +70,12 @@ export function usageLimits(j: any, now: number): CodexLimits | null {
   return { at: now, plan: typeof j?.plan_type === 'string' ? j.plan_type : null, primary, secondary, limitId: 'codex', origin: 'api' }
 }
 
+/** banked resets the account can use (Tibo hands them out to every account now and then) */
+export function resetCreditsOf(j: any): number | null {
+  const n = j?.rate_limit_reset_credits?.available_count
+  return Number.isFinite(n) && n >= 0 ? n : null
+}
+
 /** the browser address that starts the login, with its PKCE verifier and state */
 export function authorizeRequest(): { url: string; verifier: string; state: string } {
   const verifier = randomBytes(48).toString('base64url')
@@ -234,7 +240,7 @@ export class CodexUsageService extends EventEmitter {
         this.set({ status: 'error', source, email, error: r.status === 200 ? '接口没有返回额度数据' : `接口返回 HTTP ${r.status}` })
         return null
       }
-      this.set({ status: 'ok', source, email, at: now, error: undefined })
+      this.set({ status: 'ok', source, email, at: now, error: undefined, resetCredits: resetCreditsOf(r.json) })
       return limits
     } catch (e) {
       this.set({ status: 'error', error: `连不上 ChatGPT：${e instanceof Error ? e.message : String(e)}` })

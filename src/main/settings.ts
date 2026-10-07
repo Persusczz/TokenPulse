@@ -152,6 +152,8 @@ export const DEFAULT_SETTINGS: Settings = {
   pushTasks: true,
   codexEnabled: true,
   codexUsageApi: true,
+  codexResetWatch: true,
+  codexResetNotify: true,
   autoUpdate: true,
   sourceFilter: 'all',
   themePack: 'none',
@@ -201,6 +203,8 @@ const BOOLS = [
   'taskTerminal',
   'codexEnabled',
   'codexUsageApi',
+  'codexResetWatch',
+  'codexResetNotify',
   'autoUpdate',
   'wasteAlert',
   'wasteRunTasks',
@@ -229,8 +233,12 @@ export function sanitize(raw: any, base: Settings): Settings {
   if (typeof raw.launchAtLogin === 'boolean') s.launchAtLogin = raw.launchAtLogin
   if (typeof raw.showMini === 'boolean') s.showMini = raw.showMini
   if (raw.miniPosition === null) s.miniPosition = null
-  else if (raw.miniPosition && Number.isFinite(raw.miniPosition.x) && Number.isFinite(raw.miniPosition.y))
-    s.miniPosition = { x: Math.round(raw.miniPosition.x), y: Math.round(raw.miniPosition.y) }
+  else if (raw.miniPosition && Number.isFinite(raw.miniPosition.x) && Number.isFinite(raw.miniPosition.y)) {
+    const p = raw.miniPosition
+    s.miniPosition = { x: Math.round(p.x), y: Math.round(p.y) }
+    if (Number.isFinite(p.display) && (p.h === 'left' || p.h === 'right') && (p.v === 'top' || p.v === 'bottom') && Number.isFinite(p.dx) && Number.isFinite(p.dy))
+      Object.assign(s.miniPosition, { display: p.display, h: p.h, dx: Math.round(p.dx), v: p.v, dy: Math.round(p.dy) })
+  }
   if (['system', 'light', 'dark'].includes(raw.theme)) s.theme = raw.theme
   if (['auto', 'oauth', 'statusline', 'local'].includes(raw.quotaSource)) s.quotaSource = raw.quotaSource
   if ('local5hLimitUsd' in raw) s.local5hLimitUsd = posNum(raw.local5hLimitUsd)

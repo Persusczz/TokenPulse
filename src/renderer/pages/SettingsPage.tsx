@@ -681,6 +681,21 @@ function CodexRows({ s, save }: { s: Settings; save: Save }) {
         <Switch on={s.codexEnabled} onChange={(codexEnabled) => save({ codexEnabled })} />
       </Row>
       {s.codexEnabled && <CodexLoginRows s={s} save={save} />}
+      {s.codexEnabled && (
+        <>
+          <Row
+            label="Tibo 重置播报"
+            desc="在 Codex 概览里跟踪 Tibo（@thsottiaux，Codex 负责人）在 X 上发的额度重置：刚重置、已预告、在暗示，以及你自己的 7 天额度有没有跟着清零。X 的接口要付费，帖子经 codex-resets.com 的公开接口读取，每 10 分钟一次"
+          >
+            <Switch on={s.codexResetWatch} onChange={(codexResetWatch) => save({ codexResetWatch })} />
+          </Row>
+          {s.codexResetWatch && (
+            <Row label="重置提醒" desc="Tibo 宣布、预告或暗示重置时弹出系统通知；开着 Telegram 的「额度提醒与重置」推送时也发到手机">
+              <Switch on={s.codexResetNotify} onChange={(codexResetNotify) => save({ codexResetNotify })} />
+            </Row>
+          )}
+        </>
+      )}
       {s.codexEnabled && dirs.length > 0 && (
         <div className="guard-info">
           {dirs.map((d) => (

@@ -13,6 +13,7 @@ import { Starburst } from '../components/Starburst'
 import { CodexMark, SourceMark } from '../components/CodexMark'
 import { BlackHole, MiniGalaxy } from '../components/Cosmos'
 import { hasPocket, PocketOrb, pocketDark, PocketScene } from '../components/Pocket'
+import { useHotspot } from '../hotspot'
 import { clock, countdown, useApp, useData, useMotionLevel, useNow, useSource, useToolQuotas } from '../state'
 
 const quotaColor = (pct: number, pauseAt: number | null) =>
@@ -171,9 +172,12 @@ function Trail({ rate }: { rate: RateStats | null }) {
   )
 }
 
-function Buttons() {
+function Buttons({ scale }: { scale: number }) {
+  const ref = useRef<HTMLDivElement>(null)
+  // in click-through mode the window still takes clicks over the buttons
+  useHotspot(ref, [scale])
   return (
-    <div className="mini-btns">
+    <div className="mini-btns" ref={ref}>
       <button title="打开主窗口" onClick={() => window.api.showMain()}>
         <IconExpand />
       </button>
@@ -221,7 +225,7 @@ function CardMini({ d }: { d: MiniData }) {
           {d.live && d.live.monthCost > 0 && <span className="mini-sub">本月 {d.money(d.live.monthCost)}</span>}
         </div>
       </div>
-      <Buttons />
+      <Buttons scale={d.settings?.miniScale ?? 1} />
       <div className="mini-foot" onMouseEnter={() => setHold(true)} onMouseLeave={() => setHold(false)}>
         {d.paused.length > 0 ? (
           <div className="mini-quota mini-paused">

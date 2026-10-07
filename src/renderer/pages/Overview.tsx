@@ -25,10 +25,11 @@ import { CalendarCard, ModelTableCard, TimelineCard } from '../components/Overvi
 import { ActionsCard, RecordsCard } from '../components/OverviewActivity'
 import { coverageNote, RANGE_OPTIONS, RangeTabs, spanText } from '../components/RangeTabs'
 import { RateCard } from '../components/RateCard'
+import { ResetWatchCard } from '../components/ResetWatch'
 import { RunawayBanner } from '../components/RunawayBanner'
 import { Segmented } from '../components/Segmented'
 import { StatTile } from '../components/StatTile'
-import { useApp, useData, useIntroDone, useSource } from '../state'
+import { useApp, useData, useHasCodex, useIntroDone, useSource } from '../state'
 
 const RANGE_NAME: Record<RangeKey, string> = { today: '今日', '7d': '近 7 天', '30d': '近 30 天', month: '本月', all: '全部时间' }
 const PREV_NAME: Record<RangeKey, string> = { today: '较昨日同期', '7d': '较前 7 天', '30d': '较前 30 天', month: '较上月同期', all: '' }
@@ -97,8 +98,9 @@ const TITLE: Record<SourceView, string> = { claude: 'Claude 用量', codex: 'Cod
 const SCANNING: Record<SourceView, string> = { claude: '正在扫描 Claude Code 日志…', codex: '正在扫描 Codex 会话日志…', all: '正在扫描 Claude Code 与 Codex 日志…' }
 
 export function Overview({ theme }: { theme: string }) {
-  const { money, lastUpdate, load } = useApp()
+  const { money, lastUpdate, load, settings } = useApp()
   const source = useSource()
+  const hasCodex = useHasCodex()
   // the launch animation ends before the numbers roll up from zero
   const intro = useIntroDone()
   const [range, setRange] = useStoredRange()
@@ -282,6 +284,8 @@ export function Overview({ theme }: { theme: string }) {
       </div>
 
       <CyclesCard />
+
+      {source !== 'claude' && hasCodex && settings?.codexResetWatch && <ResetWatchCard />}
 
       <QuotaRelationCard />
 

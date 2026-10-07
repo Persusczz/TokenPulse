@@ -28,6 +28,7 @@ import { HOTKEYS } from '@shared/hotkeys'
 import type {
   Achievement,
   CodexQuota,
+  CodexResets,
   Cosmos,
   ContextAlert,
   LoadState,
@@ -57,6 +58,7 @@ import { checkBudgets, pruneFired } from './budget'
 import { diagnoseCache } from './cacheDoctor'
 import { codexDirs, codexQuota, codexRoot, CodexStore } from './collector/codex'
 import { CodexUsageService } from './codexUsage'
+import { effectOf, ResetWatchService, type ResetNews } from './resetWatch'
 import { Updater } from './updater'
 import { claudeRoots, credentialsPath, projectsDirs } from './collector/paths'
 import { UsageStore } from './collector/store'
@@ -67,7 +69,7 @@ import { chatgptPlan, computeValue, forecastWeekly, PLAN_PRICES } from './insigh
 import { costByPrompt, indexPrompts, promptReport } from './prompts'
 import { buildHistory, ClaudeWindowLog, estimateClaudeWindows } from './windowHistory'
 import { buildCycles, CYCLE_MS, type KnownWindow } from './cycles'
-import { contains, dockedPosition, hiddenPosition, MINI_MARGIN, miniSize, snapToEdge, type Dock, type Rect } from './miniGeometry'
+import { contains, dockedPosition, hiddenPosition, MINI_MARGIN, miniSize, miniPlace, restorePosition, snapToEdge, type Dock, type Rect } from './miniGeometry'
 import { PricingService } from './pricing'
 import { computeCost } from './pricing/cost'
 import { fiveHourWindow, QuotaService, sevenDayWindow } from './quota'
@@ -161,6 +163,8 @@ const codexUsage = new CodexUsageService((url, init) => net.fetch(url, init as R
   seal: (s) => safeStorage.encryptString(s),
   open: (b) => safeStorage.decryptString(b)
 })
+/** Tibo's Codex reset posts, through codex-resets.com */
+const resetWatch = new ResetWatchService((url, init) => net.fetch(url, init as RequestInit), join(app.getPath('userData'), 'codex-resets.json'), process.env.TP_RESETS_API)
 
 let store = new UsageStore()
 let codex = new CodexStore()
@@ -1739,6 +1743,56 @@ async function pollCodexUsage(): Promise<void> {
 }
 codexUsage.on('state', (st) => broadcast('codex:usage', st))
 
+/** Tibo's reset posts: read every 10 minutes (every 3 while one is hinted at), news told once */
+async function pollResets(force = false): Promise<void> {
+  const s = settings.value
+  if (!s.codexEnabled || !s.codexResetWatch || (shotDir && !process.env.TP_RESETS_API)) {
+    resetWatch.idle()
+    return
+  }
+  if (!force && !resetWatch.due()) return
+  for (const n of await resetWatch.poll()) tellReset(n)
+}
+resetWatch.on('state', () => broadcast('codex:resets', codexResets()))
+
+/** the tracker's state, with what each regular reset did to the user's own Codex week */
+function codexResets(): CodexResets {
+  const st = resetWatch.state
+  if (!st.history.length || !codexCosted.length) return st
+  const weeks = quotaCycles().find((c) => c.source === 'codex')?.seven ?? []
+  const effects: CodexResets['effects'] = {}
+  for (const p of st.history) {
+    if (p.kind !== 'regular') continue
+    const e = effectOf(p.at, weeks, codexQ?.updatedAt ?? null)
+    if (e) effects[p.id] = e
+  }
+  return { ...st, effects }
+}
+
+const cut = (t: string, max: number) => (t.length > max ? `${t.slice(0, max - 1)}…` : t)
+
+function tellReset(n: ResetNews): void {
+  if (!settings.value.codexResetNotify) return
+  const quote = (t: string) => `\n<blockquote>${escapeHtml(cut(t, 400))}</blockquote>`
+  const link = (url: string | null) => (url ? `\n<a href="${url}">在 X 上看 Tibo 的原帖</a>` : '')
+  if (n.kind === 'reset') {
+    const banked = n.post.kind === 'banked'
+    const title = banked ? 'Tibo 往每个账户存了一次重置' : n.post.observed ? 'Codex 额度刚刚重置' : 'Tibo 宣布：Codex 额度已重置'
+    const e = banked ? null : codexResets().effects?.[n.post.id]
+    const mine = e?.before != null ? `\n你这周的 7 天额度重置前用到 <b>${Math.round(e.before)}%</b>` : ''
+    notify(title, cut(n.post.text, 90))
+    push('quota', `${banked ? '🏦' : '🎉'} <b>${title}</b>${quote(n.post.text)}${mine}${link(n.post.url)}`, banked ? undefined : 'party')
+  } else if (n.kind === 'scheduled') {
+    const due = n.post.due ? `，预计 ${clockOf(n.post.due)} 生效` : ''
+    notify(`Tibo 宣布要重置 Codex 额度${due}`, cut(n.post.text, 90))
+    push('quota', `📣 <b>Tibo 宣布要重置 Codex 额度</b>${due}${quote(n.post.text)}${link(n.post.url)}`)
+  } else {
+    const chance = n.hint.chance !== null ? `（可能性 ${n.hint.chance}%）` : ''
+    notify(`Tibo 在暗示重置 Codex 额度${chance}`, cut(n.hint.text, 90))
+    push('quota', `👀 <b>Tibo 在暗示重置 Codex 额度</b>${chance}${n.hint.window ? `\n时间：${escapeHtml(n.hint.window)}` : ''}${quote(n.hint.text)}${link(n.hint.url)}`)
+  }
+}
+
 // ---------- pace and waste ----------
 
 const HOUR_MS = 3600_000
@@ -1983,11 +2037,6 @@ function createMain(): void {
   load(mainWin, '/')
 }
 
-function defaultMiniPos(size: { width: number; height: number }): { x: number; y: number } {
-  const wa = screen.getPrimaryDisplay().workArea
-  return { x: wa.x + wa.width - size.width - 16, y: wa.y + wa.height - size.height - 24 }
-}
-
 let moveTimer: NodeJS.Timeout | null = null
 /** screen edge the floating window is docked to, and where it sits when shown */
 let miniDock: Dock = null
@@ -2006,12 +2055,7 @@ const workAreaOf = (b: Rect) => screen.getDisplayMatching(b).workArea
 function createMini(): void {
   const s = settings.value
   const size = miniSize(s.miniMode, s.miniScale)
-  const pos = s.miniPosition ?? defaultMiniPos(size)
-  const onScreen = screen.getAllDisplays().some((d) => {
-    const a = d.workArea
-    return pos.x >= a.x - size.width && pos.x < a.x + a.width && pos.y >= a.y - size.height && pos.y < a.y + a.height
-  })
-  const { x, y } = onScreen ? pos : defaultMiniPos(size)
+  const { x, y } = restorePosition(s.miniPosition, size, screen.getAllDisplays(), screen.getPrimaryDisplay(), miniMargin())
   miniWin = new BrowserWindow({
     ...size,
     x,
@@ -2042,6 +2086,7 @@ function createMini(): void {
   miniWin.on('closed', () => {
     miniWin = null
     miniHidden = false
+    miniZone.set(null)
     syncEdgeWatch()
   })
   const b = miniWin.getBounds()
@@ -2054,11 +2099,85 @@ function createMini(): void {
 function applyMiniFlags(): void {
   if (!miniWin || miniWin.isDestroyed()) return
   miniWin.setOpacity(settings.value.miniOpacity)
-  // forwarded mouse moves keep hover effects working while clicks pass through
   miniWin.setIgnoreMouseEvents(settings.value.miniClickThrough, { forward: true })
+  miniZone.sync()
 }
 
 const miniDims = () => miniSize(settings.value.miniMode, settings.value.miniScale)
+
+/** Saves where the floating window rests, with its display and the sides it keeps to */
+function rememberMini(): void {
+  if (!miniShown) return
+  const b = { ...miniShown, ...miniDims() }
+  void settings.update({ miniPosition: miniPlace(b, screen.getDisplayMatching(b)) })
+}
+
+/** Puts the floating window back at its saved sides after the screens changed (the saved place itself stays) */
+function replaceMini(): void {
+  if (!miniWin || miniWin.isDestroyed()) return
+  const size = miniDims()
+  const at = restorePosition(settings.value.miniPosition, size, screen.getAllDisplays(), screen.getPrimaryDisplay(), miniMargin())
+  const b = { ...at, ...size }
+  if (miniAnim) clearInterval(miniAnim)
+  miniAnim = null
+  miniMoving = true
+  miniHidden = false
+  miniWin.setBounds(b)
+  setTimeout(() => (miniMoving = false), 120)
+  miniShown = at
+  miniDock = snapToEdge(b, workAreaOf(b), miniMargin(), 2).dock
+  syncEdgeWatch()
+}
+
+/**
+ * A click-through window that still takes the pointer over one part of it
+ * (the floating window's buttons, the island's pill). The page reports that
+ * part; the pointer is polled here, because a window that ignores the mouse
+ * hears nothing of it: Electron's `forward` option delivered no moves on
+ * Windows in a test with real mouse input.
+ */
+function hotZone(win: () => BrowserWindow | null, active: () => boolean) {
+  let rect: Rect | null = null
+  /** the window takes the pointer because it is over the part */
+  let on = false
+  let timer: NodeJS.Timeout | null = null
+  const stop = () => {
+    if (timer) clearInterval(timer)
+    timer = null
+    // hand the clicks back to what is underneath
+    const w = win()
+    if (on && w && active()) w.setIgnoreMouseEvents(true, { forward: true })
+    on = false
+  }
+  const tick = () => {
+    const w = win()
+    if (!w || !rect || !active()) return stop()
+    const b = w.getBounds()
+    const inside = contains({ ...rect, x: b.x + rect.x, y: b.y + rect.y }, screen.getCursorScreenPoint(), 2)
+    if (inside === on) return
+    on = inside
+    w.setIgnoreMouseEvents(!inside, { forward: true })
+  }
+  const run = () => {
+    if (win() && rect && active()) timer ??= setInterval(tick, 80)
+    else stop()
+  }
+  return {
+    /** where the part is, in window coordinates (null = nowhere) */
+    set(r: Rect | null) {
+      rect = r && [r.x, r.y, r.width, r.height].every(Number.isFinite) ? r : null
+      run()
+    },
+    /** after the window was set to ignore the mouse (or not) from outside */
+    sync() {
+      on = false
+      run()
+    },
+    debug: () => ({ rect, on, polling: !!timer })
+  }
+}
+const miniZone = hotZone(() => (miniWin && !miniWin.isDestroyed() ? miniWin : null), () => settings.value.miniClickThrough)
+const islandZone = hotZone(() => (islandWin && !islandWin.isDestroyed() ? islandWin : null), () => true)
 
 /**
  * Eases the floating window to a position. Moves use setBounds with the exact
@@ -2102,7 +2221,7 @@ function onMiniMoved(): void {
     miniHidden = false
     miniShown = { x: snap.x, y: snap.y }
     if (snap.x !== b.x || snap.y !== b.y) slideMini(snap, 140)
-    void settings.update({ miniPosition: miniShown })
+    rememberMini()
     syncEdgeWatch()
   }, 250)
 }
@@ -2156,7 +2275,7 @@ function layoutMini(): void {
   miniWin.setBounds(b)
   setTimeout(() => (miniMoving = false), 120)
   miniShown = { x: b.x, y: b.y }
-  void settings.update({ miniPosition: miniShown })
+  rememberMini()
 }
 
 function miniMenuItems(): MenuItemConstructorOptions[] {
@@ -2232,6 +2351,21 @@ function closeStage(): void {
 // ---------- dynamic island ----------
 
 const ISLAND = { width: 460, height: 250 }
+/** top centre of the primary display */
+function islandPosition(): { x: number; y: number } {
+  const wa = screen.getPrimaryDisplay().workArea
+  return { x: Math.round(wa.x + (wa.width - ISLAND.width) / 2), y: wa.y + 6 }
+}
+
+/** Screens added, removed or resized (a laptop plugged into a large monitor): the floating window and the island find their places again */
+let displayTimer: NodeJS.Timeout | null = null
+function onDisplaysChanged(): void {
+  if (displayTimer) clearTimeout(displayTimer)
+  displayTimer = setTimeout(() => {
+    replaceMini()
+    if (islandWin && !islandWin.isDestroyed()) islandWin.setBounds({ ...islandPosition(), ...ISLAND })
+  }, 600)
+}
 
 /**
  * A capsule at the top centre of the primary display. The window is larger
@@ -2244,11 +2378,9 @@ function setIsland(on: boolean): void {
     return
   }
   if (islandWin && !islandWin.isDestroyed()) return
-  const wa = screen.getPrimaryDisplay().workArea
   const win = new BrowserWindow({
     ...ISLAND,
-    x: Math.round(wa.x + (wa.width - ISLAND.width) / 2),
-    y: wa.y + 6,
+    ...islandPosition(),
     frame: false,
     transparent: true,
     resizable: false,
@@ -2269,6 +2401,7 @@ function setIsland(on: boolean): void {
   win.once('ready-to-show', () => win.showInactive())
   win.on('closed', () => {
     if (islandWin === win) islandWin = null
+    islandZone.set(null)
   })
   load(win, '/island')
 }
@@ -2560,6 +2693,7 @@ async function applySettings(patch: Partial<Settings>): Promise<Settings> {
   }
   if (JSON.stringify(next.extraDirs) !== JSON.stringify(prev.extraDirs) || next.codexEnabled !== prev.codexEnabled) void rescan()
   if (next.codexEnabled !== prev.codexEnabled || next.codexUsageApi !== prev.codexUsageApi) void pollCodexUsage()
+  if (next.codexEnabled !== prev.codexEnabled || next.codexResetWatch !== prev.codexResetWatch) void pollResets(true)
   if (next.autoUpdate && !prev.autoUpdate) void checkForUpdate()
   // Codex switched off while it was the only thing on view
   if (!next.codexEnabled && next.sourceFilter === 'codex') return applySettings({ sourceFilter: 'all' })
@@ -2627,12 +2761,22 @@ function registerIpc(): void {
     await pollCodexUsage()
     return codexUsage.state
   })
+  ipcMain.handle('codex:resets', () => codexResets())
+  ipcMain.handle('codex:resets-refresh', async () => {
+    await pollResets(true)
+    return codexResets()
+  })
   ipcMain.handle('settings:get', () => settings.value)
   ipcMain.handle('settings:set', (_e, patch: Partial<Settings>) => applySettings(patch))
   ipcMain.handle('load:get', () => loadState())
   ipcMain.on('main:show', showMain)
   ipcMain.on('mini:toggle', (_e, show?: boolean) => void applySettings({ showMini: show ?? !settings.value.showMini }))
   ipcMain.on('mini:menu', popupMiniMenu)
+  ipcMain.on('hotspot', (e, r: Rect | null) => {
+    const from = BrowserWindow.fromWebContents(e.sender)
+    if (from && from === miniWin) miniZone.set(r)
+    else if (from && from === islandWin) islandZone.set(r)
+  })
   ipcMain.handle('value', (_e, src?: SourceView) => valueFor(src === 'claude' || src === 'codex' || src === 'all' ? src : source()))
   ipcMain.handle('forecast', (_e, src?: UsageSource) => {
     const pick = (w: { utilization: number; resetsAt: string | null } | undefined) => (w ? { pct: w.utilization, resetsAt: w.resetsAt ? Date.parse(w.resetsAt) : null } : null)
@@ -2932,6 +3076,9 @@ void app.whenReady().then(async () => {
   void checkForUpdate()
   createTray()
   if (settings.value.showMini) createMini()
+  screen.on('display-added', onDisplaysChanged)
+  screen.on('display-removed', onDisplaysChanged)
+  screen.on('display-metrics-changed', onDisplaysChanged)
   syncHotkey()
   syncBot()
   // a new portable version lives at a new path: keep auto-start pointing at the one running now
@@ -2944,6 +3091,7 @@ void app.whenReady().then(async () => {
   setInterval(() => void quota.checkStatusline(), 5_000)
   await rescan()
   void pollCodexUsage()
+  void pollResets()
   if (pricing.isStale) void pricing.refresh()
   setInterval(() => pricing.isStale && void pricing.refresh(), 3600_000)
   // date rollover, burn-rate decay and tray text
@@ -2953,6 +3101,7 @@ void app.whenReady().then(async () => {
     checkReport()
     void syncBoard()
     void pollCodexUsage()
+    void pollResets()
     checkRunaway()
     // a Codex window that reset while Codex was idle rolls over to 0%
     syncCodexQuota()
@@ -2965,6 +3114,8 @@ void app.whenReady().then(async () => {
   if (process.env.TP_SCREENSHOT && mainWin) {
     // the walkthrough runs tasks with a stand-in instead of the real claude
     ;(globalThis as { __tpTasks?: TaskService }).__tpTasks = tasks
+    ;(globalThis as { __tpMini?: () => BrowserWindow | null }).__tpMini = () => (miniWin && !miniWin.isDestroyed() ? miniWin : null)
+    ;(globalThis as { __tpMiniHot?: () => unknown }).__tpMiniHot = () => ({ ...miniZone.debug(), through: settings.value.miniClickThrough, island: islandZone.debug() })
     ;(globalThis as { __tpTelegram?: unknown }).__tpTelegram = { onCommand, cardPhoto, cardAnimation, gauge: (g: GaugeAlert) => svgsToMp4(gaugeFrames(g, 20), GAUGE_W, GAUGE_H, 20) }
     ;(globalThis as { __tpUpdater?: Updater }).__tpUpdater = updater
     const { runDevShots } = await import('./devshot')

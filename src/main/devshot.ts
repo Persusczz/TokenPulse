@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { appendFile, mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { nativeImage as images, screen, type BrowserWindow } from 'electron'
@@ -90,6 +90,143 @@ export async function runDevShots(dir: string, main: BrowserWindow, mini: Browse
   }
 
   // the overview's AI 做了什么 and 个人纪录, over a few ranges, both themes and each tool
+  // the floating window: where it landed from the saved place, then its two buttons clicked with the real mouse
+  // (click-through on, as the user had it); TP_MINI_THROUGH=0 clicks with click-through off
+  if (process.env.TP_SHOTS === 'minifix') {
+    const through = process.env.TP_MINI_THROUGH !== '0'
+    const settingsNow = () => js('window.api.getSettings()') as Promise<{ showMini: boolean; miniPosition: unknown; miniClickThrough: boolean }>
+    const findMini = () => (globalThis as { __tpMini?: () => BrowserWindow | null }).__tpMini?.() ?? null
+    await log({ step: 'start', displays: screen.getAllDisplays().map((d) => ({ id: d.id, workArea: d.workArea, scale: d.scaleFactor })), mini: mini?.getBounds(), saved: (await settingsNow()).miniPosition })
+    if (mini) await shot(mini, 'minifix-start')
+    await set({ miniClickThrough: through, miniEdgeHide: false })
+    await wait(800)
+    /**
+     * real mouse input through user32: move onto the point, let the page see it, click. The moves go
+     * through mouse_event (absolute, over the virtual desktop) rather than SetCursorPos: only input
+     * events pass the low-level mouse hook Electron forwards moves with in click-through mode
+     */
+    const mouse = (x: number, y: number, clickIt: boolean) => {
+      const p = screen.dipToScreenPoint({ x, y })
+      const vx = execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', 'Add-Type -AssemblyName System.Windows.Forms; $v = [System.Windows.Forms.SystemInformation]::VirtualScreen; "$($v.X) $($v.Y) $($v.Width) $($v.Height)"'])
+        .toString()
+        .trim()
+        .split(' ')
+        .map(Number)
+      const nx = (px: number) => Math.round(((px - vx[0]) * 65535) / (vx[2] - 1))
+      const ny = (py: number) => Math.round(((py - vx[1]) * 65535) / (vx[3] - 1))
+      // MOVE | ABSOLUTE | VIRTUALDESK
+      const move = (px: number, py: number) => `[W.M]::mouse_event(0xC001, ${nx(px)}, ${ny(py)}, 0, [UIntPtr]::Zero)`
+      const ps = [
+        'Add-Type -Namespace W -Name M -MemberDefinition \'[DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, uint d, UIntPtr e);\'',
+        `${move(p.x - 40, p.y)}; Start-Sleep -Milliseconds 150`,
+        ...Array.from({ length: 9 }, (_, i) => `${move(p.x - 40 + i * 5, p.y)}; Start-Sleep -Milliseconds 25`),
+        `Start-Sleep -Milliseconds 350`,
+        clickIt ? `[W.M]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 60; [W.M]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 400` : ''
+      ].join('; ')
+      // async: the main process must keep polling the pointer while the mouse moves
+      return new Promise<void>((resolve) => execFile('powershell', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(ps, 'utf16le').toString('base64')], { timeout: 20_000 }, () => resolve()))
+    }
+    const button = async (w: BrowserWindow, i: number) => {
+      const r = await w.webContents.executeJavaScript(
+        `(() => { const b = document.querySelectorAll('.mini-btns button')[${i}]; if (!b) return null; const r = b.getBoundingClientRect(); const z = Number(document.documentElement.style.zoom || 1); return { x: (r.x + r.width / 2) * z, y: (r.y + r.height / 2) * z } })()`
+      )
+      if (!r) return null
+      const b = w.getBounds()
+      return { x: Math.round(b.x + r.x), y: Math.round(b.y + r.y) }
+    }
+    const back = screen.getCursorScreenPoint()
+    // what reaches the page
+    const listen = (w: BrowserWindow) =>
+      w.webContents.executeJavaScript(
+        `window.__ev = []; for (const t of ['mouseover', 'pointerdown', 'pointerup', 'click']) document.addEventListener(t, (e) => { const n = t + ':' + (e.target.closest?.('button') ? 'button' : e.target.className || e.target.tagName); if (window.__ev[window.__ev.length - 1] !== n) window.__ev.push(n) }, true); true`
+      )
+    const heard = (w: BrowserWindow | null) => (w && !w.isDestroyed() ? w.webContents.executeJavaScript('window.__ev') : Promise.resolve('gone'))
+    // 1) 打开主窗口
+    main.hide()
+    await wait(600)
+    let w = findMini() ?? mini
+    if (w) await listen(w)
+    const open = w ? await button(w, 0) : null
+    const hot = () => (globalThis as { __tpMiniHot?: () => unknown }).__tpMiniHot?.()
+    await log({ step: 'before-open', hot: hot() })
+    if (w && open) await mouse(open.x, open.y, true)
+    await log({ step: 'after-open-click', hot: hot() })
+    await wait(800)
+    await log({ step: 'open-main', through, at: open, cursor: screen.getCursorScreenPoint(), bounds: w?.getBounds(), heard: await heard(w), mainVisible: main.isVisible() })
+    // 2) 关闭悬浮窗
+    w = findMini() ?? mini
+    if (w && !w.isDestroyed()) await listen(w)
+    const close = w && !w.isDestroyed() ? await button(w, 1) : null
+    if (w && close) await mouse(close.x, close.y, true)
+    await wait(1000)
+    const after = await settingsNow()
+    await log({ step: 'close-mini', through, at: close, heard: await heard(findMini()), showMini: after.showMini, miniGone: !findMini() })
+    const p = screen.dipToScreenPoint(back)
+    const home = `Add-Type -Namespace W -Name M -MemberDefinition '[DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);'; [W.M]::SetCursorPos(${p.x}, ${p.y}) | Out-Null`
+    execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(home, 'utf16le').toString('base64')])
+    // put it back, as the user had it
+    await set({ showMini: true })
+    await wait(1500)
+    await log({ step: 'reopened', mini: findMini()?.getBounds() ?? null })
+    // the island listens for the pointer the same way
+    await set({ island: true })
+    await wait(3000)
+    const { BrowserWindow: BW } = await import('electron')
+    const isl = BW.getAllWindows().find((x) => x.webContents.getURL().includes('#/island'))
+    if (isl) {
+      await listen(isl)
+      const r = await isl.webContents.executeJavaScript(`(() => { const r = document.querySelector('.island')?.getBoundingClientRect(); return r ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null })()`)
+      const b = isl.getBounds()
+      main.hide()
+      await wait(400)
+      if (r) await mouse(Math.round(b.x + r.x), Math.round(b.y + r.y), false)
+      await wait(700)
+      const hovered = await isl.webContents.executeJavaScript(`document.querySelector('.island')?.className ?? null`)
+      await shot(isl, 'minifix-island-hover')
+      // and a click on the pill opens the main window
+      const r2 = await isl.webContents.executeJavaScript(`(() => { const r = document.querySelector('.island')?.getBoundingClientRect(); return r ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null })()`)
+      if (r2) await mouse(Math.round(b.x + r2.x), Math.round(b.y + r2.y), true)
+      await wait(800)
+      await log({ step: 'island', at: r && { x: Math.round(b.x + r.x), y: Math.round(b.y + r.y) }, heard: await heard(isl), hovered, mainVisible: main.isVisible(), zone: hot() })
+      execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(home, 'utf16le').toString('base64')])
+    }
+    await set({ island: false })
+    await wait(500)
+    done()
+    return
+  }
+
+  // Tibo's resets on the Codex overview (TP_RESETS_API = the real site's /api/v1 or a local stand-in)
+  if (process.env.TP_SHOTS === 'resets') {
+    await main.webContents.insertCSS('.celebrate, .toasts, .toast { display: none !important }')
+    await set({ themePack: 'none', theme: 'dark', backdrop: 'flow', sourceFilter: 'codex' })
+    await js(click('概览'))
+    await wait(4000)
+    await js(scrollTo('.resets-card'))
+    await wait(1800)
+    await shot(main, 'resets-dark', await js(rectOf('.resets-card')))
+    await log({ resets: await js('window.api.getCodexResets().then((r) => ({ status: r.status, error: r.error, latest: r.latest?.id, hint: !!r.hint, scheduled: !!r.scheduled, history: r.history.length, effects: r.effects }))') })
+    // hovering an older reset shows it in place of the latest
+    await js(`(() => { const d = document.querySelectorAll('.rs-dot'); const el = d[Math.max(0, d.length - 3)]; el && el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); return d.length })()`)
+    await wait(600)
+    await shot(main, 'resets-hover', await js(rectOf('.resets-card')))
+    await set({ theme: 'light' })
+    await wait(1500)
+    await js(scrollTo('.resets-card'))
+    await wait(800)
+    await shot(main, 'resets-light', await js(rectOf('.resets-card')))
+    await set({ theme: 'dark', sourceFilter: 'all' })
+    await wait(2500)
+    await log({ inAll: await js(`!!document.querySelector('.resets-card')`) })
+    await set({ sourceFilter: 'claude' })
+    await wait(2500)
+    await log({ inClaude: await js(`!!document.querySelector('.resets-card')`) })
+    await js(click('设置'))
+    await wait(1500)
+    done()
+    return
+  }
+
   if (process.env.TP_SHOTS === 'activity') {
     await main.webContents.insertCSS('.celebrate, .toasts, .toast { display: none !important }')
     await set({ themePack: 'none', theme: 'dark', backdrop: 'flow', sourceFilter: 'all' })
