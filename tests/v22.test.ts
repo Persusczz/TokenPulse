@@ -118,5 +118,23 @@ process.stdin.resume(); process.stdin.on('end', () => {
     const done2 = new Promise<ScheduledTask>((res) => again.once('finished', res))
     again.add({ prompt: 'hi', cwd: join(dir, 'w'), tool: 'codex', trigger: 'now' })
     expect((await done2).summary).toBe('ok gpt-5.5')
+
+    // swapping switched off: the refused model fails the task, once, with what to pick
+    const strict = new TaskService(join(dir, 'tasks2.json'), join(dir, 'logs2'), {
+      window: () => ({ five: null, localEnd: null }),
+      blocker: () => null,
+      claude: async () => null,
+      codex: async () => 'codex',
+      command: () => ({ cmd: process.execPath, pre: [fake] }),
+      codexFallback: () => false
+    })
+    await strict.load()
+    const done3 = new Promise<ScheduledTask>((res) => strict.once('finished', res))
+    strict.add({ prompt: 'hi', cwd: join(dir, 'w'), tool: 'codex', trigger: 'now', retries: 2 })
+    const r3 = await done3
+    expect(r3.status).toBe('failed')
+    expect(r3.attempts).toHaveLength(1)
+    expect(r3.error).toContain('gpt-6.1-sol 不能用 ChatGPT 账号')
+    expect(strict.codexRefuses(null)).toBe(true)
   })
 })

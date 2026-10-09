@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { CostedEntry } from '../src/main/aggregate'
-import { buildCycles } from '../src/main/cycles'
+import { buildCycles, measureWeekShare, weekShares, type QuotaReading } from '../src/main/cycles'
 import { ZERO_COST } from '../src/main/pricing/cost'
-import { noteWeek, type LoggedWeek } from '../src/main/windowHistory'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { ClaudeWindowLog, noteWeek, type LoggedWeek } from '../src/main/windowHistory'
 
 const H = 3_600_000
 const D = 24 * H
@@ -103,6 +106,111 @@ describe('quota cycles', () => {
     expect(d.map((x) => [x.start, x.estimated, x.messages])).toEqual([
       [at(9, 48), false, 1],
       [at(14, 48) + 35_000, false, 0]
+    ])
+  })
+
+  it("shares each week's reading out over its 5-hour windows by cost", () => {
+    const W = 7 * D
+    const last = { start: at(0) - W, end: at(0), pct: 40, hitAt: null }
+    const open = { start: at(0), end: at(0) + W, pct: 12, hitAt: null }
+    const entries = [e(at(-30), { cost: { ...ZERO_COST, total: 3 } }), e(at(-29), { cost: { ...ZERO_COST, total: 1 } }), e(at(2), { cost: { ...ZERO_COST, total: 2 } }), e(at(10), { cost: { ...ZERO_COST, total: 4 } })]
+    const now = at(11)
+    const seven = buildCycles({ kind: '7d', entries, known: [last], current: open, from: now - 70 * D, now, label })
+    const five = buildCycles({ kind: '5h', entries, known: [], current: null, from: now - 7 * D, now, label })
+    weekShares(five, seven, entries)
+    // last week: $4 for 40%, this week: $6 for 12%
+    expect(five.map((c) => [c.start, c.weekPct, c.weekEst])).toEqual([
+      [at(-30), 40, false],
+      [at(2), 4, false],
+      [at(10), 8, false]
+    ])
+  })
+
+  it('borrows the nearest rate for a week that has no usable reading yet', () => {
+    const W = 7 * D
+    const last = { start: at(0) - W, end: at(0), pct: 50, hitAt: null }
+    const open = { start: at(0), end: at(0) + W, pct: 1, hitAt: null }
+    const entries = [e(at(-20), { cost: { ...ZERO_COST, total: 10 } }), e(at(3), { cost: { ...ZERO_COST, total: 2 } })]
+    const seven = buildCycles({ kind: '7d', entries, known: [last], current: open, from: at(-200), now: at(4), label })
+    const five = buildCycles({ kind: '5h', entries, known: [], current: null, from: at(-100), now: at(4), label })
+    weekShares(five, seven, entries)
+    expect(five.map((c) => [c.weekPct, c.weekEst])).toEqual([
+      [50, false],
+      [10, true]
+    ])
+    // no weekly reading at all: nothing to go by
+    const bare = buildCycles({ kind: '5h', entries, known: [], current: null, from: at(-100), now: at(4), label })
+    weekShares(bare, [], entries)
+    expect(bare.map((c) => c.weekPct)).toEqual([null, null])
+  })
+
+  it('measures a window by the 7-day readings when it opened and closed', () => {
+    const E = at(100)
+    const r = (t0: number, t1: number, five: number | null, pct: number, end = E): QuotaReading => ({ t0, t1, five, pct, end })
+    const w1 = { start: at(10), end: at(15), current: false }
+    const w2 = { start: at(16), end: at(21), current: false }
+    const rs = [r(at(9), at(9, 30), null, 20), r(at(10, 5), at(12), at(15), 22), r(at(12, 1), at(14, 58), at(15), 26), r(at(16, 2), at(20, 59), at(21), 30)]
+    // opened after a quiet reading, closed read near its end
+    expect(measureWeekShare(w1, rs, false)).toBe(6)
+    // opened right where the last window was read near its end
+    expect(measureWeekShare(w2, rs, false)).toBe(4)
+    // the closing reading came hours early and the next one is in another window: unknown
+    const early = [r(at(9), at(9), null, 20), r(at(10, 5), at(12), at(15), 22), r(at(16, 2), at(16, 30), at(21), 30)]
+    expect(measureWeekShare(w1, early, false)).toBeNull()
+    // ...but a reading in the quiet after it closes it
+    expect(measureWeekShare(w1, [...early.slice(0, 2), r(at(15, 20), at(15, 40), null, 25), early[2]], false)).toBe(5)
+    // with no reading before it, one in its first minutes opens it
+    expect(measureWeekShare(w1, [r(at(10, 4), at(14, 55), at(15), 24)], false)).toBe(0)
+    expect(measureWeekShare(w1, [r(at(11), at(14, 55), at(15), 24)], false)).toBeNull()
+    // a reading taken mid-way through the window before can't open it (more may have been used after)
+    expect(measureWeekShare(w2, [r(at(10, 5), at(12), at(15), 22), r(at(16, 30), at(20, 59), at(21), 30)], false)).toBeNull()
+    // unless every response logs a reading, as Codex does
+    expect(measureWeekShare(w2, [r(at(10, 5), at(12), at(15), 22), r(at(16, 2), at(17), at(21), 30)], true)).toBe(8)
+    // the open window: so far
+    expect(measureWeekShare({ ...w2, current: true }, [r(at(15, 10), at(15, 10), null, 26), r(at(16, 2), at(17), at(21), 28)], false)).toBe(2)
+  })
+
+  it('adds both parts when the week turns over inside a window', () => {
+    const E1 = at(13)
+    const E2 = E1 + 7 * D
+    const rs: QuotaReading[] = [
+      { t0: at(9), t1: at(9), five: null, pct: 90, end: E1 },
+      { t0: at(10, 3), t1: at(12, 59), five: at(15), pct: 95, end: E1 },
+      { t0: at(13, 1), t1: at(14, 59), five: at(15), pct: 3, end: E2 }
+    ]
+    expect(measureWeekShare({ start: at(10), end: at(15), current: false }, rs, false)).toBe(8)
+  })
+
+  it('shares what measured windows leave of the week over the others by cost', () => {
+    const W = 7 * D
+    const week = { start: at(0), end: at(0) + W, pct: 30, hitAt: null }
+    const entries = [e(at(1), { cost: { ...ZERO_COST, total: 10 } }), e(at(7), { cost: { ...ZERO_COST, total: 10 } }), e(at(13), { cost: { ...ZERO_COST, total: 10 } })]
+    const now = at(14)
+    const seven = buildCycles({ kind: '7d', entries, known: [], current: week, from: now - 70 * D, now, label })
+    const five = buildCycles({ kind: '5h', entries, known: [], current: null, from: now - 7 * D, now, label })
+    weekShares(five, seven, entries, (c) => (c.start === at(7) ? 15 : null))
+    expect(five.map((c) => [c.weekPct, c.weekMeasured])).toEqual([
+      [7.5, false],
+      [15, true],
+      [7.5, false]
+    ])
+  })
+
+  it('logs a 7-day reading per change, and until when it held', () => {
+    const log = new ClaudeWindowLog(join(mkdtempSync(join(tmpdir(), 'tp-pairs-')), 'window-history.json'))
+    const E = at(100)
+    log.recordPair(at(9), null, 20, E)
+    log.recordPair(at(9, 1), null, 20, E)
+    log.recordPair(at(10, 5), at(15), 20, E)
+    log.recordPair(at(10, 6), at(15) + 30_000, 20, E)
+    log.recordPair(at(11), at(15), 22, E)
+    // an older reading arriving late is dropped
+    log.recordPair(at(10), at(15), 21, E)
+    log.flush()
+    expect(log.pairs).toEqual([
+      { t0: at(9), t1: at(9, 1), five: null, pct: 20, end: E },
+      { t0: at(10, 5), t1: at(10, 6), five: at(15), pct: 20, end: E },
+      { t0: at(11), t1: at(11), five: at(15), pct: 22, end: E }
     ])
   })
 

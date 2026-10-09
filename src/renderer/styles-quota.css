@@ -510,6 +510,18 @@ svg.q-rewind .q-arc {
   bottom: 2px;
   border-left: 1px dashed var(--grid);
 }
+/* "占 7 天": where a new weekly window starts */
+.cy-col.new-week::before {
+  content: '';
+  position: absolute;
+  left: -2.5px;
+  top: 0;
+  bottom: 2px;
+  border-left: 1.5px solid rgba(var(--accent-rgb), 0.55);
+}
+.cy-col.new-week .cy-x em {
+  color: var(--accent-strong);
+}
 .cy-bar {
   flex: 1;
   display: flex;

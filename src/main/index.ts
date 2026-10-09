@@ -41,9 +41,11 @@ import type {
   QuotaRate,
   RangeKey,
   RunawayAlert,
+  ScheduledTask,
   Settings,
   SourceView,
   TarotDeck,
+  TaskPermission,
   TelegramResult,
   TitleCorner,
   UpdateEvent,
@@ -74,7 +76,7 @@ import { findNode, GuardService, type GuardExtra } from './guard'
 import { chatgptPlan, computeValue, forecastWeekly, PLAN_PRICES } from './insights'
 import { costByPrompt, indexPrompts, promptReport } from './prompts'
 import { buildHistory, ClaudeWindowLog, estimateClaudeWindows } from './windowHistory'
-import { buildCycles, CYCLE_MS, type KnownWindow } from './cycles'
+import { buildCycles, CYCLE_MS, measureWeekShare, weekShares, type KnownWindow } from './cycles'
 import { contains, dockedPosition, hiddenPosition, MINI_MARGIN, miniSize, miniPlace, restorePosition, snapToEdge, type Dock, type Rect } from './miniGeometry'
 import { PricingService } from './pricing'
 import { WorkBuddyBilling } from '../features/workbuddy/billing'
@@ -95,10 +97,11 @@ import { placeOf } from '@shared/astro'
 import { PACKS } from '@shared/packs'
 import { raceSeries, starMap } from './race'
 import { claudeDialogue, codexDialogue } from './dialogue'
-import { findClaude, findCodex, TaskService, type WindowInfo } from './tasks'
+import { computeNotBefore, findClaude, findCodex, TaskService, type WindowInfo } from './tasks'
 import { escapeHtml, fold, TelegramBot, TelegramNotifier, type Button, type Command, type Effect, type KeyboardMode, type Message, type Reply } from './telegram'
 import { CARD_H, CARD_W, cardFrames, cardSvg, GAUGE_H, GAUGE_W, gaugeFrames, type CardData, type CardQuota, type GaugeAlert } from './tgCard'
 import { svgsToMp4, svgToJpeg } from './cardRender'
+import { draftButtons, draftCaption, draftStep, PANEL_H, PANEL_W, planText, span, taskPanelSvg, type DraftEnv, type TaskDraft, type ToolGlance } from './tgTask'
 import { stageInfo } from '@shared/stages'
 import { ARCANA, cardStory } from '@shared/tarot'
 import { cardFace } from '@shared/tarotArt'
@@ -163,6 +166,7 @@ const tasks = new TaskService(join(userData, 'tasks.json'), join(userData, 'task
   terminal: () => settings.value.taskTerminal,
   lastSession: lastSessionIn,
   // a compaction point given as a share: of the window Codex reports for the model (or its latest one)
+  codexFallback: () => settings.value.codexModelFallback,
   codexWindow: (model) => (model ? windowOf(model, 'codex', 0, codex.contextWindows) : ([...codex.contextWindows.values()].pop() ?? CODEX_WINDOW)),
   // Codex reports tokens: priced like its logs, with the model it ran
   price: (t, u) => {
@@ -440,7 +444,7 @@ const HELP = fold(
     '/resume 恢复暂停的任务',
     '/guard 额度守卫开关',
     '/report 立即发送今日晚报',
-    '/task 任务内容 排到下一次 5h 额度刷新时自动执行（/task codex 任务内容 交给 Codex）',
+    '/task 任务内容 打开发布面板：看着额度和刷新倒计时选工具、开始时间、文件夹（/task codex 任务内容 先选 Codex）',
     '/tasks 查看刷新任务队列，可以直接开始、停止、取消',
     '/log 正在执行（或最近一个）任务的日志',
     '/star 额度星空：5 小时额度是一颗恒星（星云→主序星→红巨星→超新星），7 天额度是它的轨道，用过的窗口留下星骸',
@@ -452,7 +456,7 @@ const HELP = fold(
     '/board on 置顶实时看板：聊天顶部一直显示额度（/board off 取消）',
     '/keys 拿回输入框下面的按钮 · /hide 收起它们',
     '',
-    '直接发文字也行：「状态」「卡片」「面板」这类词会当成指令，其他的话可以一键排成任务',
+    '直接发文字也行：「状态」「卡片」「面板」这类词会当成指令，其他的话会打开任务发布面板',
     '任务开始后会发一张进度卡，每半分钟自己更新一次，结束时变成结果；卡片上能停止、看日志、再次排队'
   ],
   3
@@ -713,7 +717,7 @@ async function panel(arg: string | undefined, action?: string): Promise<Reply> {
       : page === 'today'
         ? [{ text: '📰 发晚报', data: 'report' }]
         : page === 'tasks'
-          ? [{ text: '📜 日志', data: 'log' }, { text: '🗂 管理任务', data: 'tasks' }]
+          ? [{ text: '📝 发任务', data: 'task' }, { text: '📜 日志', data: 'log' }, { text: '🗂 管理任务', data: 'tasks' }]
           : []
   return {
     text: panelBody(page),
@@ -930,30 +934,186 @@ async function resumeAll(): Promise<{ text: string; toast: string }> {
   return { text: '▶️ 已恢复，暂停中的任务会继续执行', toast: '▶️ 已恢复' }
 }
 
-function queueTask(tool: UsageSource, prompt: string): { text: string; buttons?: Button[][] } {
-  const cwd = settings.value.taskCwd || homedir()
-  const s = settings.value
-  const t = tasks.add({
-    prompt,
-    cwd,
-    tool,
-    trigger: tool === 'workbuddy' ? 'manual' : 'reset',
-    permission: tool === 'workbuddy' ? 'inherit' : tool === 'codex' ? s.codexTaskPermission : s.taskPermission,
-    model: tool === 'workbuddy' ? null : tool === 'codex' ? s.codexTaskModel : s.taskModel,
-    continue: s.taskContinue,
-    autoCompact: s.taskAutoCompact,
-    compactAt: s.taskCompactAt,
-    retries: s.taskRetries,
-    timeoutMin: s.taskTimeoutMin
-  })
-  const text = `📥 已排队 ${toolLabel(tool)} 任务：<b>${escapeHtml(taskTitle(prompt))}</b>\n${tool === 'workbuddy' ? '等待手动开始（积分计费）' : t.notBefore <= Date.now() + 5000 ? '额度空闲，马上开始' : `将在 ${clockOf(t.notBefore)} 额度刷新后开始`}\n目录：${escapeHtml(cwd)}`
-  // WorkBuddy has no refresh to start at: offer the start right here
-  return tool === 'workbuddy' ? { text, buttons: [[{ text: '▶️ 现在开始', data: `taskstart ${shortId(t.id)}` }, { text: '✕ 取消', data: `taskcancel ${shortId(t.id)}` }]] } : { text }
+// ---------- publishing a task: one message like the app's task form ----------
+
+/** drafts by a short id (button data holds 64 bytes); a restart forgets them */
+const drafts = new Map<string, TaskDraft>()
+let draftSeq = 0
+
+/** the tools a task can go to */
+const taskTools = (): UsageSource[] => ['claude', ...(settings.value.codexEnabled ? (['codex'] as const) : []), ...(settings.value.workbuddyEnabled ? (['workbuddy'] as const) : [])]
+/** the tool on view, or Claude under 全部 */
+function defaultTaskTool(): UsageSource {
+  const v = source()
+  return v !== 'all' && taskTools().includes(v) ? v : 'claude'
 }
 
-/** plain messages offered as tasks, by a short id (button data holds 64 bytes) */
-const offered = new Map<string, string>()
-let offerSeq = 0
+/** the folder in settings, then the latest folders tasks ran in */
+function taskFolders(): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const p of [settings.value.taskCwd || homedir(), ...[...tasks.tasks].sort((a, b) => b.createdAt - a.createdAt).map((t) => t.cwd)]) {
+    const k = p.replace(/[\\/]+$/, '').toLowerCase()
+    if (!p || seen.has(k)) continue
+    seen.add(k)
+    out.push(p)
+    if (out.length === 3) break
+  }
+  return out
+}
+
+/** the GPT models seen in Codex's logs, newest first, without those the account refused for tasks */
+function codexModelsSeen(): string[] {
+  const out: string[] = []
+  for (let i = codexCosted.length - 1; i >= 0 && out.length < 4; i--) {
+    const m = codexCosted[i].model
+    if (/^gpt-/i.test(m) && m !== 'gpt-unknown' && !out.includes(m) && !tasks.codexRefuses(m)) out.push(m)
+  }
+  return out
+}
+
+const PERMISSION_NAMES: Record<UsageSource, Partial<Record<TaskPermission, string>>> = {
+  claude: { inherit: '跟随 Claude Code 设置', auto: '自动', acceptEdits: '允许改文件', bypassPermissions: '完全放行', plan: '只做规划' },
+  codex: { inherit: '跟随 Codex 设置', plan: '只读', acceptEdits: '可写工作区', bypassPermissions: '完全放行' },
+  workbuddy: { inherit: '跟随 WorkBuddy 设置' }
+}
+const taskPermission = (tool: UsageSource): TaskPermission => (tool === 'workbuddy' ? 'inherit' : tool === 'codex' ? settings.value.codexTaskPermission : settings.value.taskPermission)
+const taskModel = (tool: UsageSource): string | null => (tool === 'workbuddy' ? null : (tool === 'codex' ? settings.value.codexTaskModel : settings.value.taskModel) || null)
+
+/** a tool's quota windows, 5 hours first */
+function toolWindows(tool: UsageSource): { label: string; pct: number; resetsAt: string | null }[] {
+  if (tool === 'claude') {
+    const five = fiveHourWindow(quota.info.windows)
+    const week = sevenDayWindow(quota.info.windows)
+    return [...(five ? [{ label: '5 小时额度', pct: five.utilization, resetsAt: five.resetsAt }] : []), ...(week ? [{ label: '7 天额度', pct: week.utilization, resetsAt: week.resetsAt }] : [])]
+  }
+  if (tool === 'codex') return (codexQ?.windows ?? []).map((w) => ({ label: w.key === 'codex_5h' ? '5 小时额度' : w.key === 'codex_7d' ? '7 天额度' : w.label, pct: w.utilization, resetsAt: w.resetsAt }))
+  return []
+}
+
+/** one tool's quota, next refresh and queue, as the task panel shows it */
+async function toolGlance(tool: UsageSource, now = Date.now()): Promise<ToolGlance> {
+  const st = tasks.state(now)
+  const info = st.tools[tool] ?? { cli: null, nextReset: null, waiting: null }
+  const mine = st.tasks.filter((t) => (t.tool ?? 'claude') === tool)
+  const queued = mine.filter((t) => t.status === 'queued')
+  const reset = tool === 'workbuddy' ? null : info.nextReset
+  const o = tool === 'workbuddy' ? (wbOutlook ?? (await workbuddyOutlook(false).catch(() => null))) : null
+  return {
+    tool,
+    name: tool === 'claude' ? 'Claude Code' : toolLabel(tool),
+    accent: accentHex({ accent: settings.value.accent, sourceFilter: tool }),
+    windows: toolWindows(tool).map((w) => ({ label: w.label, pct: w.pct, reset: w.resetsAt ? `${whenLabel(Date.parse(w.resetsAt), now)} 重置` : null })),
+    nextReset: reset,
+    credits: tool === 'workbuddy' ? { remaining: o?.remaining ?? null, total: o?.total ?? null, today: o?.today ?? null, dailyAvg: o?.dailyAvg ?? null, daysLeft: o?.daysLeft ?? null, plan: o?.plan ?? '' } : undefined,
+    queued: queued.length,
+    atReset: reset ? queued.filter((t) => !t.parentId && t.trigger === 'reset' && t.notBefore <= reset + 120_000).length : 0,
+    running: mine.filter((t) => t.status === 'running').length,
+    waiting: taskBlocker(tool),
+    cli: !!info.cli,
+    guard: tool === 'claude' && settings.value.guardEnabled ? `守卫：5h 到 ${settings.value.guardPauseAt}% 时暂停` : null
+  }
+}
+
+/** a tool's quota in one line: "📊 Claude：5h 42% · 7 天 18% · 2 小时 13 分后刷新（14:00）" */
+function taskGlanceLine(tool: UsageSource, now = Date.now()): string {
+  if (tool === 'workbuddy') {
+    const o = wbOutlook
+    return `💳 WorkBuddy：剩余 <b>${o?.remaining != null ? Math.round(o.remaining).toLocaleString('en-US') : '—'}</b> 积分${o?.daysLeft != null ? ` · 约 ${Math.round(o.daysLeft)} 天` : ''}`
+  }
+  const reset = tasks.state(now).tools[tool]?.nextReset ?? null
+  const ws = toolWindows(tool).map((w) => `${w.label.replace(' 小时额度', 'h').replace('额度', '')} <b>${Math.round(w.pct)}%</b>`)
+  return `📊 ${toolLabel(tool)}：${ws.join(' · ') || '额度暂无数据'} · ${reset ? `${span(reset - now)}后刷新（${hhmm(reset)}）` : '额度空闲'}`
+}
+
+/** what a draft needs to know, the quota picture aside */
+function draftBase(d: TaskDraft, now = Date.now()): Omit<DraftEnv, 'glance'> {
+  const tools = taskTools()
+  return {
+    now,
+    tools: tools.includes(d.tool) ? tools : [...tools, d.tool],
+    startAt: (tool, trigger) => computeNotBefore(trigger, null, now, taskWindow(tool)),
+    models: (tool) => (tool === 'claude' ? ['opus', 'sonnet', 'haiku'] : tool === 'codex' ? codexModelsSeen() : []),
+    defaultModel: taskModel,
+    refused: (tool, model) => tool === 'codex' && !settings.value.codexModelFallback && tasks.codexRefuses(model),
+    permission: (tool) => PERMISSION_NAMES[tool][taskPermission(tool)] ?? taskPermission(tool)
+  }
+}
+
+/** the panel of a draft; `picture` draws its quota picture again, else only the caption and buttons change */
+async function draftMessage(d: TaskDraft, picture: boolean): Promise<Message> {
+  const env: DraftEnv = { ...draftBase(d), glance: await toolGlance(d.tool) }
+  const photo = picture && d.photo ? await svgToJpeg(taskPanelSvg(env.glance, planText(d, env), env.now), PANEL_W, PANEL_H).catch(() => undefined) : undefined
+  return { text: draftCaption(d, env), buttons: draftButtons(d, env), photo, caption: d.photo && !photo }
+}
+
+/** a new draft for a prompt, shown as the panel */
+async function openDraft(prompt: string, tool: UsageSource): Promise<Message> {
+  const s = settings.value
+  const folders = taskFolders()
+  const id = (++draftSeq).toString(36)
+  const d: TaskDraft = { id, prompt, tool, trigger: tool === 'workbuddy' ? 'manual' : 'reset', cwd: folders[0], folders, model: null, retries: s.taskRetries, cont: s.taskContinue, photo: true }
+  drafts.set(id, d)
+  if (drafts.size > 20) drafts.delete(drafts.keys().next().value!)
+  const m = await draftMessage(d, true)
+  if (m.photo) return m
+  // no picture: the panel is text from the start
+  d.photo = false
+  return draftMessage(d, false)
+}
+
+/** a tap on a draft's panel */
+async function draftCommand(id: string | undefined, action: string | undefined, arg: string | undefined): Promise<Reply> {
+  const d = drafts.get(id ?? '')
+  if (!d) return { text: '', skip: true, toast: '这条草稿已失效（TokenPulse 重启过或已处理），把任务内容再发一次' }
+  if (action === 'no') {
+    drafts.delete(d.id)
+    return { text: `✕ <s>${escapeHtml(taskTitle(d.prompt))}</s>\n没有排队`, caption: d.photo, toast: '已放弃' }
+  }
+  if (action === 'go') {
+    const s = settings.value
+    let t: ScheduledTask
+    try {
+      t = tasks.add({
+        prompt: d.prompt,
+        cwd: d.cwd,
+        tool: d.tool,
+        trigger: d.trigger,
+        permission: taskPermission(d.tool),
+        model: d.tool === 'workbuddy' ? null : (d.model ?? taskModel(d.tool)),
+        continue: d.cont,
+        autoCompact: d.tool === 'codex' || s.taskAutoCompact,
+        compactAt: s.taskCompactAt,
+        retries: d.retries,
+        timeoutMin: s.taskTimeoutMin
+      })
+    } catch (e) {
+      return { text: '', skip: true, toast: `没排上：${e instanceof Error ? e.message : String(e)}` }
+    }
+    drafts.delete(d.id)
+    const sid = shortId(t.id)
+    const when = t.trigger === 'manual' ? '先放着，点「现在开始」才执行' : t.notBefore <= Date.now() + 5000 ? '马上开始' : `${clockOf(t.notBefore)} 开始 · 还有 ${span(t.notBefore - Date.now())}`
+    return {
+      text: [`📥 <b>已排队</b> · ${escapeHtml(d.tool === 'claude' ? 'Claude Code' : toolLabel(d.tool))}`, `<blockquote>${escapeHtml(taskTitle(d.prompt))}</blockquote>`, `📁 <code>${escapeHtml(d.cwd)}</code>`, `▶️ ${escapeHtml(when)}`].join('\n'),
+      caption: d.photo,
+      buttons:
+        t.trigger === 'now'
+          ? [[{ text: '📜 日志', data: `tasklog ${sid}` }, { text: '📋 队列', data: 'tasks' }]]
+          : [[{ text: '▶️ 现在开始', data: `taskstart ${sid}` }, { text: '✕ 取消', data: `taskcancel ${sid}` }, { text: '📋 队列', data: 'tasks' }]],
+      toast: '📥 已排队'
+    }
+  }
+  const { picture } = draftStep(d, action ?? '', arg, draftBase(d))
+  return draftMessage(d, picture)
+}
+
+/** /task with nothing after it: how to publish one, and where each tool's quota stands */
+function taskHelp(): Message {
+  return {
+    text: ['📝 <b>发布任务</b>', '把任务内容直接发给我（或 /task 内容），会弹出发布面板：看着额度和刷新时间，选工具、开始时间和文件夹，再加入队列。', '', ...taskTools().map((t) => taskGlanceLine(t))].join('\n'),
+    buttons: [[{ text: '📋 队列', data: 'tasks' }, { text: '🔄', data: 'e:task' }]]
+  }
+}
 
 async function onCommand(cmd: Command): Promise<Reply> {
   let reply: Reply
@@ -1053,44 +1213,26 @@ async function onCommand(cmd: Command): Promise<Reply> {
       break
     }
     case 'task': {
-      // "/task codex …" queues a Codex task
+      // "/task codex …" starts the panel on Codex
       const first = cmd.args[0]?.toLowerCase()
-      const tool: UsageSource = first === 'workbuddy' ? 'workbuddy' : first === 'codex' ? 'codex' : 'claude'
-      const prompt = (first === 'codex' || first === 'claude' || first === 'workbuddy' ? cmd.args.slice(1) : cmd.args).join(' ').trim()
-      reply = prompt ? { ...queueTask(tool, prompt), react: '✍' } : '用法：/task 任务内容（Codex 任务：/task codex 任务内容；WorkBuddy 任务：/task workbuddy 任务内容）\n例如 /task 把 tests 里失败的用例修好并跑一遍测试'
+      const named = first === 'codex' || first === 'claude' || first === 'workbuddy' ? first : null
+      const prompt = (named ? cmd.args.slice(1) : cmd.args).join(' ').trim()
+      reply = prompt ? { ...(await openDraft(prompt, named ?? defaultTaskTool())), react: '✍' } : taskHelp()
       break
     }
     case 'plain': {
+      // anything that is not a command can become a task
       const text = cmd.plain ?? ''
-      if (!text) {
-        reply = '发送 /help 查看可用指令'
-        break
-      }
-      const id = (++offerSeq).toString(36)
-      offered.set(id, text)
-      if (offered.size > 20) offered.delete(offered.keys().next().value!)
-      const tools: Button[] = [{ text: '📥 排成 Claude 任务', data: `e:offer ${id} claude` }]
-      if (settings.value.codexEnabled) tools.push({ text: '📥 Codex 任务', data: `e:offer ${id} codex` })
-      if (settings.value.workbuddyEnabled) tools.push({ text: '📥 WorkBuddy', data: `e:offer ${id} workbuddy` })
-      reply = {
-        text: `💭 「${escapeHtml(text.length > 120 ? `${text.slice(0, 119)}…` : text)}」\n要把这句话排成任务吗？下一次额度刷新时自动执行。\n想看状态的话点 🎛 面板，或者发 /help`,
-        buttons: [tools, [{ text: '✕ 不用了', data: `e:offer ${id} no` }, { text: '🎛 面板', data: 'e:panel status' }]]
-      }
+      reply = text ? await openDraft(text, defaultTaskTool()) : '发送 /help 查看可用指令'
       break
     }
-    case 'offer': {
-      const [id, tool] = cmd.args
-      const text = offered.get(id ?? '')
-      if (tool === 'no') {
-        offered.delete(id ?? '')
-        reply = { text: '👌 好的，没有排队', toast: '已忽略' }
-      } else if (!text) reply = '这条消息找不到了（TokenPulse 重启过），重新发一次吧'
-      else {
-        offered.delete(id)
-        reply = { ...queueTask(tool === 'codex' || tool === 'workbuddy' ? tool : 'claude', text), toast: '📥 已排队' }
-      }
+    case 'draft':
+      reply = await draftCommand(cmd.args[0], cmd.args[1], cmd.args[2])
       break
-    }
+    case 'offer':
+      // buttons of the offers older versions sent
+      reply = { text: '', skip: true, toast: '这条消息已失效，把任务内容再发一次' }
+      break
     case 'pause': {
       const r = await pauseAll()
       reply = { text: r.text, buttons: [[{ text: '▶️ 恢复', data: 'resume' }]], react: '🫡', toast: r.toast }
@@ -1248,11 +1390,15 @@ tasks.on('finished', (t) => {
 function tasksText(): string {
   const s = tasks.state()
   const list = s.tasks.filter((t) => t.status === 'queued' || t.status === 'running').sort((a, b) => a.order - b.order)
-  if (!list.length) return '队列里没有任务。发送 /task 任务内容 就能排到下一次额度刷新'
+  // where each tool's quota stands, the way the task page opens
+  const glance = taskTools().map((t) => taskGlanceLine(t))
+  if (!list.length) return ['📋 <b>刷新任务</b>', ...glance, '', '队列里没有任务。把任务内容直接发给我，就会弹出发布面板'].join('\n')
   const parentOf = (t: (typeof list)[number]) => (t.parentId ? s.tasks.find((x) => x.id === t.parentId) : undefined)
   const both = new Set(list.map((t) => t.tool ?? 'claude')).size > 1
   return [
     '📋 <b>刷新任务</b>',
+    ...glance,
+    '',
     ...list.map((t) => {
       const tag = both ? `[${toolLabel(t.tool)}] ` : ''
       const parent = parentOf(t)
@@ -1480,11 +1626,15 @@ function quotaCycles(now = Date.now()): QuotaCycles[] {
     const weeks = (src === 'codex' ? codex.weeks : windowLog.weeks).map((w) => ({ start: w.end - CYCLE_MS['7d'], end: w.end, pct: w.peak, hitAt: null }))
     const entries = src === 'codex' ? codexCosted : claudeCosted
     const base = { entries, now, label: modelLabel }
-    return {
+    const c = {
       source: src,
       five: buildCycles({ ...base, kind: '5h', known: five, current: open('5h'), from: now - 7 * 86_400_000 }),
       seven: buildCycles({ ...base, kind: '7d', known: weeks, current: open('7d'), from: now - 70 * 86_400_000 })
     }
+    // Codex logs a reading with every response; Claude's are read every minute while TokenPulse runs
+    const readings = src === 'codex' ? codex.readings() : windowLog.pairs
+    weekShares(c.five, c.seven, entries, (w) => measureWeekShare(w, readings, src === 'codex'))
+    return c
   })
 }
 
@@ -3159,7 +3309,13 @@ quota.on('change', (q: QuotaInfo) => {
     windowLog.record(five.utilization, Date.parse(five.resetsAt), Math.min(Date.now(), q.fetchedAt ?? Date.now()))
   }
   const seven = sevenDayWindow(q.windows)
-  if (seven?.resetsAt && q.origin !== 'local' && q.status === 'ok') windowLog.recordWeek(seven.utilization, Date.parse(seven.resetsAt), Math.min(Date.now(), q.fetchedAt ?? Date.now()))
+  if (seven?.resetsAt && q.origin !== 'local' && q.status === 'ok') {
+    const t = Math.min(Date.now(), q.fetchedAt ?? Date.now())
+    windowLog.recordWeek(seven.utilization, Date.parse(seven.resetsAt), t)
+    // the week's reading next to the 5-hour window open now: what each window took of the week, measured
+    const fiveEnd = five?.resetsAt && five.utilization > 0 ? Date.parse(five.resetsAt) : NaN
+    windowLog.recordPair(t, fiveEnd > t ? fiveEnd : null, seven.utilization, Date.parse(seven.resetsAt))
+  }
   broadcast('quota:update', q)
   void guard.publishQuota(q)
   onQuotaReading(q)

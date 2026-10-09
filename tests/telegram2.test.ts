@@ -84,6 +84,14 @@ describe('telegram: pictures, effects, reactions', () => {
     expect(calls[0].raw!.toString()).toContain('"media":"attach://card"')
   })
 
+  it('keeps the picture and changes only its caption and buttons', async () => {
+    const { calls, api } = fakeApi()
+    await api.edit('1:A', '42', 5, { text: '<b>草稿</b>', caption: true, buttons: [[{ text: '✅', data: 'e:draft 1 go' }]] })
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({ method: 'editMessageCaption', body: { message_id: 5, caption: '<b>草稿</b>', parse_mode: 'HTML' } })
+    expect(calls[0].body.reply_markup.inline_keyboard[0][0].callback_data).toBe('e:draft 1 go')
+  })
+
   it('plays effects only in private chats, and drops one the chat refuses', async () => {
     const { calls, api } = fakeApi(
       () => ({ message_id: 1 }),
@@ -127,7 +135,8 @@ describe('telegram: pictures, effects, reactions', () => {
     bot.stop()
     expect(seen).toEqual(['plain:把测试修好', 'pause', 'panel status pause', 'report'])
     const m = (name: string) => calls.filter((c) => c.method === name)
-    expect(m('sendChatAction').map((c) => c.body.action)).toEqual(['typing', 'typing'])
+    // plain text is answered with the task panel's picture
+    expect(m('sendChatAction').map((c) => c.body.action)).toEqual(['upload_photo', 'typing'])
     expect(m('setMessageReaction')).toHaveLength(1)
     expect(m('setMessageReaction')[0].body).toMatchObject({ message_id: 12, reaction: [{ type: 'emoji', emoji: '🫡' }] })
     expect(m('answerCallbackQuery').map((c) => c.body)).toEqual([

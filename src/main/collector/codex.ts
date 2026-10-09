@@ -4,6 +4,7 @@ import { homedir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import type { CodexQuota, PromptMark, QuotaWindow, ToolAction, UsageEntry } from '@shared/types'
 import { noteWeek, type LoggedWeek } from '../windowHistory'
+import type { QuotaReading } from '../cycles'
 import { codexFileChange, codexHeadAction, codexItemType } from './actions'
 import { PROMPT_CHARS } from './parser'
 import { listJsonl } from './store'
@@ -281,11 +282,33 @@ export class CodexStore {
   private files = new Map<string, CodexFile>()
   private lastPrompt = new Map<string, PromptMark>()
 
+  /** the 7-day readings with the 5-hour window open at the time (every response logs one), in the order read */
+  private pairs: QuotaReading[] = []
+  private pairsSorted = true
+
+  /** the paired readings of the last ten weeks, in time order */
+  readings(): QuotaReading[] {
+    if (!this.pairsSorted) {
+      this.pairs.sort((a, b) => a.t0 - b.t0)
+      this.pairsSorted = true
+    }
+    return this.pairs
+  }
+
   /** Files are read in any order: find the window by its reset time */
   private recordWindow(l: CodexLimits): void {
     const s = l.secondary
-    if (s?.resetsAt && (!s.windowMin || s.windowMin === 10080)) noteWeek(this.weeks, s.pct, s.resetsAt)
     const p = l.primary
+    if (s?.resetsAt && (!s.windowMin || s.windowMin === 10080)) {
+      noteWeek(this.weeks, s.pct, s.resetsAt)
+      if (l.at > Date.now() - 70 * 86_400_000) {
+        // nothing used in the 5 hours before: no window open
+        const five = p?.resetsAt && p.pct > 0 && p.resetsAt > l.at && (!p.windowMin || p.windowMin === 300) ? p.resetsAt : null
+        const last = this.pairs[this.pairs.length - 1]
+        if (last && l.at < last.t0) this.pairsSorted = false
+        this.pairs.push({ t0: l.at, t1: l.at, five, pct: s.pct, end: s.resetsAt })
+      }
+    }
     if (!p || !p.resetsAt || (p.windowMin && p.windowMin !== 300)) return
     let w = this.windows.find((x) => Math.abs(x.end - p.resetsAt!) < SAME_WINDOW_MS)
     if (!w) {

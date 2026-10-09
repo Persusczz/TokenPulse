@@ -36,8 +36,15 @@ function left(ms: number): string {
   return `${Math.max(1, Math.ceil(ms / 60_000))} 分钟`
 }
 const tok = (v: number) => fmtTokens(v, 2)
+/** "7.5", "12"; whole numbers without a decimal (measured shares are differences of whole readings) */
+const p1 = (v: number) => (v >= 10 || Math.abs(v - Math.round(v)) < 0.05 ? Math.round(v).toString() : v.toFixed(1))
+const median = (xs: number[]) => {
+  const s = [...xs].sort((a, b) => a - b)
+  return s.length ? s[Math.floor(s.length / 2)] : null
+}
 
-type Metric = 'tokens' | 'cost'
+/** week: each 5-hour window's bite of the 7-day quota, and each week's own reading */
+type Metric = 'tokens' | 'cost' | 'week'
 
 /** the token mix of a window, as one thin bar */
 function Mix({ c }: { c: QuotaCycle }) {
@@ -55,7 +62,7 @@ function Mix({ c }: { c: QuotaCycle }) {
   )
 }
 
-function Panel({ kind, list, metric, now }: { kind: '5h' | '7d'; list: QuotaCycle[]; metric: Metric; now: number }) {
+function Panel({ kind, list, metric, now, weeks = [] }: { kind: '5h' | '7d'; list: QuotaCycle[]; metric: Metric; now: number; weeks?: QuotaCycle[] }) {
   const { money } = useApp()
   const [hover, setHover] = useState<number | null>(null)
   // a clicked bar takes over the numbers at the top until it is clicked again (or the open window is)
@@ -68,15 +75,28 @@ function Panel({ kind, list, metric, now }: { kind: '5h' | '7d'; list: QuotaCycl
   const head = chosen ?? cur ?? prev
   // the closed window just before the chosen one
   const before = chosen ? (closed[closed.indexOf(chosen) - 1] ?? null) : null
-  const avg = closed.length ? { tokens: closed.reduce((a, c) => a + c.tokens, 0) / closed.length, cost: closed.reduce((a, c) => a + c.cost, 0) / closed.length } : null
-  const val = (c: { tokens: number; cost: number }) => (metric === 'tokens' ? c.tokens : c.cost)
-  const fmt = (v: number) => (metric === 'tokens' ? fmtTokens(v, 1) : money(v, v >= 100 ? 0 : undefined))
-  const top = Math.max(...shown.map(val), avg ? val(avg) : 0) || 1
+  // in percent of the week: a 5-hour window's bite of it, a week's own reading
+  const share = metric === 'week'
+  const pctOf = (c: QuotaCycle) => (kind === '5h' ? (c.weekPct ?? null) : c.pct)
+  const val = (c: QuotaCycle) => (metric === 'tokens' ? c.tokens : metric === 'cost' ? c.cost : (pctOf(c) ?? 0))
+  const fmt = (v: number) => (metric === 'tokens' ? fmtTokens(v, 1) : metric === 'cost' ? money(v, v >= 100 ? 0 : undefined) : `${kind === '5h' ? p1(v) : Math.round(v)}%`)
+  const counted = share ? closed.filter((c) => pctOf(c) !== null) : closed
+  const mean = (f: (c: QuotaCycle) => number) => counted.reduce((a, c) => a + f(c), 0) / counted.length
+  const avg = counted.length ? { tokens: mean((c) => c.tokens), cost: mean((c) => c.cost), v: mean(val) } : null
+  const top = Math.max(...shown.map(val), avg?.v ?? 0) || 1
   const pick = shown.find((c) => c.start === hover) ?? chosen ?? cur ?? shown[shown.length - 1] ?? null
-  const rank = chosen ? [...closed].sort((a, b) => val(b) - val(a)).indexOf(chosen) + 1 : 0
-  const most = closed.length ? closed.reduce((a, c) => (val(c) > val(a) ? c : a)) : null
+  const rank = chosen ? [...counted].sort((a, b) => val(b) - val(a)).indexOf(chosen) + 1 : 0
+  const most = counted.length ? counted.reduce((a, c) => (val(c) > val(a) ? c : a)) : null
   const name = kind === '5h' ? '5 小时窗口' : '7 天窗口'
   const per = pick && pick.pct !== null && pick.pct >= 5 && pick.tokens > 0 ? { tokens: pick.tokens / pick.pct, cost: pick.cost / pick.pct } : null
+  // the rule of thumb: a full 5-hour window is about this much of the week
+  const full5 = list.filter((c) => c.pct !== null && c.pct >= 15 && !c.estimated && c.weekPct != null && !c.weekEst)
+  const fullOf = full5.some((c) => c.weekMeasured) ? full5.filter((c) => c.weekMeasured) : full5
+  const full = kind === '5h' ? median(fullOf.map((c) => (c.weekPct! / c.pct!) * 100)) : null
+  const measuredN = kind === '5h' ? shown.filter((c) => c.weekMeasured).length : 0
+  const weekOf = (t: number) => weeks.findIndex((w) => w.start <= t && t < w.end)
+  const whenOf = (c: QuotaCycle) => (kind === '5h' ? `${dayName(c.start, now)} ${hm(c.start)}` : `${md(c.start)} 起`)
+  const weekBite = (c: QuotaCycle) => (c.weekPct != null ? (c.weekMeasured ? `${p1(c.weekPct)}%（实测）` : `≈${p1(c.weekPct)}%（估算）`) : null)
   return (
     <section className={`cy-panel cy-${kind}`}>
       <header className="cy-head">
@@ -111,12 +131,19 @@ function Panel({ kind, list, metric, now }: { kind: '5h' | '7d'; list: QuotaCycl
             </b>
             <small>Token</small>
           </div>
-          <div className="cy-num cost">
-            <span className="cy-label">金额</span>
-            <b className="serif">
-              <AnimatedNumber value={head.cost} format={(v) => money(v)} />
-            </b>
-          </div>
+          {share && kind === '5h' ? (
+            <div className="cy-num cost" title={head.weekMeasured ? '实测：窗口结束时的 7 天读数减去开始时的' : head.weekEst ? '估算：这周还没有可用的 7 天读数，按相邻一周的比例推算' : '估算：这个窗口开始或结束时没读到 7 天额度，按花费分这周剩下的读数'}>
+              <span className="cy-label">占 7 天额度</span>
+              <b className="serif">{head.weekPct != null ? <AnimatedNumber value={head.weekPct} format={(v) => `${head.weekMeasured ? '' : '≈'}${p1(v)}%`} /> : '—'}</b>
+            </div>
+          ) : (
+            <div className="cy-num cost">
+              <span className="cy-label">金额</span>
+              <b className="serif">
+                <AnimatedNumber value={head.cost} format={(v) => money(v)} />
+              </b>
+            </div>
+          )}
           {head.pct !== null && (
             <div className={`cy-quota${head.pct >= 90 ? ' hot' : head.pct >= 75 ? ' warm' : ''}`} title={head.current ? '官方额度读数' : '这个窗口的最高读数'}>
               <svg viewBox="0 0 36 36" aria-hidden>
@@ -147,35 +174,58 @@ function Panel({ kind, list, metric, now }: { kind: '5h' | '7d'; list: QuotaCycl
       <div className="cy-compare">
         {chosen && before && val(before) > 0 && (
           <span>
-            前一个窗口 {fmtTokens(before.tokens, 1)} · {money(before.cost)}，这个是它的{' '}
+            前一个窗口 {share ? fmt(val(before)) : `${fmtTokens(before.tokens, 1)} · ${money(before.cost)}`}，这个是它的{' '}
             <b className={val(chosen) > val(before) ? 'up' : ''}>{Math.round((val(chosen) / val(before)) * 100)}%</b>
           </span>
         )}
-        {chosen && avg && val(avg) > 0 && (
+        {chosen && avg && avg.v > 0 && rank > 0 && (
           <span>
-            是平均的 <b className={val(chosen) > val(avg) ? 'up' : ''}>{Math.round((val(chosen) / val(avg)) * 100)}%</b> · 在 {closed.length} 个已结束的窗口里排第 {rank}
+            是平均的 <b className={val(chosen) > avg.v ? 'up' : ''}>{Math.round((val(chosen) / avg.v) * 100)}%</b> · 在 {counted.length} 个已结束的窗口里排第 {rank}
           </span>
         )}
-        {!chosen && cur && prev && prev.tokens > 0 && (
+        {!chosen && cur && prev && val(prev) > 0 && (
           <span>
-            上个窗口 {fmtTokens(prev.tokens, 1)} · {money(prev.cost)}，本窗口已到它的 <b className={cur.tokens > prev.tokens ? 'up' : ''}>{Math.round((cur.tokens / prev.tokens) * 100)}%</b>
+            {share ? (
+              <>
+                上个窗口 {fmt(val(prev))}，本窗口已到 <b className={val(cur) > val(prev) ? 'up' : ''}>{fmt(val(cur))}</b>
+              </>
+            ) : (
+              <>
+                上个窗口 {fmtTokens(prev.tokens, 1)} · {money(prev.cost)}，本窗口已到它的 <b className={cur.tokens > prev.tokens ? 'up' : ''}>{Math.round((cur.tokens / prev.tokens) * 100)}%</b>
+              </>
+            )}
           </span>
         )}
         {!chosen && avg && (
           <span>
-            平均每个 {fmtTokens(avg.tokens, 1)} · {money(avg.cost)}
-            {most && ` · 最多 ${fmt(val(most))}（${kind === '5h' ? `${dayName(most.start, now)} ${hm(most.start)}` : `${md(most.start)} 起`}）`}
+            {share && full !== null && (
+              <>
+                满窗口 ≈ <b>{p1(full)}%</b> ·{' '}
+              </>
+            )}
+            {share ? `平均 ${fmt(avg.v)}` : `平均每个 ${fmtTokens(avg.tokens, 1)} · ${money(avg.cost)}`}
+            {most && ` · 最多 ${fmt(val(most))}（${whenOf(most)}）`}
+          </span>
+        )}
+        {share && !counted.length && (!cur || pctOf(cur) === null) && <span>还没有 7 天额度的读数，读到之后才能换算</span>}
+        {share && kind === '5h' && shown.length > 0 && (
+          <span title="实测：窗口结束时的 7 天读数减去开始时的。TokenPulse 没在运行、错过了窗口开始或结束的读数时，按花费估算">
+            实测 {measuredN} 个 · 斜纹为估算
           </span>
         )}
       </div>
 
       {shown.length > 0 && (
         <div className="cy-chart" onMouseLeave={() => setHover(null)} style={{ ['--n' as string]: shown.length }}>
-          {avg && <i className="cy-avg" style={{ bottom: `calc(var(--xh) + (100% - var(--xh) - var(--vh)) * ${(val(avg) / top).toFixed(4)})` }} />}
+          {avg && <i className="cy-avg" style={{ bottom: `calc(var(--xh) + (100% - var(--xh) - var(--vh)) * ${(avg.v / top).toFixed(4)})` }} />}
           {shown.map((c, i) => {
             const h = val(c) > 0 ? Math.max(0.015, val(c) / top) : 0
             const newDay = kind === '5h' && (i === 0 || dayOf(shown[i - 1].start) !== dayOf(c.start))
-            const cls = ['cy-col', c.current && 'current', c === pick && 'on', c === head && 'sel', c.estimated && 'est', ((c.pct ?? 0) >= 100 || c.hitAt) && 'hit', newDay && i > 0 && 'new-day'].filter(Boolean).join(' ')
+            // a new 7-day window starts here
+            const newWeek = share && kind === '5h' && i > 0 && weekOf(c.start) !== weekOf(shown[i - 1].start)
+            const cls = ['cy-col', c.current && 'current', c === pick && 'on', c === head && 'sel', (share && kind === '5h' ? !c.weekMeasured : c.estimated) && 'est', ((c.pct ?? 0) >= 100 || c.hitAt) && 'hit', newDay && i > 0 && 'new-day', newWeek && 'new-week']
+              .filter(Boolean)
+              .join(' ')
             return (
               <button
                 key={c.start}
@@ -193,7 +243,7 @@ function Panel({ kind, list, metric, now }: { kind: '5h' | '7d'; list: QuotaCycl
                 </span>
                 <span className="cy-x">
                   {kind === '5h' ? hm(c.start) : md(c.start)}
-                  <em>{kind === '5h' ? (newDay ? dayName(c.start, now) : '') : c.current ? '本周期' : ''}</em>
+                  <em>{kind === '5h' ? (newWeek ? '新一周' : newDay ? dayName(c.start, now) : '') : c.current ? '本周期' : ''}</em>
                 </span>
               </button>
             )
@@ -216,6 +266,7 @@ function Panel({ kind, list, metric, now }: { kind: '5h' | '7d'; list: QuotaCycl
           <span className="cy-d-stats">
             <b>{fmtTokens(pick.tokens, 2)}</b> Token · <b>{money(pick.cost)}</b> · {pick.messages} 次响应 · {pick.sessions} 个会话
             {pick.pct !== null && ` · 额度${pick.current ? '' : '峰值'} ${Math.round(pick.pct)}%`}
+            {kind === '5h' && weekBite(pick) && ` · 占 7 天 ${weekBite(pick)}`}
             {per && ` · 每 1% ≈ ${fmtTokens(per.tokens, 1)}（${money(per.cost)}）`}
           </span>
           <span className="cy-d-mix">
@@ -243,8 +294,11 @@ export function CyclesCard() {
   const now = useNow(30_000)
   const data = useData<QuotaCycles[]>(() => window.api.getQuotaCycles(), [source, quota?.fetchedAt, codexQuota?.updatedAt, lastUpdate?.at], 60_000)
   const [tool, setTool] = useState<UsageSource>('claude')
-  const [metric, setMetric] = useState<Metric>('tokens')
+  const [want, setMetric] = useState<Metric>('tokens')
   const one = data?.find((d) => d.source === tool) ?? data?.[0] ?? null
+  // the share of the week needs a weekly reading somewhere
+  const weekly = !!one?.five.some((c) => c.weekPct != null)
+  const metric: Metric = want === 'week' && !weekly ? 'tokens' : want
   return (
     <div className={`card cycles-card${one ? ` src-${one.source}` : ''}`}>
       <div className="card-head">
@@ -269,7 +323,8 @@ export function CyclesCard() {
             onChange={setMetric}
             options={[
               { value: 'tokens', label: 'Token' },
-              { value: 'cost', label: '金额' }
+              { value: 'cost', label: '金额' },
+              ...(weekly ? [{ value: 'week' as const, label: '占 7 天' }] : [])
             ]}
           />
         </div>
@@ -282,7 +337,7 @@ export function CyclesCard() {
         </div>
       ) : (
         <div className="cy-grid">
-          <Panel kind="5h" list={one.five} metric={metric} now={now} />
+          <Panel kind="5h" list={one.five} metric={metric} now={now} weeks={one.seven} />
           <Panel kind="7d" list={one.seven} metric={metric} now={now} />
         </div>
       )}

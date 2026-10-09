@@ -24,7 +24,7 @@ export const BOT_COMMANDS = [
   { command: 'card', description: '今日卡片（图片）' },
   { command: 'today', description: '今日用量' },
   { command: 'tasks', description: '刷新任务队列（可开始、停止、取消）' },
-  { command: 'task', description: '排一个任务到下次 5h 刷新：/task 内容' },
+  { command: 'task', description: '发布任务：看着额度和刷新倒计时选工具和开始时间' },
   { command: 'log', description: '正在执行（或最近）的任务日志' },
   { command: 'week', description: '最近 7 天的用量走势' },
   { command: 'star', description: '额度星空：5h 恒星、7 天轨道、星骸' },
@@ -143,6 +143,8 @@ export interface Message {
   photo?: Buffer
   /** a looping animation (H.264 MP4) with `text` as its caption */
   animation?: Buffer
+  /** an edit that keeps the picture already there: only its caption (`text`) and buttons change */
+  caption?: boolean
   /** text-only frames shown first, each replacing the last, before the message itself (an animated reply) */
   frames?: Message[]
   effect?: Effect
@@ -183,7 +185,7 @@ function markup(r: Reply): object | undefined {
 const privateChat = (chatId: string) => /^\d+$/.test(chatId)
 
 /** commands answered with a picture show "sending a photo…" instead of "typing…" */
-const PHOTO_COMMANDS = new Set(['card', 'tarot'])
+const PHOTO_COMMANDS = new Set(['card', 'tarot', 'task', 'plain'])
 const MEDIA = { field: 'animation', name: 'tokenpulse.mp4', type: 'video/mp4' }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -304,6 +306,8 @@ export class TelegramNotifier {
           60_000,
           { field: 'card', name: 'tokenpulse.jpg', type: 'image/jpeg', data: photo }
         )
+      : opt(html, 'caption')
+      ? this.call(token, 'editMessageCaption', { chat_id: chatId, message_id: messageId, caption: replyText(html), parse_mode: 'HTML', ...(reply_markup ? { reply_markup } : {}) })
       : this.call(token, 'editMessageText', { chat_id: chatId, message_id: messageId, text: replyText(html), parse_mode: 'HTML', link_preview_options: { is_disabled: true }, ...(reply_markup ? { reply_markup } : {}) })
     await done.catch((e: Error) => {
       // "message is not modified" is not worth a new message

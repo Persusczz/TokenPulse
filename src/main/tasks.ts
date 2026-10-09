@@ -481,6 +481,8 @@ interface Deps {
   retryDelay?(failure: TaskFailure, tries: number): number
   /** the context window of a Codex model (null: the config's default), for a compaction point given as a share */
   codexWindow?(model: string | null): number
+  /** a Codex model the account refuses is swapped for one it takes (default); false: the task fails instead */
+  codexFallback?(): boolean
 }
 
 /** the task window's heartbeat */
@@ -659,10 +661,15 @@ export class TaskService extends EventEmitter {
     this.emit('change', this.state())
   }
 
+  /** the ChatGPT account refused this model (null: the config's default) for `codex exec` before */
+  codexRefuses(model: string | null): boolean {
+    return model ? this.codexRefused.has(model) : this.codexDefaultRefused
+  }
+
   /** the model a Codex run really uses: a refused one is swapped for the first fallback the account takes */
   private codexModel(t: ScheduledTask): string | null {
     const refused = t.model ? this.codexRefused.has(t.model) : this.codexDefaultRefused
-    if (!refused) return t.model
+    if (!refused || this.deps.codexFallback?.() === false) return t.model
     return CODEX_FALLBACKS.find((m) => !this.codexRefused.has(m)) ?? t.model
   }
 
@@ -1533,7 +1540,10 @@ export class TaskService extends EventEmitter {
       if (!run.model) this.codexDefaultRefused = true
       void writeFileAtomic(this.codexFile, JSON.stringify({ refused: [...this.codexRefused], defaultRefused: this.codexDefaultRefused })).catch(() => {})
       const next = this.codexModel({ ...t, model: run.model ?? null })
-      if (next && next !== run.model) {
+      if (this.deps.codexFallback?.() === false) {
+        // no swapping: the task ends here, saying which model to pick
+        o = { ...o, ok: false, failure: 'setup', error: `${refused} 不能用 ChatGPT 账号通过 codex exec 调用：给任务选一个能用的模型（如 ${CODEX_FALLBACKS[0]}），或在设置里打开「模型被拒时自动换用」` }
+      } else if (next && next !== run.model) {
         // a setup problem TokenPulse fixed by itself: not a try that failed at the task
         this.closeTry(t, run, o, now, 'setup')
         Object.assign(t, {

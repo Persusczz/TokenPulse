@@ -43,15 +43,15 @@ export interface CardData {
   rate: string | null
 }
 
-const SANS = "'Segoe UI Variable Display','Segoe UI','Microsoft YaHei UI','Microsoft YaHei','PingFang SC',sans-serif"
+export const SANS = "'Segoe UI Variable Display','Segoe UI','Microsoft YaHei UI','Microsoft YaHei','PingFang SC',sans-serif"
 
-const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+export const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 const cut = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
 /** rough width of a line: CJK a full em, the rest a bit over half */
 const widthOf = (s: string, size: number) => [...s].reduce((w, ch) => w + (ch.charCodeAt(0) >= 0x2e80 ? 1 : 0.56), 0) * size
 
 /** same stars for the same day */
-function rng(seed: string): () => number {
+export function rng(seed: string): () => number {
   let h = 1779033703
   for (let i = 0; i < seed.length; i++) h = Math.imul(h ^ seed.charCodeAt(i), 3432918353)
   let a = h >>> 0
@@ -65,7 +65,7 @@ function rng(seed: string): () => number {
 }
 
 /** a star with `n` points (the spark mark, flares) */
-function starPath(cx: number, cy: number, outer: number, inner: number, n: number): string {
+export function starPath(cx: number, cy: number, outer: number, inner: number, n: number): string {
   const pts: string[] = []
   for (let i = 0; i < n * 2; i++) {
     const r = i % 2 ? inner : outer
@@ -76,7 +76,7 @@ function starPath(cx: number, cy: number, outer: number, inner: number, n: numbe
 }
 
 /** mixes a hex colour toward white (t > 0) */
-function lighten(hex: string, t: number): string {
+export function lighten(hex: string, t: number): string {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex)
   if (!m) return hex
   const n = parseInt(m[1], 16)
@@ -96,7 +96,7 @@ const FLARE_SPOTS = [
   [40, 210]
 ]
 
-const level = (pct: number) => (pct >= 90 ? ['#ff5d6c', '#ff9aa5'] : pct >= 70 ? ['#ffb547', '#ffd88f'] : ['#3ddc97', '#9ff5cf'])
+export const level = (pct: number) => (pct >= 90 ? ['#ff5d6c', '#ff9aa5'] : pct >= 70 ? ['#ffb547', '#ffd88f'] : ['#3ddc97', '#9ff5cf'])
 
 /** where an animation stands: `p` runs 0 → 1 through the opening, `tw` loops 0 → 1 for the twinkle */
 export interface CardMoment {

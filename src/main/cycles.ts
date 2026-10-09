@@ -151,3 +151,131 @@ export function buildCycles(o: {
   }
   return out
 }
+
+/** A 7-day reading with the 5-hour window open when it was taken; one entry while nothing changes */
+export interface QuotaReading {
+  /** first and last time it was seen */
+  t0: number
+  t1: number
+  /** the end of the 5-hour window open then; null with none open (nothing used for 5 hours) */
+  five: number | null
+  /** the 7-day reading, percent, and when that week resets */
+  pct: number
+  end: number
+}
+
+/** a reading this close to its window's end counts as the window's last */
+const NEAR_MS = 10 * 60_000
+const sameWeek = (a: { end: number }, b: { end: number }) => Math.abs(a.end - b.end) < HOUR
+
+function firstFrom(rs: QuotaReading[], t: number): number {
+  let lo = 0
+  let hi = rs.length
+  while (hi - lo > 0) {
+    const mid = (lo + hi) >> 1
+    if (rs[mid].t0 < t) lo = mid + 1
+    else hi = mid
+  }
+  return lo
+}
+
+/**
+ * What a 5-hour window took of the 7-day quota, measured: the 7-day reading
+ * when it closed minus the one when it opened. Readings are in time order.
+ * The opening reading is the last one before the window's first, when nothing
+ * can have been used in between: taken with no window open, near the end of
+ * the window before, or (perResponse: the source logs a reading with every
+ * response, like Codex) any time; else a reading in the window's first
+ * minutes. The closing one is the window's last, when taken near its end
+ * (or after every response), or one taken in the quiet after it. A week that
+ * turns over inside the window adds the old week's part to the new one's.
+ * Null when the readings don't pin it down.
+ */
+export function measureWeekShare(c: Pick<QuotaCycle, 'start' | 'end' | 'current'>, rs: QuotaReading[], perResponse: boolean): number | null {
+  let i0 = -1
+  let i1 = -1
+  for (let i = firstFrom(rs, c.start - SAME_MS); i < rs.length && rs[i].t0 <= c.end + SAME_MS; i++) {
+    const f = rs[i].five
+    if (f !== null && Math.abs(f - c.end) < SAME_MS) {
+      if (i0 < 0) i0 = i
+      i1 = i
+    }
+  }
+  if (i0 < 0) return null
+  const first = rs[i0]
+  const last = rs[i1]
+  let base: number | null = null
+  const prev = rs[i0 - 1]
+  if (prev && (prev.five === null || perResponse || prev.five - prev.t1 <= NEAR_MS)) {
+    if (sameWeek(prev, first)) base = prev.pct
+    // the week turned over before the window opened, with nothing used since
+    else if (prev.end < first.end) base = 0
+  }
+  if (base === null && first.t0 - c.start <= NEAR_MS) base = first.pct
+  if (base === null) return null
+  let close = last
+  if (!c.current) {
+    const next = rs[i1 + 1]
+    if (next && next.five === null && sameWeek(next, last)) close = next
+    else if (!perResponse && c.end - last.t1 > NEAR_MS) return null
+  }
+  let share = close.pct - base
+  if (!sameWeek(close, first)) {
+    let a = first
+    for (let i = i0; i <= i1; i++) if (sameWeek(rs[i], first)) a = rs[i]
+    share = a.pct - base + close.pct
+  }
+  return share >= -0.5 ? Math.max(0, share) : null
+}
+
+/**
+ * What each 5-hour window took of its 7-day window, percent (sets weekPct).
+ * Measured where the readings allow it (weekMeasured); the rest share out
+ * what their week's reading leaves over by what each response cost, so the
+ * windows of a week still add up to its reading. A week without a usable
+ * reading (none yet, or under 3% while open) borrows the rate of the nearest
+ * week that has one (weekEst).
+ */
+export function weekShares(five: QuotaCycle[], seven: QuotaCycle[], entries: CostedEntry[], measured: (c: QuotaCycle) => number | null = () => null): void {
+  const m = five.map(measured)
+  const usable = (w: QuotaCycle) => w.pct !== null && w.pct >= (w.current ? 3 : 1) && w.cost > 0
+  // per week: what its measured windows took, and the spend left to share the rest over
+  const took = seven.map(() => 0)
+  const left = seven.map((w) => w.cost)
+  five.forEach((c, i) => {
+    const k = seven.findIndex((w) => w.start <= c.start && c.start < w.end)
+    if (m[i] === null || k < 0) return
+    took[k] += m[i]!
+    left[k] -= c.cost
+  })
+  const own = seven.map((w, k) => (!usable(w) ? null : left[k] > 1e-9 ? Math.max(0, w.pct! - took[k]) / left[k] : 0))
+  const known = seven.flatMap((w) => (usable(w) ? [{ mid: (w.start + w.end) / 2, rate: w.pct! / w.cost }] : []))
+  const borrow = (t: number) => (known.length ? known.reduce((a, b) => (Math.abs(b.mid - t) < Math.abs(a.mid - t) ? b : a)).rate : null)
+  let k = 0
+  five.forEach((c, n) => {
+    if (m[n] !== null) {
+      c.weekPct = m[n]
+      c.weekMeasured = true
+      c.weekEst = false
+      return
+    }
+    let share = 0
+    let est = false
+    let priced = false
+    for (let i = lowerBound(entries, c.start); i < entries.length && entries[i].ts < c.end; i++) {
+      const e = entries[i]
+      while (k < seven.length && seven[k].end <= e.ts) k++
+      let rate = k < seven.length && seven[k].start <= e.ts ? own[k] : null
+      if (rate === null && e.cost.total > 0) {
+        rate = borrow(e.ts)
+        est = rate !== null
+      }
+      if (rate === null) continue
+      share += e.cost.total * rate
+      priced = true
+    }
+    c.weekPct = priced ? share : c.messages ? null : 0
+    c.weekMeasured = false
+    c.weekEst = est
+  })
+}

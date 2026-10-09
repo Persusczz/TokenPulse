@@ -608,6 +608,62 @@ export async function runDevShots(dir: string, main: BrowserWindow, mini: Browse
     return
   }
 
+  // publishing a task from Telegram (the panel's pictures and captions), and the bill's "占 7 天" view
+  if (process.env.TP_SHOTS === 'taskpanel') {
+    type Tg = { onCommand: (c: import('./telegram').Command) => Promise<import('./telegram').Reply> }
+    const tg = (globalThis as { __tpTelegram?: Tg }).__tpTelegram!
+    await set({ codexEnabled: true, workbuddyEnabled: true, sourceFilter: 'all', theme: 'dark', themePack: 'none', motion: 'reduced', telegramEnabled: false, autoUpdate: false })
+    await wait(2500)
+    const out: Record<string, unknown> = {}
+    const save = async (name: string, r: import('./telegram').Reply) => {
+      if (typeof r !== 'string' && r.photo) await writeFile(join(dir, `${name}.jpg`), r.photo)
+      out[name] = typeof r === 'string' ? r : { ...r, photo: r.photo ? r.photo.length : undefined }
+      return r
+    }
+    const t0 = Date.now()
+    const first = await save('panel-claude', await tg.onCommand({ name: 'plain', args: [], plain: '把 tests 里失败的用例修好，跑一遍 npm test，确认全部通过后总结改了什么' }))
+    out['panel ms'] = Date.now() - t0
+    const id = typeof first === 'string' ? '' : (first.buttons?.flat().find((b) => b.data.endsWith(' go'))?.data.split(' ')[1] ?? '')
+    const step = (name: string, line: string) => tg.onCommand({ name: 'draft', args: [id, ...line.split(' ')] }).then((r) => save(name, r))
+    await step('panel-codex', 'tool codex')
+    await step('panel-codex-model', 'model')
+    await step('panel-codex-now', 'when now')
+    await step('panel-workbuddy', 'tool workbuddy')
+    await step('panel-back', 'tool claude')
+    await step('panel-manual', 'when manual')
+    const queued = await step('panel-queued', 'go')
+    // take the demo task out of the queue again
+    const cancel = typeof queued === 'string' ? undefined : queued.buttons?.flat().find((b) => b.data.startsWith('taskcancel'))
+    if (cancel) out['cancel'] = await tg.onCommand({ name: 'taskcancel', args: [cancel.data.split(' ')[1]] })
+    await save('stale', await tg.onCommand({ name: 'draft', args: [id, 'go'] }))
+    await save('task-help', await tg.onCommand({ name: 'task', args: [] }))
+    await save('tasks', await tg.onCommand({ name: 'tasks', args: [] }))
+    await writeFile(join(dir, 'taskpanel.json'), JSON.stringify(out, null, 2))
+    // the overview's bill: each 5-hour window as a share of its week
+    await main.webContents.insertCSS('.celebrate, .toasts, .toast { display: none !important }')
+    await js(clickSel('.nav-item', 0))
+    for (let i = 0; i < 80 && !(await js(`!!document.querySelector('.cycles-card .cy-grid')`)); i++) await wait(250)
+    await wait(1500)
+    await js(scrollTo('.cycles-card'))
+    await wait(1200)
+    await shot(main, 'cycles-tokens', await js(rectOf('.cycles-card')))
+    await log({ kind: 'week-option', found: await js(`(() => { const b = [...document.querySelectorAll('.cycles-card .cy-controls button')].find((x) => x.textContent.trim() === '占 7 天'); b && b.click(); return !!b })()`) })
+    await wait(1500)
+    await js(scrollTo('.cycles-card'))
+    await wait(600)
+    await shot(main, 'cycles-week', await js(rectOf('.cycles-card')))
+    // a closed window picked: its bite of the week at the top
+    await js(`(() => { const cols = document.querySelectorAll('.cycles-card .cy-5h .cy-col'); cols[cols.length - 3]?.click() })()`)
+    await wait(1200)
+    await shot(main, 'cycles-week-picked', await js(rectOf('.cycles-card')))
+    await log({ kind: 'cycles', data: await js(`window.api.getQuotaCycles().then((d) => d.map((t) => ({ source: t.source, five: t.five.map((c) => ({ start: new Date(c.start).toISOString(), pct: c.pct, weekPct: c.weekPct == null ? null : +c.weekPct.toFixed(2), est: c.weekEst })), seven: t.seven.map((c) => ({ start: new Date(c.start).toISOString(), pct: c.pct, cost: +c.cost.toFixed(2) })) })))`) })
+    await js(`(() => { const b = [...document.querySelectorAll('.cycles-card .cy-controls button')].find((x) => x.textContent.trim() === 'Codex'); b && b.click(); return !!b })()`)
+    await wait(1500)
+    await shot(main, 'cycles-week-codex', await js(rectOf('.cycles-card')))
+    done()
+    return
+  }
+
   // Telegram: the bot's replies and the picture cards, made by the real handler (the bot itself never connects in a shot run)
   if (process.env.TP_SHOTS === 'tg') {
     type Tg = { onCommand: (c: import('./telegram').Command) => Promise<import('./telegram').Reply>; cardPhoto: (v: 'claude' | 'codex' | 'all') => Promise<Buffer> }

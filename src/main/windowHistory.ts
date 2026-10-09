@@ -3,6 +3,7 @@ import type { UsageSource, WindowHistory, WindowRecord } from '@shared/types'
 import type { CostedEntry } from './aggregate'
 import { writeFileAtomic, writeFileAtomicSync } from './atomicFile'
 import type { CodexWindow } from './collector/codex'
+import type { QuotaReading } from './cycles'
 
 const MIN = 60_000
 const HOUR = 60 * MIN
@@ -33,6 +34,8 @@ const SAME_WEEK_MS = HOUR
 export class ClaudeWindowLog {
   windows: Logged[] = []
   weeks: LoggedWeek[] = []
+  /** 7-day readings with the 5-hour window open at the time, to measure what each window took of the week */
+  pairs: QuotaReading[] = []
   private timer: NodeJS.Timeout | null = null
 
   constructor(private path: string) {}
@@ -44,9 +47,28 @@ export class ClaudeWindowLog {
         this.windows = j.windows.filter((w: any) => Number.isFinite(w?.end) && Number.isFinite(w?.peak) && Array.isArray(w?.samples))
       }
       if (Array.isArray(j?.weeks)) this.weeks = j.weeks.filter((w: any) => Number.isFinite(w?.end) && Number.isFinite(w?.peak))
+      if (Array.isArray(j?.pairs)) {
+        this.pairs = j.pairs.filter((r: any) => Number.isFinite(r?.t0) && Number.isFinite(r?.t1) && Number.isFinite(r?.pct) && Number.isFinite(r?.end) && (r.five === null || Number.isFinite(r.five)))
+      }
     } catch {
       /* first run */
     }
+  }
+
+  /**
+   * A 7-day reading and the 5-hour window open at the time (null: none);
+   * merged into the last entry while neither changes, so an entry also tells
+   * until when it was still true.
+   */
+  recordPair(t: number, five: number | null, pct: number, end: number): void {
+    if (!Number.isFinite(t) || !Number.isFinite(pct) || !(end > 0)) return
+    const last = this.pairs[this.pairs.length - 1]
+    if (last && t < last.t1) return
+    const sameFive = last && (last.five === null ? five === null : five !== null && Math.abs(last.five - five) < SAME_WINDOW_MS)
+    if (last && sameFive && Math.abs(last.pct - pct) < 0.01 && Math.abs(last.end - end) < SAME_WEEK_MS) last.t1 = t
+    else this.pairs.push({ t0: t, t1: t, five, pct, end })
+    while (this.pairs.length && t - this.pairs[0].t1 > WEEK_KEEP_MS) this.pairs.shift()
+    this.save()
   }
 
   /** Adds a reading; true when something changed */
@@ -82,7 +104,7 @@ export class ClaudeWindowLog {
     if (this.timer) clearTimeout(this.timer)
     this.timer = setTimeout(() => {
       this.timer = null
-      void writeFileAtomic(this.path, JSON.stringify({ windows: this.windows, weeks: this.weeks })).catch(() => {})
+      void writeFileAtomic(this.path, JSON.stringify({ windows: this.windows, weeks: this.weeks, pairs: this.pairs })).catch(() => {})
     }, 2000)
   }
 
@@ -92,7 +114,7 @@ export class ClaudeWindowLog {
     clearTimeout(this.timer)
     this.timer = null
     try {
-      writeFileAtomicSync(this.path, JSON.stringify({ windows: this.windows, weeks: this.weeks }))
+      writeFileAtomicSync(this.path, JSON.stringify({ windows: this.windows, weeks: this.weeks, pairs: this.pairs }))
     } catch {
       /* nothing more to do */
     }

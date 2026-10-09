@@ -791,6 +791,12 @@ export interface QuotaCycle {
   estimated: boolean
   /** the most expensive models in it */
   models: { name: string; cost: number; tokens: number }[]
+  /** 5-hour windows: how much of the 7-day quota it used, percent; null with no weekly reading to go by */
+  weekPct?: number | null
+  /** weekPct borrows the rate of another week (this one has no usable reading yet) */
+  weekEst?: boolean
+  /** weekPct is measured: the 7-day reading when the window closed minus the one when it opened (else shared out by cost) */
+  weekMeasured?: boolean
 }
 
 /** A tool's 5-hour and 7-day windows, oldest first */
@@ -1400,6 +1406,8 @@ export interface Settings {
   /** defaults for new Codex tasks */
   codexTaskPermission: TaskPermission
   codexTaskModel: string | null
+  /** a model the ChatGPT account refuses for `codex exec`: run the task again on one it takes (else the task fails) */
+  codexModelFallback: boolean
   pushTasks: boolean
   /** also read Codex (GPT) session logs from ~/.codex */
   codexEnabled: boolean

@@ -885,6 +885,9 @@ function TaskRows({ s, save, q, source }: { s: Settings; save: Save; q: TaskQueu
               ))}
             </select>
           </Row>
+          <Row label="模型被拒时自动换用" desc={s.codexModelFallback ? '被拒的模型会自动换成 gpt-5.5 重试' : '被拒时任务直接失败，并提示该换哪个模型'}>
+            <Switch on={s.codexModelFallback} onChange={(codexModelFallback) => save({ codexModelFallback })} />
+          </Row>
         </>
       )}
       <div className="set-sub">上下文</div>

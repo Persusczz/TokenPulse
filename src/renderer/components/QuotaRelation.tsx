@@ -56,7 +56,8 @@ function relate(t: QuotaCycles): Relation | null {
   const k = sum > 0 && basis === week ? week.pct / sum : 1
   return {
     week,
-    bites: inWeek.map((c, i) => ({ c, share: raw[i] * k })),
+    // the bill's numbers where it has them: measured, or shared out around the measured ones
+    bites: inWeek.map((c, i) => ({ c, share: c.weekPct ?? raw[i] * k })),
     full: per5 > 0 ? (100 / per5) * per7 : null,
     per5
   }
@@ -152,7 +153,7 @@ function ToolRelation({ t }: { t: QuotaCycles }) {
             <span className="qr-arrow">→</span>
             <span className="qr-seven">
               <i style={{ width: `${(b.share / top) * 100}%` }} />
-              7 天 <b>+{p1(b.share)}%</b>
+              7 天 <b title={b.c.weekMeasured ? '实测' : '估算'}>{b.c.weekMeasured ? '+' : '≈+'}{p1(b.share)}%</b>
             </span>
             <span className="qr-cost muted">
               {fmtTokens(b.c.tokens, 1)} · {money(b.c.cost)}
