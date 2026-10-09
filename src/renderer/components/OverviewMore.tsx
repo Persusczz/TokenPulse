@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { fmtTokens } from '@shared/format'
 import type { CalendarDay, ModelRow, RangeKey, SessionSpan } from '@shared/types'
 import { useApp, useData, useNow, useSource } from '../state'
@@ -57,7 +58,7 @@ export function CalendarCard() {
         <div className="card-title">
           <span className="serif">日历</span>
           <span className="muted" style={{ fontWeight: 400 }}>
-            最近 12 周，每格一天，颜色越深用得越多
+            最近 12 周
           </span>
         </div>
         <Segmented
@@ -189,9 +190,6 @@ export function TimelineCard() {
       <div className="card-head">
         <div className="card-title">
           <span className="serif">今天的会话</span>
-          <span className="muted" style={{ fontWeight: 400 }}>
-            每条是一个会话，从第一次到最后一次响应；越亮的地方那十分钟用得越多
-          </span>
         </div>
         {spans.length > 0 && (
           <span className="muted" style={{ fontSize: 12 }}>
@@ -219,10 +217,7 @@ export function TimelineCard() {
             <div
               key={s.id}
               className={`tl-row src-${s.source}`}
-              onMouseMove={(e) => {
-                const r = (e.currentTarget.closest('.timeline-card') as HTMLElement).getBoundingClientRect()
-                setTip({ s, x: e.clientX - r.left, y: e.clientY - r.top })
-              }}
+              onMouseMove={(e) => setTip({ s, x: e.clientX, y: e.clientY })}
               onClick={() => openSession(s.id)}
             >
               <span className="tl-label" title={s.project}>
@@ -255,8 +250,10 @@ export function TimelineCard() {
           <i className="tl-now-line" style={{ left: `calc(var(--tl-label) + (100% - var(--tl-label)) * ${x(now) / 100})` }} />
         </div>
       )}
-      {tip && (
-        <div className="tip tl-tip" style={{ left: tip.x, top: tip.y }}>
+      {tip &&
+        // above every card: in the window's top layer, flipped away from the edges
+        createPortal(
+        <div className={`tip tl-tip${tip.x > window.innerWidth - 240 ? ' flip-x' : ''}${tip.y > window.innerHeight - 190 ? ' flip-y' : ''}`} style={{ left: tip.x, top: tip.y }}>
           <div className="tip-title">{tip.s.project}</div>
           <div className="tip-row">
             时间<b>
@@ -274,8 +271,8 @@ export function TimelineCard() {
           <div className="tip-row">
             响应<b>{tip.s.messages} 次</b>
           </div>
-          <div className="tip-row muted">点一下打开这个会话</div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )
@@ -349,7 +346,7 @@ export function ModelTableCard({ range }: { range: RangeKey }) {
                     <span className="mt-name">
                       <i className="mt-dot" />
                       {r.name}
-                      {source === 'all' && <span className="mt-src">{r.source === 'codex' ? 'Codex' : 'Claude'}</span>}
+                      {source === 'all' && <span className="mt-src">{r.source === 'workbuddy' ? 'WorkBuddy' : r.source === 'codex' ? 'Codex' : 'Claude'}</span>}
                       {r === cheap && <span className="badge good">最划算</span>}
                     </span>
                   </td>

@@ -31,7 +31,7 @@ export function PunchCard() {
         <div className="card-title">
           <span className="serif">一周节律</span>
           <span className="muted" style={{ fontWeight: 400 }}>
-            近 30 天，每周几的每个钟点用了多少，圆点越大越多
+            近 30 天
           </span>
         </div>
       </div>
@@ -124,7 +124,7 @@ export function JourneyCard() {
         <div className="card-title">
           <span className="serif">星际旅程</span>
           <span className="muted" style={{ fontWeight: 400 }}>
-            每个 Token 算 1 公里 · 全部记录
+            1 Token = 1 公里
           </span>
         </div>
       </div>

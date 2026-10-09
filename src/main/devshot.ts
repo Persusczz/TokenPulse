@@ -72,6 +72,174 @@ export async function runDevShots(dir: string, main: BrowserWindow, mini: Browse
     js(`new Promise((done) => { let n = 0; const t0 = performance.now(); const f = () => { n++; performance.now() - t0 < 2000 ? requestAnimationFrame(f) : done(Math.round(n / 2)) }; requestAnimationFrame(f) })`)
   const clickSub = (title: string) => js(`(() => { const b = [...document.querySelectorAll('.nav-sub')].find((x) => x.querySelector('.nav-sub-label')?.textContent === ${JSON.stringify(title)}); b && b.click(); return !!b })()`)
 
+  if (process.env.TP_SHOTS === 'workbuddy') {
+    main.webContents.setBackgroundThrottling(false)
+    mini?.webContents.setBackgroundThrottling(false)
+    // renderer errors go into the log, so a blank card or page shows why
+    main.webContents.on('console-message', (e) => {
+      if (e.level === 'error' || e.level === 'warning') void log({ kind: 'console', level: e.level, message: e.message.slice(0, 600), at: `${e.sourceId}:${e.lineNumber}` })
+    })
+    await set({ sourceFilter: 'workbuddy', workbuddyEnabled: true, themePack: 'none', theme: 'dark', motion: 'reduced', guardEnabled: false, telegramEnabled: false, autoUpdate: false })
+    main.setSize(1280, 850)
+    await wait(2500)
+    await js(clickSel('.nav-item', 0)); await wait(1200)
+    await js(clickSel('.rtab', 4)); await wait(700)
+    await log(await js(`window.api.getWorkBuddyOutlook().then((o) => ({ kind: 'outlook', o }), (e) => ({ kind: 'outlook', error: String(e && e.message || e) }))`))
+    await log(await js(`(async () => {
+      const load = await window.api.getLoadState(); const usage = await window.api.getWorkBuddyUsage('all'); const tasks = await window.api.getTasks(); const account = await window.api.getWorkBuddyAccount();
+      return { kind: 'workbuddy', files: load.workbuddyFiles, credits: usage.credits, recorded: usage.recorded, missing: usage.missing, account: { status: account?.status, total: account?.total, used: account?.used, remaining: account?.remaining }, cliFound: !!tasks.tools.workbuddy?.cli, width: document.querySelector('.main')?.clientWidth, overflow: document.querySelector('.main')?.scrollWidth - document.querySelector('.main')?.clientWidth };
+    })()`))
+    await wait(300)
+    await shot(main, 'workbuddy-overview-dark')
+    await set({ theme: 'light' }); await wait(1000)
+    await shot(main, 'workbuddy-overview-light')
+    if (process.env.TP_SHOTS_ONLY === 'overview') {
+      for (let i = 1; i <= 5; i++) {
+        await js(`document.querySelector('.main')?.scrollBy(0, 760)`); await wait(900)
+        await shot(main, `workbuddy-overview-light-${i}`)
+      }
+      await js(`[...document.querySelectorAll('.workbuddy-history button')].find((b) => b.textContent.trim() === '30 天')?.click()`); await wait(1200)
+      await js(`(() => { const el = document.querySelector('.workbuddy-history'); el && document.querySelector('.main')?.scrollBy(0, el.getBoundingClientRect().top - 40) })()`); await wait(800)
+      await shot(main, 'workbuddy-history-30d', await js(rectOf('.workbuddy-history')))
+      // 星空: WorkBuddy projects as galaxies, its prompts as stars
+      await js(clickSel('.nav-item', 4))
+      // how long the sky takes to appear the first time
+      const t0 = Date.now()
+      while (Date.now() - t0 < 15_000 && !(await js(`!!document.querySelector('.galaxy-stage canvas')`))) await wait(100)
+      await log({ kind: 'sky-open', ms: Date.now() - t0 })
+      await wait(2500)
+      await shot(main, 'workbuddy-sky-light')
+      await log({ kind: 'gas', compileMs: await js('window.__tpGasMs ?? null') })
+      await js(`document.querySelector('.main')?.scrollBy(0, 760)`); await wait(1200)
+      await shot(main, 'workbuddy-sky-light-2')
+      done(); return
+    }
+    if (process.env.TP_SHOTS_ONLY === 'round2') {
+      const { BrowserWindow: BW } = await import('electron')
+      await main.webContents.insertCSS('.celebrate, .toasts, .toast { display: none !important }')
+      await set({ theme: 'dark', motion: 'standard' })
+      await js(clickSel('.nav-item', 0)); await wait(1500)
+      await js(`document.querySelector('.main')?.scrollTo(0, 0)`); await wait(800)
+      await shot(main, 'r2-wb-hero')
+      // the sky: gas under each project's galaxy, then flown into the biggest
+      await js(clickSel('.nav-item', 4)); await wait(3000)
+      await shot(main, 'r2-wb-sky')
+      await js(`(() => { const c = document.querySelector('.galaxy-stage canvas:last-of-type'); const r = c.getBoundingClientRect(); c.dispatchEvent(new MouseEvent('click', { clientX: r.left + r.width / 2, clientY: r.top + r.height * 0.46, bubbles: true })) })()`)
+      await wait(2600)
+      await wait(1500)
+      await shot(main, 'r2-wb-sky-inside')
+      await js(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`); await wait(1500)
+      // tarot: the quota cards draw the credits
+      await js(clickSel('.nav-item', 5)); await wait(2600)
+      await shot(main, 'r2-wb-tarot')
+      await js(`document.querySelector('.main').scrollBy(0, 640)`); await wait(800)
+      await shot(main, 'r2-wb-tarot-2')
+      await js(`document.querySelector('.main').scrollBy(0, 640)`); await wait(800)
+      await shot(main, 'r2-wb-tarot-3')
+      // the big screen
+      await js(`window.api.openStage()`); await wait(4500)
+      const stage = BW.getAllWindows().find((w) => w.webContents.getURL().includes('#/stage'))
+      if (stage) { await shot(stage, 'r2-wb-stage'); stage.close() }
+      // 全部: the spark with Codex and WorkBuddy circling it, and a combo for each tool
+      await set({ sourceFilter: 'all' }); await wait(1200)
+      await js(clickSel('.nav-item', 0)); await wait(1500)
+      await js(`document.querySelector('.main')?.scrollTo(0, 0)`); await wait(600)
+      for (const by of [{ claude: 40_000 }, { codex: 90_000 }, { claude: 30_000 }, { codex: 50_000 }, { workbuddy: 20_000 }, { codex: 70_000 }]) {
+        const n = Object.values(by).reduce((a, b) => a + b, 0)
+        main.webContents.send('data:update', { addedTokens: n, addedCost: n / 4e5, at: Date.now(), bySource: by })
+        await wait(700)
+      }
+      await wait(1200)
+      await shot(main, 'r2-all-hero')
+      await js(clickSel('.nav-item', 4)); await wait(3000)
+      await shot(main, 'r2-all-sky')
+      done(); return
+    }
+    if (process.env.TP_SHOTS_ONLY === 'harness') {
+      await log(await js(`(async () => {
+        const rows = (await window.api.getSessions()).filter(s => s.sessionId.startsWith('workbuddy:harness:'));
+        const contexts = await Promise.all(rows.map(s => window.api.getSessionContext(s.sessionId)));
+        const dialogues = await Promise.all(rows.map(s => window.api.getDialogue(s.sessionId)));
+        const rate = await window.api.getRate();
+        const settings = await window.api.getSettings();
+        return { kind: 'harness', auto: settings.workbuddyHarnessAuto, manualProviders: settings.workbuddyHarnessProviders.length, sessions: rows.length, requests: rows.reduce((n,s) => n+s.messages,0), tokens: rows.reduce((n,s) => n+s.tokens,0), knownWindows: contexts.filter(c => c?.window > 0).length, dialogueItems: dialogues.map(d => d?.items.length), ratePoints: rate.perMinute.length };
+      })()`))
+      await js(scrollTo('.rate-card')); await wait(600)
+      await shot(main, 'harness-rate-light')
+      await js(click('会话')); await wait(1200)
+      await js(`(() => { const i=document.querySelector('.session-search input') || document.querySelector('input'); if(i) { const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set; setter.call(i,'harness:'); i.dispatchEvent(new Event('input',{bubbles:true})); } })()`)
+      await wait(600)
+      await log(await js(`({ kind: 'harness-layout', overflow: document.querySelector('.main').scrollWidth-document.querySelector('.main').clientWidth, labels: [...document.querySelectorAll('.src-tag')].map(x=>x.textContent) })`))
+      await shot(main, 'harness-sessions-light')
+      await set({ theme: 'dark' }); await wait(600)
+      await shot(main, 'harness-sessions-dark')
+      done(); return
+    }
+    if (process.env.TP_SHOTS_ONLY === 'ledger') {
+      for (const range of ['today', '7d']) {
+        if (range === '7d') await js(`[...document.querySelectorAll('.workbuddy-ledger button')].find(b => b.textContent.trim() === '7 天')?.click()`)
+        await log(await js(`(async () => { const l = await window.api.getWorkBuddyLedger('${range}'); return { kind: 'ledger', range: l.range, status: l.status, credits: l.credits, requests: l.requests, reportedTotal: l.reportedTotal, partial: l.partial, models: l.models.length, recent: l.recent.length }; })()`))
+        await js(scrollTo('.workbuddy-ledger')); await wait(700)
+        await log(await js(`({kind: 'ledger-layout', overflow: document.querySelector('.main').scrollWidth - document.querySelector('.main').clientWidth, labels: [...document.querySelectorAll('.workbuddy-ledger strong')].map(x => x.textContent)})`))
+        await shot(main, 'workbuddy-ledger-' + range + '-light')
+        await set({ theme: 'dark' }); await wait(600)
+        await shot(main, 'workbuddy-ledger-' + range + '-dark')
+        await set({ theme: 'light' }); await wait(400)
+      }
+      done(); return
+    }
+    if (process.env.TP_SHOTS_ONLY === 'login') {
+      await js(clickSel('.nav-item', 7)); await wait(500)
+      await clickSub('WorkBuddy 积分'); await wait(1000)
+      await log(await js(`(async () => { const st = await window.api.getWorkBuddyLoginState(); const fold = [...document.querySelectorAll('.fold-head')].find(b => b.textContent.includes('本地日志兼容读取')); return { kind: 'workbuddy-login', status: st.status, source: st.source, nativeLogin: st.nativeLogin, hasLogin: [...document.querySelectorAll('button')].some(b => b.textContent.trim() === '登录 WorkBuddy'), logsExpanded: fold?.getAttribute('aria-expanded'), providerRowsVisible: document.body.textContent.includes('手动归属：'), overflow: document.querySelector('.main').scrollWidth-document.querySelector('.main').clientWidth }; })()`))
+      await shot(main, 'workbuddy-login-light')
+      await js(`[...document.querySelectorAll('.fold-head')].find(b => b.textContent.includes('本地日志兼容读取'))?.click()`); await wait(500)
+      await js(scrollTo('.fold-row.open')); await wait(300)
+      await shot(main, 'workbuddy-logs-expanded')
+      await js(`[...document.querySelectorAll('.set-label')].find(b => b.textContent === '读取兼容客户端日志')?.closest('.set-row')?.querySelector('[role="switch"]')?.click()`)
+      await js(`(async () => { const deadline = Date.now() + 45000; while (Date.now() < deadline) { const settings = await window.api.getSettings(); const load = await window.api.getLoadState(); const sessions = await window.api.getSessions(); if (!settings.workbuddyHarnessEnabled && !load.loading && !sessions.some(s => s.sessionId.startsWith('workbuddy:harness:'))) return true; await new Promise(r => setTimeout(r, 250)); } return false; })()`)
+      await log(await js(`(async () => { const settings = await window.api.getSettings(); const sessions = await window.api.getSessions(); const account = await window.api.getWorkBuddyAccount(); const ledger = await window.api.getWorkBuddyLedger('today'); return { kind: 'compatibility-off', enabled: settings.workbuddyHarnessEnabled, harnessSessions: sessions.filter(s => s.sessionId.startsWith('workbuddy:harness:')).length, nativeSessions: sessions.filter(s => s.source === 'workbuddy').length, account: account?.status, ledger: ledger?.status, overflow: document.querySelector('.main').scrollWidth-document.querySelector('.main').clientWidth }; })()`))
+      await shot(main, 'workbuddy-logs-disabled')
+      await js(`[...document.querySelectorAll('.fold-head')].find(b => b.textContent.includes('本地日志兼容读取'))?.click()`); await wait(500)
+      await js(`document.querySelector('.main').scrollTop = 0`)
+      await set({ theme: 'dark' }); main.setSize(1080, 850); await wait(600)
+      await log(await js(`({ kind: 'workbuddy-login-narrow', overflow: document.querySelector('.main').scrollWidth-document.querySelector('.main').clientWidth })`))
+      await shot(main, 'workbuddy-login-dark-narrow')
+      done(); return
+    }
+    await js(scrollTo('.workbuddy-history')); await wait(500)
+    await shot(main, 'workbuddy-credits-history')
+    await js(clickSel('.nav-item', 1)); await wait(1200)
+    await log(await js(`({ kind: 'page', page: document.querySelector('.nav-item.active')?.textContent.trim(), overflow: document.querySelector('.main')?.scrollWidth - document.querySelector('.main')?.clientWidth })`))
+    await shot(main, 'workbuddy-tasks')
+    await js(clickSel('.nav-item', 6)); await js('window.api.refreshPricing()'); await wait(1200)
+    await log(await js(`({ kind: 'page', page: document.querySelector('.nav-item.active')?.textContent.trim(), overflow: document.querySelector('.main')?.scrollWidth - document.querySelector('.main')?.clientWidth })`))
+    await shot(main, 'workbuddy-pricing')
+    await log(await js(`(async () => { const pricing = await window.api.getPricing(); const usage = await window.api.getWorkBuddyUsage('30d'); return { kind: 'pricing', models: pricing.models.filter(m => m.source === 'workbuddy').map(m => ({ model: m.model, rowId: m.rowId, estimated: m.estimated, credits: usage.models.find(c => c.rawModel === m.model)?.credits })), creditLabels: [...document.querySelectorAll('.used-cost b')].map(x => x.textContent), references: [...document.querySelectorAll('.price-name')].map(x => x.textContent) }; })()`))
+    await set({ theme: 'dark' }); await wait(800)
+    await shot(main, 'workbuddy-pricing-dark')
+    main.setSize(1080, 850); await wait(600)
+    await log(await js(`({ kind: 'narrow', width: document.querySelector('.main')?.clientWidth, overflow: document.querySelector('.main')?.scrollWidth - document.querySelector('.main')?.clientWidth })`))
+    await shot(main, 'workbuddy-pricing-narrow')
+    main.setSize(1280, 850)
+    await set({ theme: 'light' }); await wait(600)
+    await js(clickSel('.nav-item', 7)); await wait(500)
+    await clickSub('WorkBuddy 积分'); await wait(1000)
+    await shot(main, 'workbuddy-settings')
+    for (const sourceFilter of ['claude', 'codex', 'workbuddy', 'all']) {
+      await set({ sourceFilter }); await wait(400)
+      await log(await js(`(async () => { const live = await window.api.getLive(); const sessions = await window.api.getSessions(); const ranges = await window.api.getRanges(); return { kind: 'source', source: ${JSON.stringify(sourceFilter)}, todayTokens: live.today.tokens, totalEntries: live.totalEntries, totalTokens: ranges.chips.find(c => c.range === 'all')?.tokens, knownWindows: sessions.filter(s => s.window > 0).length, sessionSources: [...new Set(sessions.map(s => s.source ?? 'claude'))] }; })()`))
+    }
+    await set({ sourceFilter: 'workbuddy', showMini: true, theme: 'dark' }); await wait(800)
+    const pocket = () => (globalThis as { __tpMini?: () => BrowserWindow | null }).__tpMini?.() ?? mini
+    for (const miniMode of ['card', 'capsule', 'orb']) {
+      await set({ miniMode }); await wait(700)
+      const win = pocket(); if (win && !win.isDestroyed()) await shot(win, `workbuddy-mini-${miniMode}`)
+    }
+    await log({ kind: 'done' })
+    done(); return
+  }
+
   // the Telegram animations: the today card and a quota alert as MP4s, checked by playing them
   if (process.env.TP_SHOTS === 'anim') {
     const { probeMp4 } = await import('./cardRender')

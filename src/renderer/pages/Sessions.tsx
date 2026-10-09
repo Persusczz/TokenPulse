@@ -47,7 +47,7 @@ function SessionDetail({ row, onClose }: { row: SessionRow; onClose: () => void 
     <motion.div className="card session-detail" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} transition={{ type: 'spring', stiffness: 380, damping: 34 }}>
       <div className="card-head">
         <div className="card-title">
-          <span className={`src-tag ${row.source ?? 'claude'}`}>{row.source === 'codex' ? 'Codex' : 'Claude'}</span>
+          <span className={`src-tag ${row.source ?? 'claude'}`}>{row.source === 'workbuddy' ? row.sessionId.startsWith('workbuddy:harness:') ? 'WorkBuddy · Harness' : 'WorkBuddy' : row.source === 'codex' ? 'Codex' : 'Claude'}</span>
           <span className="serif">{row.project}</span>
           <span className="muted" style={{ fontWeight: 400 }}>
             {stamp(row.start)} 起 · {duration(row.end - row.start)} · {money(row.cost)}
@@ -133,10 +133,10 @@ export function Sessions() {
     const needle = q.trim().toLowerCase()
     const val = (r: SessionRow) => (sort.key === 'duration' ? r.end - r.start : r[sort.key])
     return (rows ?? [])
-      .filter((r) => !needle || r.project.toLowerCase().includes(needle) || r.models.some((m) => m.toLowerCase().includes(needle)))
+      .filter((r) => !needle || r.project.toLowerCase().includes(needle) || r.sessionId.toLowerCase().includes(needle) || r.models.some((m) => m.toLowerCase().includes(needle)))
       .sort((a, b) => (sort.desc ? val(b) - val(a) : val(a) - val(b)))
   }, [rows, q, sort])
-  const mixed = source === 'all' && !!rows?.some((r) => r.source === 'codex')
+  const mixed = source === 'all' && !!rows?.some((r) => r.source && r.source !== 'claude')
   const sel = focus ? (rows?.find((r) => r.sessionId === focus) ?? null) : null
 
   const th = (key: SortKey, label: string, title?: string) => (
@@ -151,12 +151,8 @@ export function Sessions() {
       <div className="page-head">
         <div>
           <h1 className="page-title">会话</h1>
-          <div className="page-sub">
-            点一行看它的上下文曲线和每次提问的费用。费用按日志中每条响应的用量计算
-            {source !== 'codex' && '；「自报 · 本次运行」是 Claude Code 自己记录的最近一次运行费用，含子调用，会话恢复后重新计数'}
-          </div>
         </div>
-        <input className="input" placeholder="搜索项目或模型" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: 220 }} />
+        <input className="input" placeholder="搜索项目、模型或会话" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: 220 }} />
       </div>
       <AnimatePresence>{sel && <SessionDetail key={sel.sessionId} row={sel} onClose={() => setFocus(null)} />}</AnimatePresence>
       <div className="card" style={{ padding: 8 }}>
@@ -177,7 +173,7 @@ export function Sessions() {
                   {th('context', '上下文', '最近一次请求带上的上下文大小（不含子代理）')}
                   {th('tokens', 'Token')}
                   {th('cost', '费用')}
-                  {source !== 'codex' && (
+                  {(source === 'claude' || source === 'all') && (
                     <th className="num" title="Claude Code 写入日志的 cost-state：仅统计最近一次进程运行，包含日志中看不到的子调用">
                       自报 · 本次运行
                     </th>
@@ -188,7 +184,7 @@ export function Sessions() {
                 {list.map((r) => (
                   <tr key={r.sessionId} title={r.sessionId} className={`clickable${focus === r.sessionId ? ' on' : ''}`} onClick={() => setFocus(focus === r.sessionId ? null : r.sessionId)}>
                     <td className="ellipsis">
-                      {mixed && <span className={`src-tag ${r.source ?? 'claude'}`}>{r.source === 'codex' ? 'Codex' : 'Claude'}</span>}
+                      {(mixed || r.sessionId.startsWith('workbuddy:harness:')) && <span className={`src-tag ${r.source ?? 'claude'}`}>{r.source === 'workbuddy' ? r.sessionId.startsWith('workbuddy:harness:') ? 'Harness' : 'WorkBuddy' : r.source === 'codex' ? 'Codex' : 'Claude'}</span>}
                       {r.project}
                     </td>
                     <td className="ellipsis muted">{r.models.join('、')}</td>
@@ -202,7 +198,7 @@ export function Sessions() {
                     <td className="num" style={{ fontWeight: 600 }}>
                       {money(r.cost)}
                     </td>
-                    {source !== 'codex' && <td className="num muted">{r.reportedCost === null ? '—' : money(r.reportedCost)}</td>}
+                    {(source === 'claude' || source === 'all') && <td className="num muted">{r.reportedCost === null ? '—' : money(r.reportedCost)}</td>}
                   </tr>
                 ))}
               </tbody>

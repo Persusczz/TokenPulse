@@ -6,7 +6,7 @@ export const LITELLM_URL =
 
 const M = 1e6
 
-/** Claude and OpenAI GPT rows from LiteLLM's price list, per-token costs converted to $/MTok */
+/** Vendor reference rows from LiteLLM's price list, per-token costs converted to $/MTok */
 export function parseLiteLLM(json: Record<string, any>): PriceRow[] {
   const out = new Map<string, PriceRow>()
   // first-party keys ("claude-…") before provider-prefixed ones, which can carry regional prices
@@ -21,6 +21,13 @@ export function parseLiteLLM(json: Record<string, any>): PriceRow[] {
       if (out.has(id)) continue
       const input = v.input_cost_per_token * M
       out.set(id, { id, name: key, input, output: v.output_cost_per_token * M, cacheWrite5m: input, cacheWrite1h: input, cacheRead: (v.cache_read_input_token_cost ?? v.input_cost_per_token * 0.1) * M })
+      continue
+    }
+    if (/^(?:deepseek(?:\/|\b)|(?:z_ai|zai)\/glm-|qwen\/|hunyuan\/|minimax\/|moonshot\/)/i.test(key)) {
+      const id = normalizeModelId(key)
+      if (out.has(id)) continue
+      const input = v.input_cost_per_token * M
+      out.set(id, { id, name: id, input, output: v.output_cost_per_token * M, cacheWrite5m: input, cacheWrite1h: input, cacheRead: (v.cache_read_input_token_cost ?? v.input_cost_per_token) * M, priceSource: 'LiteLLM · ' + key.split('/')[0], priceUrl: LITELLM_URL, priceNote: '模型提供商的 API 参考价；WorkBuddy 实际扣费以响应积分为准' })
       continue
     }
     if (!/claude/i.test(key)) continue

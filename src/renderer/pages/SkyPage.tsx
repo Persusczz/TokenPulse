@@ -53,7 +53,6 @@ export function SkyPage() {
             <span className="title-mark sky-mark">✶</span>
             星空
           </h1>
-          <div className="page-sub">你的用量画成的宇宙：每次提问是一颗星，每个项目是一个星系，每个模型是一颗行星</div>
         </div>
         <Segmented
           value={String(days)}
@@ -69,7 +68,6 @@ export function SkyPage() {
       <div className="card starmap-card galaxy-card">
         <div className="starmap-bar">
           <span className="starmap-title serif">项目星系</span>
-          <span className="muted">每个项目是一个星系，里面每颗星是一次提问，一段对话连成一条星链（越靠外越新）；星系越大，这个项目花得越多。点星系飞进去，读里面的每段对话</span>
         </div>
         {map ? (
           map.prompts.length ? (
@@ -117,14 +115,19 @@ export function SkyPage() {
             星座连线
           </label>
           <span className="starmap-legend">
-            {source !== 'codex' && (
+            {(source === 'claude' || source === 'all') && (
               <span>
                 <i className="warm" /> Claude
               </span>
             )}
-            {source !== 'claude' && (
+            {(source === 'codex' || source === 'all') && (
               <span>
                 <i className="cool" /> Codex
+              </span>
+            )}
+            {(source === 'workbuddy' || source === 'all') && (
+              <span>
+                <i className="green" /> WorkBuddy
               </span>
             )}
           </span>
@@ -134,7 +137,7 @@ export function SkyPage() {
             map.prompts.length ? (
               <StarMapCanvas map={map} search={search} project={project} lines={lines} flash={flash} onHover={setHit} onPick={pick} />
             ) : (
-              <div className="starmap-empty">这段时间还没有提问：用一次 Claude Code 或 Codex，这里就会亮起第一颗星</div>
+              <div className="starmap-empty">这段时间还没有提问</div>
             )
           ) : (
             <div className="skeleton" style={{ position: 'absolute', inset: 0 }} />
@@ -150,7 +153,7 @@ export function SkyPage() {
               </div>
               {session && session.prompts > 1 && (
                 <div className="muted">
-                  所在星座：{session.prompts} 颗星，共 {money(session.cost)} · 点一下打开这个会话
+                  所在星座 {session.prompts} 颗星 · {money(session.cost)}
                 </div>
               )}
             </div>
@@ -162,7 +165,6 @@ export function SkyPage() {
         <div className="card starmap-card planet-card">
           <div className="starmap-bar">
             <span className="starmap-title serif">模型行星</span>
-            <span className="muted">每颗行星是一个模型，越大花得越多；中间的太阳是这段时间的总花费</span>
           </div>
           {map ? <PlanetSystem models={map.models} source={source} /> : <div className="planet-stage skeleton" />}
         </div>
@@ -175,9 +177,6 @@ export function SkyPage() {
           <div className="card-head">
             <div className="card-title">
               <span className="serif">最亮的星</span>
-              <span className="muted" style={{ fontWeight: 400 }}>
-                花得最多的提问，点一下在星图上找到它
-              </span>
             </div>
           </div>
           <div className="starmap-list">

@@ -177,9 +177,9 @@ function claudeView(state) {
     }
     if (ev.type === 'result') {
       state.ok = ev.subtype === 'success' && !ev.is_error
-      state.cost = typeof ev.total_cost_usd === 'number' ? ev.total_cost_usd : null
+      state.cost = !state.workbuddy && typeof ev.total_cost_usd === 'number' ? ev.total_cost_usd : null
       state.turns = typeof ev.num_turns === 'number' ? ev.num_turns : null
-      if (!state.ok) state.reason = typeof ev.result === 'string' && ev.result ? ev.result : ev.subtype
+      if (!state.ok) state.reason = typeof ev.result === 'string' && ev.result ? ev.result : Array.isArray(ev.errors) && ev.errors.length ? ev.errors.join('\n') : ev.subtype
     }
   }
 }
@@ -225,10 +225,10 @@ function run(job) {
   busy = job
   stopped = false
   folderName = job.folder || folderName
-  const accent = job.tool === 'codex' ? blue : clay
-  const toolName = job.tool === 'codex' ? 'Codex' : 'Claude Code'
+  const accent = job.tool === 'workbuddy' ? green : job.tool === 'codex' ? blue : clay
+  const toolName = job.tool === 'workbuddy' ? 'WorkBuddy' : job.tool === 'codex' ? 'Codex' : 'Claude Code'
   const started = Date.now()
-  const state = { ok: null, cost: null, turns: null, tokens: null, reason: '' }
+  const state = { ok: null, cost: null, turns: null, tokens: null, reason: '', workbuddy: job.tool === 'workbuddy' }
   process.title = `${toolName} · ${folderName} · 运行中`
   heartbeat()
 

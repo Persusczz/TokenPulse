@@ -1,20 +1,24 @@
 {
   "name": "tokenpulse",
   "productName": "TokenPulse",
-  "version": "2.20.0",
-  "description": "Claude token usage and cost monitor",
+  "version": "2.21.0",
+  "description": "Claude, Codex and WorkBuddy token usage and cost monitor",
   "author": "TokenPulse",
   "license": "MIT",
   "main": "out/main/index.js",
   "scripts": {
+    "predev": "node scripts/ensure-electron.cjs",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "prestart": "node scripts/ensure-electron.cjs",
     "start": "electron-vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "icons": "node scripts/gen-icons.mjs && electron scripts/render-icons.cjs",
     "quota": "node src/bridge/quota.cjs",
-    "dist": "electron-vite build && electron-builder --win"
+    "predist": "node scripts/ensure-electron.cjs",
+    "postdist": "node scripts/checksums.cjs",
+    "dist": "electron-vite build && electron-builder --win -c.electronDist=node_modules/electron/dist --publish never"
   },
   "devDependencies": {
     "@fontsource-variable/source-serif-4": "^5.3.0",

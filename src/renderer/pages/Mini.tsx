@@ -39,7 +39,7 @@ function useMiniData() {
     other: tools[1] ?? null,
     beat: app.lastUpdate?.addedTokens ? app.lastUpdate.at : 0,
     pauseAt: main?.pauseAt ?? null,
-    paused: source === 'codex' ? [] : (app.guard?.paused ?? []),
+    paused: source === 'claude' || source === 'all' ? (app.guard?.paused ?? []) : [],
     intensity: (live?.intensity ?? 0) as Intensity
   }
 }
@@ -116,7 +116,7 @@ function carousel(d: MiniData, now: number): { key: string; node: ReactNode }[] 
   if (d.other?.five) items.push({ key: 'x5h', node: <QuotaBar label={tag('codex', '5h')} w={d.other.five} pauseAt={null} when={resetIn(d.other.five, true)} /> })
   if (d.seven) items.push({ key: '7d', node: <QuotaBar label={tag('claude', '7d')} w={d.seven} pauseAt={null} when={resetIn(d.seven, false)} /> })
   if (d.other?.seven) items.push({ key: 'x7d', node: <QuotaBar label={tag('codex', '7d')} w={d.other.seven} pauseAt={null} when={resetIn(d.other.seven, false)} /> })
-  const burn = d.source === 'codex' ? null : d.quota?.burn
+  const burn = d.source === 'claude' || d.source === 'all' ? d.quota?.burn : null
   if (burn && burn.pctPerHour >= 0.5) {
     const eta = burn.etaPause ?? burn.etaFull
     items.push({

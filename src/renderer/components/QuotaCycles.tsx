@@ -250,9 +250,6 @@ export function CyclesCard() {
       <div className="card-head">
         <div className="card-title">
           <span className="serif nowrap">额度窗口账单</span>
-          <span className="muted" style={{ fontWeight: 400 }}>
-            每个 5 小时、每个 7 天窗口各用了多少
-          </span>
         </div>
         <div className="cy-controls">
           {data && data.length > 1 && (

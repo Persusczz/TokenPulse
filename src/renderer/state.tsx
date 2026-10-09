@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { fmtMoney, type MoneyOpts } from '@shared/format'
 import type { CodexQuota, GuardState, LoadState, PricingInfo, QuotaInfo, QuotaWindow, Settings, SourceView, UpdateEvent, UpdateState, UsageSource } from '@shared/types'
+import { effectiveSource, hasClaude, hasCodex, SOURCE_CLI, SOURCE_NAMES } from '@shared/sources'
 import { setFrameCap } from './frames'
 
 const api = window.api
@@ -155,17 +156,18 @@ export function usePrefersReducedMotion(): boolean {
  */
 export function useSource(): SourceView {
   const { settings, load } = useApp()
-  const f = settings?.sourceFilter ?? 'all'
-  if (!settings?.codexEnabled) return 'claude'
-  // before the first scan finishes the Codex file count is unknown: trust the setting
-  if (f === 'all' && load && !load.loading && !(load.codexFiles ?? 0)) return 'claude'
-  return f
+  return effectiveSource(settings, load)
 }
 
 /** Codex is set up and has logs: the Claude / Codex / 全部 switch is worth showing */
 export function useHasCodex(): boolean {
   const { settings, load, codexQuota } = useApp()
   return !!settings?.codexEnabled && ((load?.codexFiles ?? 0) > 0 || !!codexQuota)
+}
+
+export function useHasWorkBuddy(): boolean {
+  const { settings, load } = useApp()
+  return !!settings?.workbuddyEnabled && (load?.workbuddyFiles ?? 0) > 0
 }
 
 /** Mirrors appearance settings onto <html> for CSS: data-motion, data-backdrop, data-material, data-source, data-pack */
@@ -208,19 +210,19 @@ export function useToolQuotas(): ToolQuota[] {
   const { quota, codexQuota, settings } = useApp()
   const source = useSource()
   const out: ToolQuota[] = []
-  if (source !== 'codex') {
+  if (hasClaude(source)) {
     const ws = quota?.windows ?? []
     out.push({ source: 'claude', five: ws.find(isFive) ?? null, seven: ws.find(isSeven) ?? null, pauseAt: settings?.guardEnabled ? settings.guardPauseAt : null, plan: quota?.plan ?? null })
   }
-  if (source !== 'claude' && codexQuota) {
+  if (hasCodex(source) && codexQuota) {
     const ws = codexQuota.windows
     out.push({ source: 'codex', five: ws.find(isFive) ?? null, seven: ws.find(isSeven) ?? null, pauseAt: null, plan: codexQuota.plan ? `ChatGPT ${codexQuota.plan.charAt(0).toUpperCase()}${codexQuota.plan.slice(1)}` : null })
   }
   return out
 }
 
-export const TOOL_NAME: Record<SourceView, string> = { claude: 'Claude', codex: 'Codex', all: '全部' }
-export const TOOL_CLI: Record<UsageSource, string> = { claude: 'Claude Code', codex: 'Codex' }
+export const TOOL_NAME = SOURCE_NAMES
+export const TOOL_CLI = SOURCE_CLI
 
 // ---------- launch intro ----------
 

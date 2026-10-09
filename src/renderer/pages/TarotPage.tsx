@@ -2,7 +2,7 @@ import { useId, useMemo, useState } from 'react'
 import type { TarotDeck } from '@shared/types'
 import { ARCANA, cardStory } from '@shared/tarot'
 import { cardFace } from '@shared/tarotArt'
-import { cssVar, hexColor, TOOL_NAME, useApp, useData, useSource } from '../state'
+import { cssVar, hexColor, useApp, useData, useSource } from '../state'
 
 const safe = (id: string) => id.replace(/[^a-zA-Z0-9]/g, '')
 
@@ -64,9 +64,6 @@ export function TarotPage() {
             <span className="title-mark tarot-mark">☽</span>
             塔罗
           </h1>
-          <div className="page-sub">
-            22 张大阿卡纳，每张都是{source === 'all' ? '你' : ` ${TOOL_NAME[source]} `}用量的一幅画：太阳的光是今天的每个小时，月相是 7 天额度，命运之轮的格子是这周的 5 小时窗口。牌随用量实时变化，点一张翻到背面看数字
-          </div>
         </div>
       </div>
       <div className="card deck-table">

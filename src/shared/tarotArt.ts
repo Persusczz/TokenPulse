@@ -179,7 +179,8 @@ const ART: Art[] = [
   },
   // IV the Emperor: his sceptre is the 5-hour quota, filled as far as it is used, with the guard's line across it
   (k, d, u) => {
-    const p = d.five ? clamp01(d.five.pct / 100) : 0
+    const cr = d.credits
+    const p = cr ? clamp01(cr.usedPct / 100) : d.five ? clamp01(d.five.pct / 100) : 0
     const top = 112
     const bottom = 228
     const y = f(bottom - (bottom - top) * p)
@@ -193,8 +194,8 @@ const ART: Art[] = [
   <rect x="92" y="${y}" width="16" height="${f(bottom - y)}" fill="${p >= 0.9 ? '#ff5d6c' : k.hue}" fill-opacity=".85" stroke="none" clip-path="url(#${u}s)"/>
   <rect x="92" y="${top}" width="16" height="${bottom - top}" rx="8"/>
   ${g !== null ? `<path d="M84 ${g}h32" stroke="#ff8a8a" stroke-width="1.6" stroke-dasharray="3 2"/>${note(k, 128, f(g + 2.5), '守卫', 6.5, 'start')}` : ''}
-  <text x="100" y="${f(Math.min(y, bottom - 6) - 6)}" text-anchor="middle" font-size="10" font-weight="700" fill="${k.gold}" stroke="none">${d.five ? `${Math.round(d.five.pct)}%` : '—'}</text>
-  ${note(k, 100, 252, `${d.tool === 'codex' ? 'Codex' : 'Claude'} 5 小时额度`)}`
+  <text x="100" y="${f(Math.min(y, bottom - 6) - 6)}" text-anchor="middle" font-size="10" font-weight="700" fill="${k.gold}" stroke="none">${cr ? `${Math.round(cr.usedPct)}%` : d.five ? `${Math.round(d.five.pct)}%` : '—'}</text>
+  ${note(k, 100, 252, d.tool === 'workbuddy' ? 'WorkBuddy 积分已用' : `${d.tool === 'codex' ? 'Codex' : 'Claude'} 5 小时额度`)}`
   },
   // V the Hierophant: the 24-hour halo round his crown, each hour as long as your usual use at that hour
   (k, d) => {
@@ -330,7 +331,8 @@ const ART: Art[] = [
   },
   // XII the Hanged Man: the halo is what the 5-hour windows left unused this week; the more is left, the lower he hangs
   (k, d) => {
-    const p = d.unused ? clamp01(d.unused.avg / 100) : 0
+    const cr = d.credits
+    const p = cr ? clamp01(1 - cr.usedPct / 100) : d.unused ? clamp01(d.unused.avg / 100) : 0
     const dy = f(26 * p)
     return `
   <path d="M44 74L156 74M54 74L54 258M146 74L146 258" stroke-width="3"/>
@@ -342,7 +344,7 @@ const ART: Art[] = [
     <path d="M94 158L86 176L100 186M106 158L114 176L100 186"/>
     <circle cx="100" cy="206" r="${f(10 + 26 * p)}" fill="${k.hue}" fill-opacity=".3" stroke="none"/><circle cx="100" cy="204" r="10" ${tint(k, 0.3)}/>
   </g>
-  <text x="100" y="${f(250)}" text-anchor="middle" font-size="9" font-weight="700" fill="${k.gold}" stroke="none">${d.unused ? `平均剩 ${Math.round(d.unused.avg)}%` : '—'}</text>`
+  <text x="100" y="${f(250)}" text-anchor="middle" font-size="9" font-weight="700" fill="${k.gold}" stroke="none">${cr ? `积分剩 ${Math.round(100 - cr.usedPct)}%` : d.unused ? `平均剩 ${Math.round(d.unused.avg)}%` : '—'}</text>`
   },
   // XIII Death: the rose on his banner has a petal for each conversation that ended today; the sun rises behind
   (k, d) => {
@@ -366,16 +368,17 @@ const ART: Art[] = [
   },
   // XIV Temperance: the left cup is the 5-hour quota, the right the 7-day one; the stream between is how much of the week a full 5 hours pours away
   (k, d, u) => {
-    const five = d.five ? d.five.pct / 100 : 0
-    const seven = d.seven ? d.seven.pct / 100 : 0
+    const cr = d.credits
+    const five = cr ? cr.usedPct / 100 : d.five ? d.five.pct / 100 : 0
+    const seven = cr ? (cr.today !== null && cr.dailyAvg ? clamp01(cr.today / cr.dailyAvg) : 0) : d.seven ? d.seven.pct / 100 : 0
     const w = d.full ? f(1 + Math.min(5, d.full / 4)) : 1.5
     return `
   <path d="M100 116Q70 80 40 92Q60 104 66 122M100 116Q130 80 160 92Q140 104 134 122" stroke-opacity=".45"/>
   <rect x="90" y="124" width="20" height="20"/><path d="M100 128L107 140L93 140Z" ${solid(k)}/>
   ${cup(k, 60, 126, five, `${u}a`)}${cup(k, 140, 176, seven, `${u}b`)}
   <path d="M74 132Q118 140 128 178" stroke="${k.hue}" stroke-width="${w}" stroke-dasharray="4 3" stroke-linecap="round"/>
-  ${note(k, 60, 182, `5 小时 ${d.five ? Math.round(d.five.pct) : '—'}%`)}${note(k, 140, 232, `7 天 ${d.seven ? Math.round(d.seven.pct) : '—'}%`)}
-  ${d.full ? note(k, 100, 252, `一个满的 5 小时 ≈ 7 天的 ${d.full >= 10 ? Math.round(d.full) : d.full.toFixed(1)}%`) : ''}`
+  ${cr ? `${note(k, 60, 182, `已用 ${Math.round(cr.usedPct)}%`)}${note(k, 140, 232, `今日 ${cr.today !== null ? Math.round(cr.today) : '—'} 积分`)}${cr.dailyAvg ? note(k, 100, 252, `日均 ${Math.round(cr.dailyAvg)} 积分`) : ''}` : `${note(k, 60, 182, `5 小时 ${d.five ? Math.round(d.five.pct) : '—'}%`)}${note(k, 140, 232, `7 天 ${d.seven ? Math.round(d.seven.pct) : '—'}%`)}`}
+  ${!cr && d.full ? note(k, 100, 252, `一个满的 5 小时 ≈ 7 天的 ${d.full >= 10 ? Math.round(d.full) : d.full.toFixed(1)}%`) : ''}`
   },
   // XV the Devil: the torch burns as many times brighter as today's costliest question cost over the average; a chain for each question that cost three times the average
   (k, d) => {
@@ -456,13 +459,14 @@ const ART: Art[] = [
   },
   // XVIII the Moon: its phase is how much of the 7-day quota is used (full moon, all gone); one drop of dew for each day to the reset
   (k, d) => {
-    const p = d.seven ? clamp01(d.seven.pct / 100) : 0
+    const cr = d.credits
+    const p = cr ? clamp01(cr.usedPct / 100) : d.seven ? clamp01(d.seven.pct / 100) : 0
     const r = 26
     const cx = 100
     const cy = 90
     const rx = f(r * Math.abs(1 - 2 * p))
     const lit = p <= 0 ? '' : `M${cx} ${cy - r}A${r} ${r} 0 0 1 ${cx} ${cy + r}A${rx} ${r} 0 0 ${p > 0.5 ? 1 : 0} ${cx} ${cy - r}Z`
-    const left = d.seven ? Math.max(0, Math.ceil((d.seven.end - d.at) / 86_400_000)) : 0
+    const left = cr ? Math.max(0, Math.ceil(cr.daysLeft ?? 0)) : d.seven ? Math.max(0, Math.ceil((d.seven.end - d.at) / 86_400_000)) : 0
     const drops = Array.from({ length: Math.min(7, left) }, (_, i) => `<path d="${drop(100 + (i - (Math.min(7, left) - 1) / 2) * 11, 128 + (i % 2) * 6)}" ${solid(k)}/>`).join('')
     return `
   <circle cx="${cx}" cy="${cy}" r="42" fill="${k.hue}" fill-opacity="${f(0.1 + 0.25 * p)}" stroke="none"/>
@@ -475,8 +479,8 @@ const ART: Art[] = [
   <path d="M100 254Q86 236 102 222Q118 208 96 194Q84 184 100 168" stroke-opacity=".6"/>
   <path d="M62 216L64 200L70 208L76 200L78 216Q70 224 62 216Z" ${tint(k, 0.5)}/><path d="M122 216L124 200L130 208L136 200L138 216Q130 224 122 216Z" fill="${k.dark}"/>
   <ellipse cx="100" cy="252" rx="46" ry="8" ${tint(k, 0.3)}/>
-  <text x="100" y="${f(164)}" text-anchor="middle" font-size="9" font-weight="700" fill="${k.gold}" stroke="none">${d.seven ? `${Math.round(d.seven.pct)}%` : '—'}</text>
-  ${note(k, 100, 176, d.seven ? `${left} 天后刷新` : '没有 7 天额度读数')}`
+  <text x="100" y="${f(164)}" text-anchor="middle" font-size="9" font-weight="700" fill="${k.gold}" stroke="none">${cr ? `${Math.round(cr.usedPct)}%` : d.seven ? `${Math.round(d.seven.pct)}%` : '—'}</text>
+  ${note(k, 100, 176, cr ? (cr.daysLeft !== null ? `约 ${left} 天用完` : '积分') : d.seven ? `${left} 天后刷新` : '没有 7 天额度读数')}`
   },
   // XIX the Sun: 24 rays, one for each hour of today, as long as that hour's use (noon at the top)
   (k, d) => {

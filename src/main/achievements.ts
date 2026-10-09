@@ -307,10 +307,11 @@ export function computeAchievements(entries: CostedEntry[], counters: Counters =
     if (seen.seasons.size === 4) hit('seasons', e.ts)
     const tool = e.source ?? 'claude'
     seen.tools.add(tool)
-    if (seen.tools.size === 2) hit('two-tools', e.ts)
-    const both = (hourTools.get(hk) ?? 0) | (tool === 'codex' ? 2 : 1)
+    if (seen.tools.has('claude') && seen.tools.has('codex')) hit('two-tools', e.ts)
+    // Claude Code and Codex, each its own bit: WorkBuddy is neither
+    const both = (hourTools.get(hk) ?? 0) | (tool === 'codex' ? 2 : tool === 'claude' ? 1 : 4)
     hourTools.set(hk, both)
-    if (both === 3) {
+    if ((both & 3) === 3) {
       binaryDays.add(k)
       if (binaryDays.size >= 10) hit('binary', e.ts)
     }
@@ -444,6 +445,7 @@ export function computeAchievements(entries: CostedEntry[], counters: Counters =
 
   const days = activeDays.length
   const firstTime = (n: number, yes: string, no: string): [number, string] => [n > 0 ? 1 : 0, n > 0 ? yes : no]
+  const pair = +seen.tools.has('claude') + +seen.tools.has('codex')
   const progress: Record<string, [number, string]> = {
     'day-1m': [best.day / 1e6, `单日最高 ${fmtM(best.day)}`],
     'day-10m': [best.day / 1e7, `单日最高 ${fmtM(best.day)}`],
@@ -515,7 +517,7 @@ export function computeAchievements(entries: CostedEntry[], counters: Counters =
     'remnant-set': [kinds.size / 4, `已集 ${kinds.size} / 4 种`],
     weekdays: [seen.weekdays.size / 7, `已集 ${seen.weekdays.size} / 7 天`],
     shichen: [seen.shichen.size / 12, `已集 ${seen.shichen.size} / 12 个时辰`],
-    'two-tools': [seen.tools.size / 2, `已用 ${seen.tools.size} / 2 个`],
+    'two-tools': [pair / 2, `已用 ${pair} / 2 个`],
     'packs-8': [packs.length / 8, `已试 ${packs.length} / 8 个`],
     'packs-16': [packs.length / 16, `已试 ${packs.length} / 16 个`],
     worlds: [worlds.length / WORLDS.length, `已去 ${worlds.length} / ${WORLDS.length} 个`],

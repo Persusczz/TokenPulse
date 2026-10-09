@@ -8,8 +8,8 @@ export interface TrayLook {
   /** the guard holds a task: pause bars instead of the spark */
   paused: boolean
   accent: RGB
-  /** Claude's spark, or Codex's hexagon */
-  glyph?: 'spark' | 'codex'
+  /** Claude's spark, Codex's hexagon, or WorkBuddy's W */
+  glyph?: 'spark' | 'codex' | 'workbuddy'
 }
 
 export const QUOTA_GREEN: RGB = [76, 175, 80]
@@ -51,6 +51,26 @@ export function trayBitmap(size: number, o: TrayLook): Buffer {
     for (const [nx, ny] of hexN) d = Math.max(d, x * nx + y * ny)
     return Math.abs(d - hexA) <= 1.35 * k || Math.hypot(x, y) <= 1.9 * k
   }
+  // WorkBuddy: the W of its mark, upright, inside a rounded square that turns with the angle
+  const wu = (sparkR * 0.52) / 8.5
+  const wPts = [[7.5, 10.5], [11, 22], [16, 14], [21, 22], [24.5, 10.5]].map(([x, y]) => [(x - 16) * wu, (y - 16.25) * wu])
+  const sq = (o.angle * 0.5 * Math.PI) / 180
+  const inWorkBuddy = (x: number, y: number) => {
+    for (let i = 1; i < wPts.length; i++) {
+      const [ax, ay] = wPts[i - 1]
+      const [bx, by] = wPts[i]
+      const t = Math.max(0, Math.min(1, ((x - ax) * (bx - ax) + (y - ay) * (by - ay)) / ((bx - ax) ** 2 + (by - ay) ** 2)))
+      if (Math.hypot(x - ax - t * (bx - ax), y - ay - t * (by - ay)) <= 1.45 * k) return 1
+    }
+    const rx = Math.abs(x * Math.cos(sq) + y * Math.sin(sq))
+    const ry = Math.abs(-x * Math.sin(sq) + y * Math.cos(sq))
+    const half = sparkR * 0.82
+    const round = sparkR * 0.28
+    const qx = rx - (half - round)
+    const qy = ry - (half - round)
+    const edge = Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - round
+    return Math.abs(edge) <= 0.9 * k ? 0.55 : 0
+  }
 
   for (let py = 0; py < size; py++) {
     for (let px = 0; px < size; px++) {
@@ -83,6 +103,9 @@ export function trayBitmap(size: number, o: TrayLook): Buffer {
             if (Math.abs(y) <= 4.6 * k && Math.abs(Math.abs(x) - 2.4 * k) <= 1.3 * k) over(QUOTA_RED, 1)
           } else if (o.glyph === 'codex') {
             if (inCodex(x, y)) over(o.accent, 1)
+          } else if (o.glyph === 'workbuddy') {
+            const w = inWorkBuddy(x, y)
+            if (w) over(o.accent, w)
           } else {
             let inSpark = d <= 2.3 * k
             for (const ray of rays) {

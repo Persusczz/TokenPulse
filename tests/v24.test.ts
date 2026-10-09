@@ -165,4 +165,11 @@ describe('telegram text', () => {
     // secrets never show their names before they are found
     expect(ach).not.toContain('午夜钟声')
   })
+  it('counts only Claude Code and Codex as the two tools: WorkBuddy is neither', () => {
+    const t0 = new Date(2026, 9, 5, 10, 0).getTime()
+    const list = [entry(t0), entry(t0 + MIN, { source: 'workbuddy', sessionId: 'w' })]
+    const a = Object.fromEntries(computeAchievements(list, {}, { remnants: [], now: t0 + DAY }).map((x) => [x.id, x]))
+    expect(a['two-tools'].unlocked).toBe(false)
+    expect(a['two-tools'].hint).toBe('已用 1 / 2 个')
+  })
 })

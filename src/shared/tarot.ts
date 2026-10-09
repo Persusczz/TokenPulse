@@ -69,6 +69,7 @@ export function cardStory(id: number, d: TarotDeck, money: (usd: number) => stri
       case 3:
         return d.days.slice(-7).map((x) => `${md(x.day)}　写出 ${tk(x.output)}`)
       case 4:
+        if (d.credits) return [`WorkBuddy 积分已用 ${pct(d.credits.usedPct)}`, `还剩 ${Math.round(d.credits.remaining)} / ${Math.round(d.credits.total)}`]
         return d.five ? [`5 小时额度 ${pct(d.five.pct)}，${hm(d.five.end)} 刷新`, d.guardAt !== null ? `守卫线 ${d.guardAt}%` : '守卫没有开（或这个工具不归守卫管）'] : ['没有 5 小时额度读数']
       case 5: {
         const top = d.usualHours
@@ -92,10 +93,12 @@ export function cardStory(id: number, d: TarotDeck, money: (usd: number) => stri
       case 11:
         return [`这 7 天 ${money(d.week.now)}`, `再前 7 天 ${money(d.week.prev)}`, d.week.prev ? `${d.week.now >= d.week.prev ? '多' : '少'}了 ${pct((Math.abs(d.week.now - d.week.prev) / d.week.prev) * 100)}` : '']
       case 12:
+        if (d.credits) return [`积分还剩 ${pct(100 - d.credits.usedPct)}`, d.credits.daysLeft !== null ? `照日均约还能用 ${Math.round(d.credits.daysLeft)} 天` : '还算不出能用多久']
         return d.unused ? [`这 7 天结束了 ${d.unused.n} 个 5 小时窗口`, `刷新时平均还剩 ${pct(d.unused.avg)} 没用`] : ['这 7 天还没有结束的 5 小时窗口']
       case 13:
         return d.endedCount ? [`今天结束了 ${d.endedCount} 段对话`, ...d.ended.slice(0, 3).map((s) => `${hm(s.end)} ${s.project} · ${tk(s.tokens)}`)] : ['今天还没有结束的对话']
       case 14:
+        if (d.credits) return [`积分已用 ${pct(d.credits.usedPct)}`, `今日 ${d.credits.today !== null ? Math.round(d.credits.today) : '—'} 积分 · 日均 ${d.credits.dailyAvg !== null ? Math.round(d.credits.dailyAvg) : '—'}`]
         return [
           `5 小时额度 ${d.five ? pct(d.five.pct) : '—'} · 7 天额度 ${d.seven ? pct(d.seven.pct) : '—'}`,
           d.full ? `用满一个 5 小时窗口 ≈ 7 天额度的 ${d.full.toFixed(1)}%，一周约能装下 ${(100 / d.full).toFixed(1)} 个` : '读数还不够，算不出换算'
@@ -107,6 +110,7 @@ export function cardStory(id: number, d: TarotDeck, money: (usd: number) => stri
       case 17:
         return d.projects.length ? d.projects.map((p, i) => `${i + 1}. ${p.name}　${tk(p.tokens)}`) : ['这 7 天还没有项目']
       case 18:
+        if (d.credits) return [`积分已用 ${pct(d.credits.usedPct)}`, d.credits.daysLeft !== null ? `照日均约 ${Math.round(d.credits.daysLeft)} 天用完` : '还算不出能用多久']
         return d.seven ? [`7 天额度 ${pct(d.seven.pct)}`, `${md(d.seven.end)} ${hm(d.seven.end)} 刷新`] : ['没有 7 天额度读数']
       case 19: {
         const best = t.hours.reduce((b, v, h) => (v > t.hours[b] ? h : b), 0)

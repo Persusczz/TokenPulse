@@ -3,11 +3,12 @@ import { useEffect, useRef } from 'react'
 import type { Intensity, SourceView } from '@shared/types'
 import { revealFromPointer } from '../effects'
 import { onFrame } from '../frames'
-import { useApp, useData, useHasCodex, useMotionLevel, useSource } from '../state'
+import { useApp, useData, useHasCodex, useHasWorkBuddy, useMotionLevel, useSource } from '../state'
+import { WorkBuddyMark } from '../../features/workbuddy/WorkBuddyMark'
 import { CodexMark, SourceMark } from './CodexMark'
 import { Starburst } from './Starburst'
 
-const TOOL_LINE: Record<SourceView, string> = { claude: 'for Claude Code', codex: 'for Codex', all: 'Claude + Codex' }
+const TOOL_LINE: Record<SourceView, string> = { claude: 'for Claude Code', codex: 'for Codex', workbuddy: 'for WorkBuddy', all: 'AI 用量监控' }
 
 /**
  * The wordmark's sweep of light: still for 3.3 s, then 2.7 s across. Run on
@@ -45,6 +46,7 @@ export function Brand() {
   const shine = useShine()
   const source = useSource()
   const hasCodex = useHasCodex()
+  const hasWorkBuddy = useHasWorkBuddy()
   const live = useData(() => window.api.getLive(), [], 30_000)
   const beat = lastUpdate?.addedTokens ? lastUpdate.at : 0
   return (
@@ -60,7 +62,7 @@ export function Brand() {
         <svg key={beat} className="brand-ecg" viewBox="0 0 120 12" preserveAspectRatio="none" aria-hidden>
           <path d="M0 6h40l4-4 5 9 5-11 5 11 4-5h57" />
         </svg>
-        {hasCodex && <span className="brand-tool">{TOOL_LINE[source]}</span>}
+        {(hasCodex || hasWorkBuddy) && <span className="brand-tool">{TOOL_LINE[source]}</span>}
       </span>
     </div>
   )
@@ -69,14 +71,19 @@ export function Brand() {
 const SOURCES: { value: SourceView; label: string; title: string }[] = [
   { value: 'claude', label: 'Claude', title: '只看 Claude Code：用量、额度、守卫和任务' },
   { value: 'codex', label: 'Codex', title: '只看 Codex：GPT 用量和 ChatGPT 套餐额度' },
-  { value: 'all', label: '全部', title: '两个一起看：合计用量，额度并排显示' }
+  { value: 'workbuddy', label: 'WorkBuddy', title: '只看 WorkBuddy：用量、积分、会话和任务' },
+  { value: 'all', label: '全部', title: '一起看：合计用量，各工具独立统计' }
 ]
 
 /** Claude / Codex / 全部: which tool the whole app is about */
 export function SourceSwitch() {
   const { saveSettings } = useApp()
   const source = useSource()
-  if (!useHasCodex()) return null
+  const { settings } = useApp()
+  const hasCodex = useHasCodex()
+  const hasWorkBuddy = useHasWorkBuddy()
+  if (!hasCodex && !hasWorkBuddy && !settings?.workbuddyEnabled) return null
+  const options = SOURCES.filter((o) => o.value !== 'codex' || settings?.codexEnabled).filter((o) => o.value !== 'workbuddy' || settings?.workbuddyEnabled)
   const pick = (v: SourceView) => {
     if (v === source) return
     // the new tool's colours grow from the click, like a theme change
@@ -86,12 +93,12 @@ export function SourceSwitch() {
     })
   }
   return (
-    <div className="src-switch" role="radiogroup" aria-label="查看">
-      {SOURCES.map((o) => (
+    <div className={`src-switch${options.length === 4 ? ' four' : ''}`} role="radiogroup" aria-label="查看">
+      {options.map((o) => (
         <button key={o.value} role="radio" aria-checked={source === o.value} className={`src-opt ${o.value}${source === o.value ? ' on' : ''}`} title={o.title} onClick={() => pick(o.value)}>
           {source === o.value && <motion.span layoutId="src-pill" className="src-pill" transition={{ type: 'spring', stiffness: 520, damping: 38 }} />}
           <span className="src-icon">
-            {o.value === 'claude' ? <Starburst size={14} animated={false} /> : o.value === 'codex' ? <CodexMark size={14} animated={false} /> : <span className="src-both" />}
+            {o.value === 'claude' ? <Starburst size={14} animated={false} /> : o.value === 'codex' ? <CodexMark size={14} animated={false} /> : o.value === 'workbuddy' ? <WorkBuddyMark size={14} animated={false} /> : <span className="src-both" />}
           </span>
           {o.label}
         </button>

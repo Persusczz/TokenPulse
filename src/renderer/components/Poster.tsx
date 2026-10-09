@@ -142,7 +142,7 @@ async function draw(canvas: HTMLCanvasElement, s: RangeSummary, ach: Achievement
     ['响应次数', t.messages.toLocaleString('en-US')],
     ['会话', String(t.sessions)],
     ['活跃天数', `${active} / 7`],
-    ['缓存命中率', `${(s.cacheHitRate * 100).toFixed(1)}%`],
+    ['缓存命中率', s.cacheUnreported ? '未知（日志缺少缓存字段）' : `${(s.cacheHitRate * 100).toFixed(1)}%`],
     ['缓存省下', money(t.costParts.cacheSavings)],
     ['最常用模型', model]
   ]

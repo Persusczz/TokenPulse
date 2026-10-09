@@ -4,7 +4,8 @@ import { fmtTokens } from '@shared/format'
 import type { PromptCost, StarMap, UsageSource } from '@shared/types'
 import { useApp, useMotionLevel } from '../state'
 import { GalaxyDive } from './GalaxyDive'
-import { onFrame } from '../frames'
+import { GalaxyGas } from './GalaxyGas'
+import { onFrame, sceneScale } from '../frames'
 
 /**
  * The sky page's two scenes. 项目星系: every project is a spiral galaxy and
@@ -77,9 +78,13 @@ interface Galaxy {
 export type GalaxyHit = { kind: 'star'; p: PromptCost; x: number; y: number; inside: boolean } | { kind: 'galaxy'; g: { project: string; source: UsageSource; prompts: number; sessions: number; cost: number; tokens: number; top: PromptCost | null }; x: number; y: number }
 
 const PALETTE: Record<UsageSource, { core: string; mid: string; star: string; arm: string; young: string; knot: string }> = {
+  workbuddy: { core: '220,255,244', mid: '47,165,133', star: '165,230,210', arm: '120,214,182', young: '184,242,220', knot: '101,202,174' },
   claude: { core: '255,238,218', mid: '226,128,90', star: '255,228,204', arm: '255,186,150', young: '196,212,255', knot: '255,120,150' },
   codex: { core: '230,236,255', mid: '98,112,255', star: '214,224,255', arm: '150,172,255', young: '200,240,255', knot: '190,130,255' }
 }
+
+/** the glow of each tool's ionised gas: hydrogen pink for Claude, oxygen blue for Codex, green for WorkBuddy */
+const ION: Record<UsageSource, [number, number, number]> = { claude: [1, 0.45, 0.55], codex: [0.5, 0.75, 1], workbuddy: [0.45, 1, 0.78] }
 
 /** how tightly the arms wind */
 const WIND = 2.4
@@ -98,15 +103,16 @@ function armPlace(rnd: () => number, arms: number, r: number) {
  * soft glow of the same arms, dark dust along their inner edges, pink
  * star-forming knots, and a bright core. `place` puts a point on an arm.
  */
-function paintGalaxy(r: number, dpr: number, source: UsageSource, rnd: () => number, place: (u: number, spread: number) => { rad: number; ang: number }): HTMLCanvasElement {
+function paintGalaxy(r: number, dpr: number, source: UsageSource, rnd: () => number, place: (u: number, spread: number) => { rad: number; ang: number }, gas = false): HTMLCanvasElement {
   const pal = PALETTE[source]
   const R = r * 1.2
   const c = document.createElement('canvas')
   c.width = c.height = Math.max(2, Math.ceil(R * 2 * dpr))
   const x = c.getContext('2d')!
   x.setTransform(dpr, 0, 0, dpr, R * dpr, R * dpr)
+  // with the shader's gas underneath, the glow and halo come from there: the sprite keeps the stars
   let g = x.createRadialGradient(0, 0, 0, 0, 0, R)
-  g.addColorStop(0, `rgba(${pal.mid},0.30)`)
+  g.addColorStop(0, `rgba(${pal.mid},${gas ? 0.1 : 0.3})`)
   g.addColorStop(0.45, `rgba(${pal.mid},0.09)`)
   g.addColorStop(1, `rgba(${pal.mid},0)`)
   x.fillStyle = g
@@ -114,7 +120,7 @@ function paintGalaxy(r: number, dpr: number, source: UsageSource, rnd: () => num
   const pt = (rad: number, ang: number) => [Math.cos(ang) * rad, Math.sin(ang) * rad] as const
   x.globalCompositeOperation = 'lighter'
   // the arms' glow: big soft dabs
-  for (let i = 0; i < 420; i++) {
+  for (let i = 0; i < (gas ? 140 : 420); i++) {
     const q = place(Math.pow(rnd(), 0.8), 0.5)
     const [px, py] = pt(q.rad, q.ang)
     const rr = r * (0.05 + rnd() * 0.06)
@@ -190,6 +196,7 @@ const panelWidth = (W: number) => Math.min(440, Math.max(300, W * 0.4))
 
 export function GalaxyField({ map, onProject }: { map: StarMap; onProject: (project: string | null) => void }) {
   const ref = useRef<HTMLCanvasElement>(null)
+  const gasRef = useRef<HTMLCanvasElement>(null)
   const level = useMotionLevel()
   const { lastUpdate, money } = useApp()
   const [hit, setHit] = useState<GalaxyHit | null>(null)
@@ -251,6 +258,9 @@ export function GalaxyField({ map, onProject }: { map: StarMap; onProject: (proj
   useEffect(() => {
     const canvas = ref.current!
     const ctx = canvas.getContext('2d')!
+    // the gas, haze and dust come from a shader layer underneath; without WebGL the 2D sky paints them flat
+    const gas = gasRef.current ? new GalaxyGas(gasRef.current) : null
+    const fluid = !!gas?.ok
     let W = 0
     let H = 0
     let dpr = 1
@@ -281,6 +291,7 @@ export function GalaxyField({ map, onProject }: { map: StarMap; onProject: (proj
       canvas.width = Math.max(1, Math.round(W * dpr))
       canvas.height = Math.max(1, Math.round(H * dpr))
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      gas?.size(W, H, Math.min(1.25, dpr * 0.75) * sceneScale())
 
       // the backdrop: deep space, a band of the Milky Way, a few nebulae
       sky = document.createElement('canvas')
@@ -288,6 +299,7 @@ export function GalaxyField({ map, onProject }: { map: StarMap; onProject: (proj
       sky.height = canvas.height
       const sc = sky.getContext('2d')!
       sc.setTransform(dpr, 0, 0, dpr, 0, 0)
+      if (!fluid) {
       const bg = sc.createLinearGradient(0, 0, W, H)
       bg.addColorStop(0, '#070818')
       bg.addColorStop(0.5, '#0b0d26')
@@ -315,6 +327,7 @@ export function GalaxyField({ map, onProject }: { map: StarMap; onProject: (proj
       sc.fillStyle = band
       sc.fillRect(-W, -H * 4, W * 2, H * 8)
       sc.restore()
+      }
       const rand = rng(0.37)
       for (let i = 0; i < (W * H) / 700; i++) {
         // half the stars crowd the band
@@ -355,7 +368,7 @@ export function GalaxyField({ map, onProject }: { map: StarMap; onProject: (proj
         const seed = hash(g.key)
         const rnd = rng(seed)
         const arms = g.source === 'codex' ? 3 : 2
-        const sprite = paintGalaxy(r, dpr, g.source, rnd, armPlace(rnd, arms, r))
+        const sprite = paintGalaxy(r, dpr, g.source, rnd, armPlace(rnd, arms, r), fluid)
         // the conversations, oldest by the core and newest at the rim, each a chain along one arm
         const bySession = new Map<string, PromptCost[]>()
         for (const p of [...g.prompts].sort((a, b) => a.ts - b.ts)) {
@@ -437,7 +450,7 @@ export function GalaxyField({ map, onProject }: { map: StarMap; onProject: (proj
         // painted large once, the first time it is flown into
         const rHi = g0.r * fitScale(g0)
         const rnd = rng(g0.seed)
-        g0.hi = paintGalaxy(rHi, dpr, g0.source, rnd, armPlace(rnd, g0.arms, rHi))
+        g0.hi = paintGalaxy(rHi, dpr, g0.source, rnd, armPlace(rnd, g0.arms, rHi), fluid)
       }
       const S = g0 ? fitScale(g0) : 1
       const s = 1 + (S - 1) * e
@@ -453,6 +466,34 @@ export function GalaxyField({ map, onProject }: { map: StarMap; onProject: (proj
       const SX = (x: number) => (x - cam.camX) * s + cam.offX
       const SY = (y: number) => (y - cam.camY) * s + cam.offY
 
+      if (fluid) {
+        gas!.render(
+          t,
+          galaxies.map((g) => {
+            const isF = g === g0
+            const pal = PALETTE[g.source]
+            return {
+              x: SX(g.x),
+              y: SY(g.y),
+              r: g.r * s,
+              fade: isF ? 1 : 1 - 0.94 * e,
+              squash: isF ? g.squash + (0.82 - g.squash) * e : g.squash,
+              tilt: isF ? g.tilt + (-0.16 - g.tilt) * e : g.tilt,
+              rot: g.rot,
+              arms: g.arms,
+              seed: g.seed,
+              spin: g.spin < 0 ? -1 : 1,
+              focus: isF ? e : 0,
+              mid: pal.mid,
+              arm: pal.arm,
+              ion: ION[g.source]
+            }
+          }),
+          -(W / 2 - cam.camX) * 0.04,
+          e
+        )
+        ctx.clearRect(0, 0, W, H)
+      }
       // the sky drifts in a little behind
       if (sky) {
         const k = 1 + 0.12 * e
@@ -616,7 +657,7 @@ export function GalaxyField({ map, onProject }: { map: StarMap; onProject: (proj
           ctx.fillText(folder(g.project), gx, Math.min(H - 22, ly))
           ctx.font = '500 11px "Segoe UI", "Microsoft YaHei UI", sans-serif'
           ctx.fillStyle = 'rgba(190,200,240,0.7)'
-          ctx.fillText(`${mixed ? (g.source === 'codex' ? 'Codex · ' : 'Claude · ') : ''}${g.prompts.length} 次提问 · ${L.money(g.cost)}`, gx, Math.min(H - 7, ly + 15))
+          ctx.fillText(`${mixed ? (g.source === 'workbuddy' ? 'WorkBuddy · ' : g.source === 'codex' ? 'Codex · ' : 'Claude · ') : ''}${g.prompts.length} 次提问 · ${L.money(g.cost)}`, gx, Math.min(H - 7, ly + 15))
           ctx.globalAlpha = 1
         }
       }
@@ -625,7 +666,7 @@ export function GalaxyField({ map, onProject }: { map: StarMap; onProject: (proj
         ctx.textAlign = 'right'
         ctx.font = '500 11px "Segoe UI", "Microsoft YaHei UI", sans-serif'
         ctx.fillStyle = 'rgba(190,200,240,0.55)'
-        ctx.fillText(`还有 ${more} 个小项目没画出来`, W - 12, 18)
+        ctx.fillText(`另有 ${more} 个小项目`, W - 12, 18)
         ctx.globalAlpha = 1
       }
       // comets
@@ -674,15 +715,6 @@ export function GalaxyField({ map, onProject }: { map: StarMap; onProject: (proj
           ctx.ellipse(tx0, ty0, g.r * s * (0.3 + f), g.r * s * (0.3 + f) * g.squash, g.tilt, 0, TAU)
           ctx.stroke()
         }
-      }
-      // inside, how to read it
-      if (e > 0.02) {
-        ctx.globalAlpha = e
-        ctx.textAlign = 'left'
-        ctx.font = '500 11.5px "Segoe UI", "Microsoft YaHei UI", sans-serif'
-        ctx.fillStyle = 'rgba(200,210,245,0.7)'
-        ctx.fillText('每条星链是一段对话 · 越靠外越新 · 越亮花得越多 · 点一颗星读那段对话', 16, H - 16)
-        ctx.globalAlpha = 1
       }
     }
 
@@ -756,6 +788,7 @@ export function GalaxyField({ map, onProject }: { map: StarMap; onProject: (proj
     canvas.addEventListener('click', click)
     return () => {
       stop?.()
+      gas?.dispose()
       ro.disconnect()
       canvas.removeEventListener('mousemove', move)
       canvas.removeEventListener('mouseleave', out)
@@ -772,6 +805,7 @@ export function GalaxyField({ map, onProject }: { map: StarMap; onProject: (proj
   const stamp = (t: number) => new Date(t).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', weekday: 'short', hour: '2-digit', minute: '2-digit' })
   return (
     <div className={`galaxy-stage${focus ? ' inside' : ''}`} ref={stage}>
+      <canvas ref={gasRef} className="galaxy-canvas galaxy-gas" aria-hidden />
       <canvas ref={ref} className="galaxy-canvas" />
       {hit && (
         <div className={`starmap-tip${hit.x > (stage.current?.clientWidth ?? 900) - (focus ? 360 + panelWidth(stage.current?.clientWidth ?? 900) : 360) ? ' left' : ''}`} style={{ left: hit.x, top: hit.y }}>
@@ -784,17 +818,15 @@ export function GalaxyField({ map, onProject }: { map: StarMap; onProject: (proj
               <div className="starmap-tip-nums tnum">
                 <b>{money(hit.p.cost)}</b> · {CN(hit.p.tokens)} Token · {hit.p.requests} 次请求
               </div>
-              <div className="muted">{hit.inside ? '点一下读这段对话' : '点一下飞进这个星系，读这段对话'}</div>
             </>
           ) : (
             <>
-              <div className="starmap-tip-time">{hit.g.source === 'codex' ? 'Codex 项目' : 'Claude 项目'}</div>
+              <div className="starmap-tip-time">{hit.g.source === 'workbuddy' ? 'WorkBuddy 项目' : hit.g.source === 'codex' ? 'Codex 项目' : 'Claude 项目'}</div>
               <div className="starmap-tip-text">{folder(hit.g.project)}</div>
               <div className="starmap-tip-nums tnum">
                 <b>{money(hit.g.cost)}</b> · {hit.g.prompts} 次提问 · {hit.g.sessions} 段对话 · {CN(hit.g.tokens)} Token
               </div>
               {hit.g.top && <div className="muted ellipsis">最亮的一颗：{hit.g.top.text || '（没有文字）'}</div>}
-              <div className="muted">点一下飞进去，看里面的每段对话</div>
             </>
           )}
         </div>
@@ -964,7 +996,7 @@ export function PlanetSystem({ models, source }: { models: StarMap['models']; so
       const front = planets.filter((p) => Math.sin(p.a) >= 0)
       behind.sort((a, b) => a.y - b.y).forEach(planet)
       // the sun: everything spent in the span
-      const sunCol = src === 'codex' ? ['#eef0ff', '#7d8cff', '91,108,255'] : src === 'claude' ? ['#fff3e4', '#f0a070', '217,119,87'] : ['#fffaf0', '#ffd08a', '255,190,120']
+      const sunCol = src === 'codex' ? ['#eef0ff', '#7d8cff', '91,108,255'] : src === 'claude' ? ['#fff3e4', '#f0a070', '217,119,87'] : src === 'workbuddy' ? ['#ecfff8', '#6fd6b4', '47,165,133'] : ['#fffaf0', '#ffd08a', '255,190,120']
       const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, sunR * 3.4)
       halo.addColorStop(0, `rgba(${sunCol[2]},0.55)`)
       halo.addColorStop(1, `rgba(${sunCol[2]},0)`)
@@ -1033,7 +1065,7 @@ export function PlanetSystem({ models, source }: { models: StarMap['models']; so
       {!models.length && <div className="starmap-empty">这段时间还没有用量</div>}
       {hit && (
         <div className={`starmap-tip up${hit.x > (stage.current?.clientWidth ?? 600) - 300 ? ' left' : ''}`} style={{ left: hit.x, top: hit.y }}>
-          <div className="starmap-tip-time">{hit.m.source === 'codex' ? 'Codex 模型' : 'Claude 模型'}</div>
+          <div className="starmap-tip-time">{hit.m.source === 'workbuddy' ? 'WorkBuddy 模型' : hit.m.source === 'codex' ? 'Codex 模型' : 'Claude 模型'}</div>
           <div className="starmap-tip-text">{hit.m.name}</div>
           <div className="starmap-tip-nums tnum">
             <b>{money(hit.m.cost)}</b> · 占 {Math.round(hit.share * 100)}% · {CN(hit.m.tokens)} Token · {hit.m.requests} 次请求

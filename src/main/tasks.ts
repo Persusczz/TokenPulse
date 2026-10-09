@@ -25,6 +25,8 @@ import type {
 import runnerSrc from '../bridge/taskrunner.cjs?raw'
 import { writeFileAtomic, writeFileAtomicSync } from './atomicFile'
 import { CODEX_WINDOW } from './context'
+import { workbuddyArgs } from '../features/workbuddy/tasks'
+import { workbuddyRoot } from '../features/workbuddy/collector'
 
 /** a little after the reset, so the new window has really opened */
 export const RESET_GRACE_MS = 60_000
@@ -42,7 +44,7 @@ export interface WindowInfo {
   localEnd: number | null
 }
 
-const TOOLS: UsageSource[] = ['claude', 'codex']
+const TOOLS: UsageSource[] = ['claude', 'codex', 'workbuddy']
 const TRIGGERS: ScheduledTask['trigger'][] = ['reset', 'now', 'time', 'manual']
 const PERMISSIONS: ScheduledTask['permission'][] = ['inherit', 'auto', 'acceptEdits', 'bypassPermissions', 'plan']
 
@@ -160,6 +162,7 @@ const CLAUDE_COMPACT_WINDOW = { min: 100_000, max: 1_000_000 }
  * keeps the smaller of it and the model's own).
  */
 export function taskEnv(t: Pick<ScheduledTask, 'tool' | 'autoCompact'> & { compactAt?: ScheduledTask['compactAt'] }): Record<string, string> {
+  if (t.tool === 'workbuddy') return { WORKBUDDY_CONFIG_DIR: workbuddyRoot(), CODEBUDDY_CONFIG_DIR: workbuddyRoot(), DISABLE_TELEMETRY: '1' }
   if ((t.tool ?? 'claude') !== 'claude') return {}
   if (t.autoCompact === false) return { DISABLE_AUTO_COMPACT: '1' }
   const c = t.compactAt
@@ -209,7 +212,7 @@ export function classifyFailure(error: string | null | undefined, o: { subtype?:
   if (o.stopped || e === '已手动停止' || /任务窗口被关闭/.test(e)) return 'stopped'
   if (o.subtype === 'error_max_budget_usd' || /max[_-]?budget|花费上限/i.test(e)) return 'budget'
   if (/工作目录不存在|无法启动|没能打开任务窗口|没有找到 \w+ 命令|ENOENT/i.test(e)) return 'setup'
-  if (/usage limit|limit reached|hit your (usage )?limit|rate[_ ]?limit|too many requests|\b429\b|insufficient_quota|额度已用完|额度用完/i.test(e)) return 'quota'
+  if (/usage limit|limit reached|hit your (usage )?limit|rate[_ ]?limit|too many requests|\b429\b|insufficient_quota|insufficient credits|credits exhausted|积分不足|积分已用完|额度已用完|额度用完/i.test(e)) return 'quota'
   if (/overloaded|\b5(00|02|03|04|29)\b|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up|network error|fetch failed|stream (disconnected|error)|connection (reset|refused|error)|Internal server error|API Error/i.test(e)) return 'transient'
   return 'other'
 }
@@ -342,7 +345,7 @@ export function parseStreamLine(line: string, t = Date.now()): { logs: TaskLogLi
     }
     case 'result': {
       const ok = ev.subtype === 'success' && !ev.is_error
-      const text = typeof ev.result === 'string' ? ev.result : ''
+      const text = (typeof ev.result === 'string' ? ev.result : '') || (Array.isArray(ev.errors) ? ev.errors.filter((e: unknown) => typeof e === 'string').join('\n') : '')
       return {
         logs: [{ t, kind: ok ? 'result' : 'error', text: short(text || SUBTYPE_TEXT[ev.subtype] || ev.subtype || '结束', 400) }],
         result: {
@@ -461,6 +464,7 @@ interface Deps {
   blocker(tool: UsageSource): string | null
   claude(): Promise<string | null>
   codex?(): Promise<string | null>
+  workbuddy?(): Promise<string | null>
   /** Node.js for the task window; none = runs stay hidden */
   node?(): Promise<string | null>
   /** visible terminal windows wanted (the setting) */
@@ -528,7 +532,7 @@ interface Run {
 
 const EFFORTS: TaskEffort[] = ['low', 'medium', 'high', 'xhigh', 'max']
 const num = (v: unknown, lo: number, hi: number): number | null => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.min(hi, Math.max(lo, v)) : null)
-const modelName = (v: unknown): string | null => (typeof v === 'string' && /^[\w.[\]-]{1,60}$/.test(v.trim()) ? v.trim() : null)
+const modelName = (v: unknown): string | null => (typeof v === 'string' && /^[\w./[\]-]{1,60}$/.test(v.trim()) ? v.trim() : null)
 
 /** The options of a task, cleaned; only the keys given are set */
 function fields(input: Partial<TaskInput>): Partial<ScheduledTask> {
@@ -641,13 +645,18 @@ export class TaskService extends EventEmitter {
     } catch {
       /* nothing learned yet */
     }
-    const [claude, codex, node] = await Promise.all([this.deps.claude(), this.deps.codex?.() ?? null, this.deps.node?.() ?? null])
-    this.cli = { claude, codex }
+    const [claude, codex, workbuddy, node] = await Promise.all([this.deps.claude(), this.deps.codex?.() ?? null, this.deps.workbuddy?.() ?? null, this.deps.node?.() ?? null])
+    this.cli = { claude, codex, workbuddy }
     this.nodePath = node
   }
 
   private get codexFile(): string {
     return join(this.logDir, 'codex-models.json')
+  }
+
+  async refreshWorkBuddyCli(): Promise<void> {
+    this.cli.workbuddy = await (this.deps.workbuddy?.() ?? null)
+    this.emit('change', this.state())
   }
 
   /** the model a Codex run really uses: a refused one is swapped for the first fallback the account takes */
@@ -721,8 +730,9 @@ export class TaskService extends EventEmitter {
   }
 
   add(input: TaskInput, now = Date.now()): ScheduledTask {
-    const tool: UsageSource = input.tool === 'codex' ? 'codex' : 'claude'
+    const tool: UsageSource = input.tool === 'workbuddy' ? 'workbuddy' : input.tool === 'codex' ? 'codex' : 'claude'
     const trigger = TRIGGERS.includes(input.trigger) ? input.trigger : 'reset'
+    if (tool === 'workbuddy' && (trigger === 'reset' || input.repeat)) throw new Error('WorkBuddy 使用积分套餐，请选择立即、指定时间或手动开始')
     const parent = input.parentId ? this.tasks.find((x) => x.id === input.parentId && (x.status === 'queued' || x.status === 'running')) : undefined
     const f = fields(input)
     const t: ScheduledTask = {
@@ -773,6 +783,7 @@ export class TaskService extends EventEmitter {
   async action(id: string, action: TaskAction): Promise<void> {
     const t = this.tasks.find((x) => x.id === id)
     if (!t) return
+    if (t.tool === 'workbuddy' && action === 'requeue') throw new Error('WorkBuddy 没有固定额度刷新时间，请手动重试或创建定时任务')
     if (action === 'start' && t.status === 'queued') {
       // by hand: as soon as its folder is free, whatever its trigger, parent or the guard says
       t.force = true
@@ -813,6 +824,7 @@ export class TaskService extends EventEmitter {
   update(id: string, patch: TaskPatch, then: 'keep' | 'now' | 'reset' = 'keep', now = Date.now()): boolean {
     const t = this.tasks.find((x) => x.id === id)
     if (!t || t.status === 'running') return false
+    if (t.tool === 'workbuddy' && (patch.trigger === 'reset' || patch.repeat || then === 'reset')) throw new Error('WorkBuddy 不支持按额度刷新执行任务')
     Object.assign(t, fields(patch))
     const tool = t.tool ?? 'claude'
     if (patch.trigger && TRIGGERS.includes(patch.trigger)) {
@@ -911,7 +923,7 @@ export class TaskService extends EventEmitter {
         const lane = laneKey(t.tool, t.cwd)
         if (busy.has(lane)) continue
         const tool = t.tool ?? 'claude'
-        this.cli[tool] ??= await (tool === 'codex' ? (this.deps.codex?.() ?? null) : this.deps.claude())
+        this.cli[tool] ??= await (tool === 'workbuddy' ? (this.deps.workbuddy?.() ?? null) : tool === 'codex' ? (this.deps.codex?.() ?? null) : this.deps.claude())
         const cli = this.cli[tool]
         if (!cli || (!t.force && this.deps.blocker(tool))) {
           held = true
@@ -1033,10 +1045,16 @@ export class TaskService extends EventEmitter {
     const args =
       tool === 'codex'
         ? codexArgs({ permission: t.permission, model, effort: t.effort, compactAt }, { resume })
-        : claudeArgs({ ...t, prompt: go.prompt, model }, { resume, fork: go.fork, partial, stdinPrompt: shim })
+        : tool === 'workbuddy'
+          ? workbuddyArgs({ ...t, model }, { prompt: go.prompt, system: UNATTENDED.replace('在订阅额度刷新时', ''), resume, fork: go.fork, partial, stdin: shim })
+          : claudeArgs({ ...t, prompt: go.prompt, model }, { resume, fork: go.fork, partial, stdinPrompt: shim })
     const stdin = tool === 'codex' ? codexPrompt(go.prompt) : shim ? go.prompt : null
     const swap = this.deps.command?.(cli, tool)
     if (swap) return { cmd: swap.cmd, args: [...swap.pre, ...args], verbatim: false, stdin, model }
+    if (tool === 'workbuddy' && /(?:[\\/]codebuddy|\.js)$/i.test(cli)) {
+      if (!this.nodePath) throw new Error('运行 WorkBuddy 内置 CLI 需要 Node.js')
+      return { cmd: this.nodePath, args: [cli, ...args], verbatim: false, stdin, model }
+    }
     return { ...cliCommand(cli, args), stdin, model }
   }
 
@@ -1068,7 +1086,7 @@ export class TaskService extends EventEmitter {
       tokens: null,
       steps: 0,
       mode: terminal ? 'terminal' : 'background',
-      activity: terminal ? '正在打开任务窗口…' : `正在启动 ${t.tool === 'codex' ? 'Codex' : 'Claude Code'}…`
+      activity: terminal ? '正在打开任务窗口…' : `正在启动 ${t.tool === 'workbuddy' ? 'WorkBuddy' : t.tool === 'codex' ? 'Codex' : 'Claude Code'}…`
     })
     const run: Run = {
       task: t,
@@ -1097,7 +1115,10 @@ export class TaskService extends EventEmitter {
     this.changed()
     this.emit('started', t)
     if (t.cwd && !existsSync(t.cwd)) return this.finish(run, { ok: false, error: `工作目录不存在：${t.cwd}` })
-    const c = this.commandFor(t, cli, go, terminal)
+    let c: ReturnType<TaskService['commandFor']>
+    try { c = this.commandFor(t, cli, go, terminal) } catch (e) {
+      this.finish(run, { ok: false, error: (e as Error).message, failure: 'setup' }); return
+    }
     run.model = c.model
     attempts[attempts.length - 1].model = c.model
     if (t.timeoutMin) {
@@ -1233,7 +1254,7 @@ export class TaskService extends EventEmitter {
         script: join(this.logDir, 'runner.cjs'),
         laneDir: run.laneDir!,
         cwd: t.cwd || homedir(),
-        title: `${t.tool === 'codex' ? 'Codex' : 'Claude'} · ${basename(t.cwd) || t.cwd}`
+        title: `${t.tool === 'workbuddy' ? 'WorkBuddy' : t.tool === 'codex' ? 'Codex' : 'Claude'} · ${basename(t.cwd) || t.cwd}`
       })
     } catch (e) {
       this.finish(run, { ok: false, error: `没能打开任务窗口：${(e as Error).message}` })
@@ -1369,7 +1390,8 @@ export class TaskService extends EventEmitter {
       t.sessionId = session
       run.sawSession = true
     }
-    if (r) run.result = r
+    // WorkBuddy's serializer hard-codes total_cost_usd to zero; that is not a reported bill.
+    if (r) run.result = t.tool === 'workbuddy' ? { ...r, costUsd: null } : r
     run.seen = true
     for (const l of logs) {
       if (l.kind === 'text') run.lastText = l.text
@@ -1533,7 +1555,7 @@ export class TaskService extends EventEmitter {
     const text = o.ok || o.result?.ok ? o.result?.text?.trim() || run.lastText : null
     if (text) t.summary = short(text, 1200)
     // trial and error: carry on after the refresh, retry, or have the check fixed
-    const again = failure ? this.nextTry(t, run, failure, o, now) : null
+    const again = failure && !(t.tool === 'workbuddy' && failure === 'quota') ? this.nextTry(t, run, failure, o, now) : null
     if (again) {
       Object.assign(t, { status: 'queued', notBefore: again.at, pending: again.pending, error: o.error ?? null, note: again.note, activity: null })
       this.emit('retrying', { ...t })

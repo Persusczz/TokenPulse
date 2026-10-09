@@ -14,7 +14,8 @@ import { Segmented } from '../components/Segmented'
 import { CITIES, placeOf, sunTimes, type Place } from '@shared/astro'
 import { applyPack } from '../components/CommandPalette'
 import { revealFromPointer } from '../effects'
-import { resolveTheme, useApp, useSource, useUpdate } from '../state'
+import { resolveTheme, useApp, useData, useSource, useUpdate } from '../state'
+import { WORKBUDDY_PLANS_URL } from '../../features/workbuddy/links'
 
 function Switch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
   return <button className={`switch${on ? ' on' : ''}`} role="switch" aria-checked={on} onClick={() => onChange(!on)} />
@@ -365,7 +366,7 @@ function PackPreview({ k, live = false }: { k: ThemePack; live?: boolean }) {
 }
 
 /** a section that folds away: the current choice in one line, every option when opened (remembered) */
-function Fold({ id, label, current, desc, count, preview, children }: { id: string; label: string; current: string; desc: string; count: number; preview: ReactNode; children: ReactNode }) {
+function Fold({ id, label, current, desc, count, preview, children }: { id: string; label: string; current: string; desc: string; count?: number; preview?: ReactNode; children: ReactNode }) {
   const [open, setOpen] = useState(() => {
     try {
       return localStorage.getItem(`tp.fold.${id}`) === '1'
@@ -385,7 +386,7 @@ function Fold({ id, label, current, desc, count, preview, children }: { id: stri
   return (
     <div className={`set-row fold-row${open ? ' open' : ''}`}>
       <button className="fold-head" onClick={toggle} aria-expanded={open}>
-        <span className="fold-preview">{preview}</span>
+        {preview && <span className="fold-preview">{preview}</span>}
         <span className="fold-text">
           <span className="set-label">
             {label} <span className="bd-cur">· {current}</span>
@@ -393,7 +394,7 @@ function Fold({ id, label, current, desc, count, preview, children }: { id: stri
           <span className="set-desc">{desc}</span>
         </span>
         <span className="fold-btn">
-          {open ? '收起' : `展开全部 ${count} 个`}
+          {open ? '收起' : count === undefined ? '展开' : `展开全部 ${count} 个`}
           <i className="fold-chev" />
         </span>
       </button>
@@ -793,8 +794,8 @@ export function useCodexModels(): string[] {
 
 function TaskRows({ s, save, q, source }: { s: Settings; save: Save; q: TaskQueueState | null; source: SourceView }) {
   const codexModels = useCodexModels()
-  const claude = source !== 'codex'
-  const codex = source !== 'claude' && s.codexEnabled
+  const claude = source === 'claude' || source === 'all'
+  const codex = (source === 'codex' || source === 'all') && s.codexEnabled
   return (
     <>
       <Row
@@ -820,6 +821,8 @@ function TaskRows({ s, save, q, source }: { s: Settings; save: Save; q: TaskQueu
         desc={
           !s.taskContinue
             ? '每个任务都开一个全新的对话'
+            : source === 'workbuddy'
+              ? '默认开启：接着这个文件夹最近一次 WorkBuddy 会话，并分叉成新会话。文件夹里还没有会话时自动开新的'
             : source === 'codex'
               ? '默认开启：新任务接着这个文件夹最近一次 Codex 会话继续（codex exec resume）。文件夹里还没有会话时自动开新的'
               : source === 'claude'
@@ -887,10 +890,10 @@ function TaskRows({ s, save, q, source }: { s: Settings; save: Save; q: TaskQueu
       <div className="set-sub">上下文</div>
       <Row
         label="自动压缩的时机"
-        desc={`默认要等上下文满了才压缩；长任务可以提前压缩，让对话一直保持精简（${claude && codex ? 'Claude 用 CLAUDE_AUTOCOMPACT_PCT_OVERRIDE 和 CLAUDE_CODE_AUTO_COMPACT_WINDOW，Codex 用 model_auto_compact_token_limit' : codex ? 'Codex 的 model_auto_compact_token_limit' : 'Claude Code 的 CLAUDE_AUTOCOMPACT_PCT_OVERRIDE 和 CLAUDE_CODE_AUTO_COMPACT_WINDOW'}）。每个任务也可以单独设置`}
+        desc={source === 'workbuddy' ? 'WorkBuddy 按当前模型自动压缩，也可以指定 100K–1M Token 阈值。每个任务可以单独设置' : `默认要等上下文满了才压缩；长任务可以提前压缩，让对话一直保持精简（${claude && codex ? 'Claude 用 CLAUDE_AUTOCOMPACT_PCT_OVERRIDE 和 CLAUDE_CODE_AUTO_COMPACT_WINDOW，Codex 用 model_auto_compact_token_limit' : codex ? 'Codex 的 model_auto_compact_token_limit' : 'Claude Code 的 CLAUDE_AUTOCOMPACT_PCT_OVERRIDE 和 CLAUDE_CODE_AUTO_COMPACT_WINDOW'}）。每个任务也可以单独设置`}
       >
         <CompactPicker
-          tool={claude ? 'claude' : 'codex'}
+          tool={source === 'workbuddy' ? 'workbuddy' : claude ? 'claude' : 'codex'}
           value={{ on: s.taskAutoCompact, at: s.taskCompactAt }}
           onChange={(c) => save({ taskAutoCompact: c.on, taskCompactAt: c.at })}
         />
@@ -899,7 +902,7 @@ function TaskRows({ s, save, q, source }: { s: Settings; save: Save; q: TaskQueu
       <Row
         label="失败后自动重试"
         desc={
-          s.taskRetries
+          source === 'workbuddy' ? '失败按设定次数重试；积分不足时停止，补充后手动重试' : s.taskRetries
             ? `新任务失败后最多再试 ${s.taskRetries} 次：网络出错等一会儿再试，检查没通过就把输出交给它接着修，其他失败接着原来的对话换个做法。额度用完不算次数，刷新后自动接着做`
             : '新任务失败了就停下（额度用完时仍会等刷新后接着做）'
         }
@@ -948,7 +951,7 @@ function RunawayRows({ s, save, source }: { s: Settings; save: Save; source: Sou
           label="提醒线"
           desc={
             s.contextAuto
-              ? '自动：按每个会话所用模型的上下文窗口判断（Claude 200K，用过 200K 以上的模型按 1M；Codex 按它日志里报的窗口），用到 70% 提醒一次，到 88%（快到自动压缩）再提醒一次'
+              ? '自动：按模型窗口判断（Claude 200K/1M；Codex 读取日志窗口；WorkBuddy 只读本机模型窗口，未知时使用固定提醒线），用到 70% 提醒一次、88% 再提醒一次'
               : `固定：上下文到 ${s.contextWarnK}k 提醒，到 ${Math.round(s.contextWarnK * 1.5)}k 再提醒一次，不管模型的窗口有多大`
           }
         >
@@ -984,8 +987,8 @@ function RunawayRows({ s, save, source }: { s: Settings; save: Save; source: Sou
               ]}
             />
           </Row>
-          {source === 'codex' ? (
-            <div className="set-note">Codex 会话失控时只会提醒（应用内、桌面通知、Telegram），请到 Codex 里手动停止。</div>
+          {source === 'codex' || source === 'workbuddy' ? (
+            <div className="set-note">{source === 'workbuddy' ? 'WorkBuddy' : 'Codex'} 会话失控时只会提醒（应用内、桌面通知、Telegram），请到工具里手动停止。</div>
           ) : (
             <Row
               label={source === 'all' ? '发现后（Claude 会话）' : '发现后'}
@@ -1038,7 +1041,7 @@ function NotifyRows({ s, save, source }: { s: Settings; save: Save; source: Sour
   }
   const events: { key: 'pushGuard' | 'pushQuota' | 'pushBudget' | 'pushAchievement' | 'pushRunaway' | 'pushTasks'; label: string }[] = [
     // the guard only ever holds Claude Code
-    ...(source === 'codex' ? [] : [{ key: 'pushGuard' as const, label: '守卫暂停 / 恢复' }]),
+    ...(source === 'claude' || source === 'all' ? [{ key: 'pushGuard' as const, label: '守卫暂停 / 恢复' }] : []),
     { key: 'pushQuota', label: '额度提醒与重置' },
     { key: 'pushTasks', label: '刷新任务' },
     { key: 'pushRunaway', label: '失控会话' },
@@ -1297,7 +1300,9 @@ function MoneyRows({ s, save, source }: { s: Settings; save: Save; source: Sourc
       <Row label="每月预算" desc="本月累计费用达到 80% 和 100% 时提醒">
         <BudgetInput usd={s.monthlyBudget} onSave={(v) => save({ monthlyBudget: v })} />
       </Row>
-      {source === 'codex' ? (
+      {source === 'workbuddy' ? (
+        <div className="set-note">WorkBuddy 按积分计费；API 等价费用用于比较模型用量，不能换算为实际扣费或账户剩余额度。</div>
+      ) : source === 'codex' ? (
         <div className="set-note">Codex 的回本倍数按日志里识别到的 ChatGPT 套餐月费计算（Plus $20、Pro $200）。</div>
       ) : (
         <Row label="Claude 订阅月费" desc="用于计算回本倍数。留空则按识别到的计划（Pro $20、Max 5x $100、Max 20x $200）">
@@ -1366,9 +1371,101 @@ function UpdateRows({ s, save }: { s: Settings; save: Save }) {
   )
 }
 
+function WorkBuddyLoginRows() {
+  const [refreshKey, setRefreshKey] = useState(0)
+  const st = useData(() => window.api.getWorkBuddyLoginState(), [refreshKey], 3000)
+  const [busy, setBusy] = useState<'' | 'in' | 'out' | 'refresh'>('')
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const signIn = async () => {
+    setBusy('in'); setMsg({ ok: true, text: '正在打开官方登录页，完成授权后回到这里' })
+    try {
+      const result = await window.api.workbuddySignIn()
+      if (result.ok) setMsg({ ok: true, text: '已登录，正在读取账户积分' })
+      else if (result.error) setMsg({ ok: false, text: result.error })
+    } catch { setMsg({ ok: false, text: '登录失败，请重试' }) }
+    finally { setBusy(''); setRefreshKey((n) => n + 1) }
+  }
+  const signOut = async () => {
+    setBusy('out')
+    try { await window.api.workbuddySignOut(); setMsg({ ok: true, text: '已取消授权并清除 TokenPulse 登录；可沿用本机登录' }) }
+    catch { setMsg({ ok: false, text: '清除登录失败，请重试' }) }
+    finally { setBusy(''); setRefreshKey((n) => n + 1) }
+  }
+  const refresh = async () => {
+    setBusy('refresh')
+    try {
+      const [account, ledger] = await Promise.all([window.api.getWorkBuddyAccount(true), window.api.getWorkBuddyLedger('today', true)])
+      const error = account?.error || ledger?.error
+      setMsg({ ok: !error, text: error || '账户积分与今日账本已刷新' })
+    } catch { setMsg({ ok: false, text: '积分查询失败，请稍后刷新' }) }
+    finally { setBusy(''); setRefreshKey((n) => n + 1) }
+  }
+  const waiting = busy === 'in' || st?.status === 'waiting'
+  const line = st?.status === 'waiting' ? '等待浏览器授权…' : st?.error ? st.error : st?.status === 'ready' ? st.source === 'tokenpulse' ? `使用 TokenPulse 登录${st.nickname ? `（${st.nickname}）` : ''}` : '沿用本机 WorkBuddy 登录（只读）' : '请登录 WorkBuddy，或先在国内版 WorkBuddy 中登录'
+  return <div className="tg-box">
+    <div className="tg-row"><span className="tg-label">状态</span><span className={st?.status === 'error' || st?.status === 'expired' ? 'bad-text' : st?.status === 'ready' ? 'ok-text' : 'muted'}>{line}</span></div>
+    <div className="tg-row">
+      <span className="tg-label">账号</span>
+      <button className="btn primary small" disabled={!!busy || waiting} onClick={() => void signIn()}>{waiting ? '等待浏览器…' : st?.loggedIn ? '重新登录 WorkBuddy' : '登录 WorkBuddy'}</button>
+      {(st?.loggedIn || waiting) && <button className="btn small" disabled={busy === 'out' || busy === 'refresh'} onClick={() => void signOut()}>{waiting ? '取消授权' : '退出登录'}</button>}
+      <button className="btn small" disabled={!!busy || waiting} onClick={() => void refresh()}>{busy === 'refresh' ? '读取中…' : '立即刷新'}</button>
+      {msg && <span className={msg.ok ? 'ok-text' : 'bad-text'}>{msg.text}</span>}
+    </div>
+    <div className="set-note">通过腾讯官方页面授权，登录令牌由系统加密保存在本机，仅查询国内个人账户的积分与账本；到期后重新登录。{st?.nativeLogin ? '已检测到本机 WorkBuddy 登录，退出此处登录后会继续沿用。' : '未检测到本机 WorkBuddy 登录。'}任务执行仍使用 CLI 自身的登录。</div>
+  </div>
+}
+
+function WorkBuddyRows({ s, save }: { s: Settings; save: Save }) {
+  const { load } = useApp()
+  const q = useTaskQueue()
+  const [dir, setDir] = useState('')
+  const [cli, setCli] = useState(s.workbuddyCli)
+  const providers = useData(() => window.api.getWorkBuddyHarnessProviders(), [s.workbuddyEnabled, s.workbuddyHarnessProviders.join(',')], 15_000)
+  useEffect(() => setCli(s.workbuddyCli), [s.workbuddyCli])
+  return <>
+    <Row label="启用 WorkBuddy" desc={`读取 ${load?.workbuddyFiles ?? 0} 个会话文件，独立显示 Token、缓存、积分、模型和会话；在「全部」中合并用量。`}>
+      <Switch on={s.workbuddyEnabled} onChange={(workbuddyEnabled) => save({ workbuddyEnabled })} />
+    </Row>
+    <Row label="账户积分与账本" desc="登录后查询本账户的总积分、已用、剩余及请求明细，约每分钟更新。通过反代接入其他软件，同一账户的积分消耗也会入账；无需为每种软件设置日志目录。">
+      <button className="btn small" onClick={() => void window.api.openExternal(WORKBUDDY_PLANS_URL)}>查看套餐 ↗</button>
+    </Row>
+    {s.workbuddyEnabled && <WorkBuddyLoginRows />}
+    <div className="set-note">账户查询提供积分、模型和请求时间。本地日志补充 Token、速率、会话和工具详情；这些记录的覆盖范围取决于软件是否生成可读日志，API 参考费用与实际积分分别展示。</div>
+    <Row label="任务执行入口" desc={q?.tools.workbuddy?.cli ? `已找到：${q.tools.workbuddy.cli}` : '自动寻找 codebuddy 命令或 WorkBuddy 安装包中的 CLI；也可填写启动器路径。运行内置 CLI 需要 Node.js。'}>
+      <input className="input mono" placeholder="自动检测（可选填写路径）" value={cli} onChange={(e) => setCli(e.target.value)} onBlur={() => save({ workbuddyCli: cli.trim() })} />
+    </Row>
+    <Fold id="workbuddy-logs" label="本地日志兼容读取" current={s.workbuddyHarnessEnabled ? '原生 + 兼容客户端' : '仅原生 WorkBuddy'} desc="按需查看日志目录、客户端识别与来源映射，补充本地 Token 和会话详情。账户积分查询独立运行。">
+    <Row label="读取兼容客户端日志" desc="读取 Harness 类客户端的本地会话记录。关闭后保留原生 WorkBuddy 采集与账户积分查询，不再扫描兼容客户端的会话。">
+      <Switch on={s.workbuddyHarnessEnabled} onChange={(workbuddyHarnessEnabled) => save({ workbuddyHarnessEnabled })} />
+    </Row>
+    <div className="set-row" style={{ display: 'block' }}>
+      <div className="set-label">会话日志目录</div>
+      <div className="set-desc">{s.workbuddyHarnessEnabled ? '自动查找原生 WorkBuddy 和已支持的兼容客户端记录，其他数据根或会话目录可手动添加。' : '读取原生 WorkBuddy 及手动添加目录中的原生记录；兼容客户端会话暂停读取。'}</div>
+      <div className="dir-list">{(load?.workbuddyDirs ?? []).map((d) => <div className="dir-item" key={d}>{d}<span className="badge">已读取</span></div>)}</div>
+      {s.workbuddyDirs.map((d) => <div className="dir-item" key={d}>{d}<button className="btn ghost small" onClick={() => save({ workbuddyDirs: s.workbuddyDirs.filter((p) => p !== d) })}>移除</button></div>)}
+      <div className="set-ctl"><input className="input mono" placeholder="WorkBuddy / Harness 数据根或会话目录" value={dir} onChange={(e) => setDir(e.target.value)} /><button className="btn small" disabled={!dir.trim()} onClick={() => { save({ workbuddyDirs: [...new Set([...s.workbuddyDirs, dir.trim()])] }); setDir('') }}>添加</button></div>
+    </div>
+    {s.workbuddyHarnessEnabled && <>
+    <Row label="识别兼容日志中的 WorkBuddy" desc="逐条识别日志中保留的 WorkBuddy 响应标记（cmb-），也统计原生 workbuddy 提供商；同一提供商的其他 API 响应不会一起归入。国际版 workbuddy-ai 默认排除。">
+      <Switch on={s.workbuddyHarnessAuto} onChange={(workbuddyHarnessAuto) => save({ workbuddyHarnessAuto })} />
+    </Row>
+    <div className="set-note">若反代改写了响应标记，可在下方手动指定其来源；开启后该提供商的全部调用计入 WorkBuddy。来源标记不能确认账户身份，官方积分只对应上方登录的账户。</div>
+    {(providers ?? []).filter((id) => id !== 'workbuddy').map((id) => <Row key={id} label={id} desc="手动归属：此提供商的全部 Token、缓存、速率和会话计入 WorkBuddy；自动识别无需开启此项。">
+      <Switch on={s.workbuddyHarnessProviders.includes(id)} onChange={(on) => save({ workbuddyHarnessProviders: on ? [...s.workbuddyHarnessProviders, id] : s.workbuddyHarnessProviders.filter((p) => p !== id) })} />
+    </Row>)}
+    </>}
+    </Fold>
+  </>
+}
+
 function SystemRows({ s, save, source }: { s: Settings; save: Save; source: SourceView }) {
   const { load } = useApp()
   const [dir, setDir] = useState('')
+  if (source === 'workbuddy') return <>
+    <UpdateRows s={s} save={save} />
+    <Row label="开机自启" desc="仅在安装版中生效"><Switch on={s.launchAtLogin} onChange={(launchAtLogin) => save({ launchAtLogin })} /></Row>
+    <div className="set-note">账户登录、积分查询和本地日志采集在「WorkBuddy 积分」中设置。</div>
+  </>
   if (source === 'codex')
     return (
       <>
@@ -1468,6 +1565,7 @@ export const SETTINGS_GROUPS = [
   { id: 'appearance', icon: '✦', title: '外观与动效', tool: 'both' },
   { id: 'quota', icon: '◔', title: 'Claude 额度', tool: 'claude' },
   { id: 'codex', icon: '◎', title: 'Codex 额度', tool: 'codex' },
+  { id: 'workbuddy', icon: 'W', title: 'WorkBuddy 积分', tool: 'workbuddy' },
   { id: 'guard', icon: '⏸', title: '额度守卫', tool: 'claude' },
   { id: 'tasks', icon: '⏱', title: '刷新任务', tool: 'both' },
   { id: 'runaway', icon: '⚠', title: '失控与上下文', tool: 'both' },
@@ -1484,16 +1582,17 @@ export interface GroupMeta {
   id: SettingsGroupId
   icon: string
   title: string
-  tool: 'both' | 'claude' | 'codex'
+  tool: 'both' | 'claude' | 'codex' | 'workbuddy'
   /** the feature is switched on (tints the icon) */
   on: boolean
   summary: string
 }
 
 /** a group belongs on screen for this view; Codex settings stay reachable while Codex is off (to switch it on) */
-function shownIn(g: { tool: string }, source: SourceView, codexOn: boolean): boolean {
+function shownIn(g: { tool: string }, source: SourceView, codexOn: boolean, workbuddyOn: boolean): boolean {
   if (g.tool === 'both' || source === 'all') return true
   if (g.tool === 'codex') return source === 'codex' || !codexOn
+  if (g.tool === 'workbuddy') return source === 'workbuddy' || !workbuddyOn
   return source === 'claude'
 }
 
@@ -1532,6 +1631,7 @@ export function useSettingsGroups(): GroupMeta[] {
         ? [`${load?.codexFiles ?? 0} 个会话文件`, codexQuota?.plan ? `ChatGPT ${codexQuota.plan}` : '', s.wasteAlert ? '浪费提醒' : ''].filter(Boolean).join(' · ')
         : '未开启'
     },
+    workbuddy: { on: s.workbuddyEnabled, summary: s.workbuddyEnabled ? `${load?.workbuddyFiles ?? 0} 个会话文件 · Token 与实际积分` : '未开启' },
     guard: {
       on: s.guardEnabled,
       summary: s.guardEnabled
@@ -1577,7 +1677,7 @@ export function useSettingsGroups(): GroupMeta[] {
       summary: [s.launchAtLogin ? '开机自启' : '', s.archiveEnabled ? '历史归档' : '', s.extraDirs.length ? `额外目录 ${s.extraDirs.length}` : ''].filter(Boolean).join(' · ') || '默认'
     }
   }
-  return SETTINGS_GROUPS.filter((g) => shownIn(g, source, s.codexEnabled)).map((g) => ({ ...g, icon: g.id === 'money' && s.currency === 'CNY' ? '¥' : g.icon, ...info[g.id] }))
+  return SETTINGS_GROUPS.filter((g) => shownIn(g, source, s.codexEnabled, s.workbuddyEnabled)).map((g) => ({ ...g, icon: g.id === 'money' && s.currency === 'CNY' ? '¥' : g.icon, ...info[g.id] }))
 }
 
 function GroupBody({ id, s, save }: { id: SettingsGroupId; s: Settings; save: Save }) {
@@ -1588,6 +1688,8 @@ function GroupBody({ id, s, save }: { id: SettingsGroupId; s: Settings; save: Sa
       return <AppearanceRows s={s} save={save} />
     case 'quota':
       return <QuotaRows s={s} save={save} />
+    case 'workbuddy':
+      return <WorkBuddyRows s={s} save={save} />
     case 'codex':
       return <CodexRows s={s} save={save} />
     case 'guard':

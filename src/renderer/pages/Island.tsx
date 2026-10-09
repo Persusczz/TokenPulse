@@ -335,7 +335,7 @@ export function Island() {
               <Bar label={other ? <><Starburst size={10} animated={false} />7d</> : '7d'} w={seven} guardAt={null} now={now} />
               {other && <Bar label={<><CodexMark size={10} animated={false} />7d</>} w={other.seven ?? undefined} guardAt={null} now={now} tint="var(--codex)" />}
               <div className="isl-foot">
-                <span>{guard?.manualHold && source !== 'codex' ? '已暂停所有任务' : paused && source !== 'codex' ? `暂停中 ${paused} 个任务` : working ? `${source === 'codex' ? 'Codex' : source === 'all' ? 'AI' : 'Claude'} 正在工作` : '空闲'}</span>
+                <span>{guard?.manualHold && (source === 'claude' || source === 'all') ? '已暂停所有任务' : paused && (source === 'claude' || source === 'all') ? `暂停中 ${paused} 个任务` : working ? `${source === 'workbuddy' ? 'WorkBuddy' : source === 'codex' ? 'Codex' : source === 'all' ? 'AI' : 'Claude'} 正在工作` : '空闲'}</span>
                 <button
                   className="isl-btn"
                   onClick={(e) => {

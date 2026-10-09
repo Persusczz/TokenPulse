@@ -21,19 +21,19 @@ export function CacheCard({ range }: { range: RangeKey }) {
             </span>
           )}
         </div>
-        {r && <span className="badge">命中率 {(r.hitRate * 100).toFixed(1)}%</span>}
+        {r && <span className="badge">{r.cacheUnreported && !r.hitRate ? '缓存字段不完整' : `命中率 ${(r.hitRate * 100).toFixed(1)}%`}</span>}
       </div>
       {!r ? (
         <div className="skeleton" style={{ height: 190 }} />
       ) : (
         <>
           <div className="pace-head">
-            <span className={`serif big-num${share >= 0.12 ? ' hot' : ''}`}>{money(r.extraCost)}</span>
+            <span className={`serif big-num${share >= 0.12 ? ' hot' : ''}`}>{source === 'workbuddy' ? r.cacheUnreported && !r.hitRate ? '—' : `${(r.hitRate * 100).toFixed(1)}%` : money(r.extraCost)}</span>
             <span className="insight-sub">
-              {source === 'codex' ? '缓存过期后按全价重新计费多花的钱' : '缓存过期后重写多花的钱'}
-              {r.totalCost > 0 ? `，占${who ? ` ${who}` : ''}费用的 ${(share * 100).toFixed(share < 0.1 ? 1 : 0)}%` : ''}
+              {source === 'workbuddy' ? '实际缓存命中率' : source === 'codex' ? '缓存过期后按全价重新计费多花的钱' : '缓存过期后重写多花的钱'}
+              {source !== 'workbuddy' && r.totalCost > 0 ? `，占${who ? ` ${who}` : ''}费用的 ${(share * 100).toFixed(share < 0.1 ? 1 : 0)}%` : ''}
               <br />
-              {r.rebuilds ? `${r.rebuilds} 次重写 · 平均每次 ${fmtTokens(r.avgRebuildTokens, 1)} token` : '没有发现过期重写'}
+              {source === 'workbuddy' ? '缓存读取 / 全部输入' : r.rebuilds ? `${r.rebuilds} 次重写 · 平均每次 ${fmtTokens(r.avgRebuildTokens, 1)} token` : '没有发现过期重写'}
             </span>
           </div>
           {r.rebuilds > 0 && (

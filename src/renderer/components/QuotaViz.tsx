@@ -212,7 +212,7 @@ export function DailyQuotaCard() {
         <div className="card-title">
           <span className="serif nowrap">这 7 天每天用了多少</span>
           <span className="muted" style={{ fontWeight: 400 }}>
-            7 天额度按天拆开{p ? `，每天从 ${clock(p.start)} 算起` : ''}
+            {p ? `每天从 ${clock(p.start)} 算起` : ''}
           </span>
         </div>
         {weekly.length > 1 && <Segmented small value={p?.key ?? ''} onChange={setSel} options={weekly.map((x) => ({ value: x.key, label: tool(x.source) }))} />}

@@ -13,7 +13,7 @@ const dur = (ms: number) => {
 }
 const stamp = (t: number) => new Date(t).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 const hm = (t: number) => new Date(t).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
-const toolName = (s: UsageSource) => (s === 'codex' ? 'Codex' : 'Claude')
+const toolName = (s: UsageSource) => (s === 'workbuddy' ? 'WorkBuddy' : s === 'codex' ? 'Codex' : 'Claude')
 
 /** Opens the sessions page on one session */
 export function openSession(sessionId: string): void {
@@ -224,7 +224,7 @@ export function WindowHistoryCard() {
         <div className="skeleton" style={{ height: 260 }} />
       ) : !h.windows.length ? (
         <div className="quota-msg" style={{ minHeight: 220 }}>
-          还没有窗口记录：{source === 'codex' ? 'Codex 运行时会把额度写进日志' : '开启订阅额度监控后，每次读到官方额度都会记下来（校准后也能用本地日志估算更早的窗口）'}
+          还没有窗口记录
         </div>
       ) : (
         <>

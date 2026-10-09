@@ -49,17 +49,23 @@ export function diagnoseCache(
   let rebuildTokens = 0
   let read = 0
   let prompt = 0
+  let cacheUnreported = 0
 
   for (const e of entries) {
     const codex = e.source === 'codex'
-    if ((source === 'claude' && codex) || (source === 'codex' && !codex) || e.side) continue
+    if ((source !== 'all' && (e.source ?? 'claude') !== source) || e.side) continue
     const prev = e.sessionId ? last.get(e.sessionId) : undefined
     if (e.sessionId) last.set(e.sessionId, e)
     if (e.ts < from || e.ts >= to) continue
     total += e.cost.total
     writeCost += e.cost.cacheWrite
-    read += e.cacheRead
-    prompt += e.input + e.cacheWrite5m + e.cacheWrite1h + e.cacheRead
+    if (e.cacheReadKnown === false) cacheUnreported++
+    else {
+      read += e.cacheRead
+      prompt += e.input + e.cacheWrite5m + e.cacheWrite1h + e.cacheRead
+    }
+    // WorkBuddy has model-specific cache policies; logs do not report a cache TTL.
+    if (e.source === 'workbuddy') continue
     if (!prev) continue
     // mostly written (Claude) or billed at full price (Codex), not read: the cached prefix was gone
     const missed = codex ? e.input + e.cacheWrite5m : e.cacheWrite5m + e.cacheWrite1h
@@ -88,9 +94,11 @@ export function diagnoseCache(
   const avg = rebuilds ? rebuildTokens / rebuilds : 0
   const share = total > 0 ? extra / total : 0
   const writeShare = total > 0 ? writeCost / total : 0
-  const who = source === 'codex' ? 'Codex' : source === 'claude' ? 'Claude' : ''
+  const who = source === 'workbuddy' ? 'WorkBuddy' : source === 'codex' ? 'Codex' : source === 'claude' ? 'Claude' : ''
   const tips: string[] = []
-  if (!rebuilds) tips.push(total > 0 ? '这段时间没有发现缓存过期后的重写，继续保持。' : `这段时间没有${who ? ` ${who} ` : ''}用量。`)
+  if (cacheUnreported) tips.push(`有 ${cacheUnreported} 次 Harness 响应未报告缓存字段，命中率只按报告了缓存的响应计算。`)
+  if (source === 'workbuddy') tips.push('WorkBuddy 只统计日志中的实际缓存命中；各模型未报告缓存有效期，不估算过期费用。')
+  else if (!rebuilds) tips.push(total > 0 ? '这段时间没有发现缓存过期后的重写，继续保持。' : `这段时间没有${who ? ` ${who} ` : ''}用量。`)
   else {
     if (gaps[0].count >= 2) {
       tips.push(
@@ -113,6 +121,7 @@ export function diagnoseCache(
     totalCost: total,
     writeCost,
     hitRate: prompt > 0 ? read / prompt : 0,
+    ...(cacheUnreported ? { cacheUnreported } : {}),
     avgRebuildTokens: avg,
     gaps,
     sessions: [...sessions.values()].sort((a, b) => b.extra - a.extra).slice(0, 5),

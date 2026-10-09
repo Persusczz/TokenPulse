@@ -3,9 +3,11 @@ import { memo, useEffect, useMemo, useState, type DragEvent, type Ref } from 're
 import type { ScheduledTask, TaskAction, TaskAttempt, TaskEffort, TaskFailure, TaskLogLine, TaskMove, TaskPatch, TaskPermission, TaskQueueState, UsageSource } from '@shared/types'
 import { compactText } from '@shared/compact'
 import { SourceMark } from '../components/CodexMark'
+import { SOURCE_NAMES } from '@shared/sources'
 import { CompactPicker, type CompactChoice } from '../components/CompactPicker'
 import { Segmented } from '../components/Segmented'
 import { Starburst } from '../components/Starburst'
+import { WorkBuddyMark } from '../../features/workbuddy/WorkBuddyMark'
 import { countdown, TOOL_CLI, useApp, useNow, useSource } from '../state'
 import { CODEX_PERMISSIONS, useCodexModels } from './SettingsPage'
 import { FlowRing } from '../components/Fx'
@@ -79,7 +81,7 @@ function ToolRefresh({ tool, state, now, compact }: { tool: UsageSource; state: 
       <div className="task-ring">
         <svg viewBox="0 0 128 128" style={{ transform: 'rotate(-90deg)' }}>
           <circle cx="64" cy="64" r={R} fill="none" stroke="var(--surface-2)" strokeWidth="10" />
-          <circle cx="64" cy="64" r={R} fill="none" stroke={tool === 'codex' ? 'var(--codex)' : 'var(--claude)'} strokeWidth="10" strokeLinecap="round" strokeDasharray={C} strokeDashoffset={C * (1 - elapsed)} />
+          <circle cx="64" cy="64" r={R} fill="none" stroke={tool === 'workbuddy' ? 'var(--workbuddy)' : tool === 'codex' ? 'var(--codex)' : 'var(--claude)'} strokeWidth="10" strokeLinecap="round" strokeDasharray={C} strokeDashoffset={C * (1 - elapsed)} />
         </svg>
         <div className="task-ring-in">
           {reset ? (
@@ -90,7 +92,7 @@ function ToolRefresh({ tool, state, now, compact }: { tool: UsageSource; state: 
           ) : (
             <>
               <b className="serif">就绪</b>
-              <small>额度空闲</small>
+              <small>{tool === 'workbuddy' ? '按积分计费' : '额度空闲'}</small>
             </>
           )}
         </div>
@@ -100,14 +102,14 @@ function ToolRefresh({ tool, state, now, compact }: { tool: UsageSource; state: 
           <span className="title-mark small">
             <SourceMark size={18} animated={false} source={tool} />
           </span>
-          <span className="serif">{compact ? `${TOOL_CLI[tool]} 下次刷新` : `${TOOL_CLI[tool]} · 下一次 5h 刷新`}</span>
+          <span className="serif">{tool === 'workbuddy' ? 'WorkBuddy 任务' : compact ? `${TOOL_CLI[tool]} 下次刷新` : `${TOOL_CLI[tool]} · 下一次 5h 刷新`}</span>
         </div>
-        <div className="task-hero-when">{reset ? when(reset) : '当前没有进行中的 5h 窗口，排队的任务会马上开始'}</div>
+        <div className="task-hero-when">{tool === 'workbuddy' ? '随时开始' : reset ? when(reset) : '当前没有进行中的 5h 窗口，排队的任务会马上开始'}</div>
         <div className="task-hero-sub">
           {queued.length ? `排队 ${queued.length} 个${reset && atReset ? `，其中 ${atReset} 个在这次刷新时开始` : ''}${retrying ? ` · ${retrying} 个等着再试` : ''}` : `还没有 ${TOOL_CLI[tool]} 任务`}
         </div>
         {info.waiting && <div className="task-wait">⏳ {info.waiting}</div>}
-        {!info.cli && <div className="task-wait bad">没有找到 {tool === 'codex' ? 'codex' : 'claude'} 命令，请确认已安装</div>}
+        {!info.cli && <div className="task-wait bad">没有找到 {TOOL_CLI[tool]} 命令，请确认已安装</div>}
       </div>
     </div>
   )
@@ -296,7 +298,7 @@ function draftOf(t: ScheduledTask): Partial<Draft> {
 
 function RetrySelect({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   return (
-    <select className="input" value={value} onChange={(e) => onChange(Number(e.target.value))} title="失败后自动再试几次：网络出错会等一会儿再试，检查没通过会把输出交给它去修，额度用完会等刷新后接着做（不算次数）">
+    <select className="input" value={value} onChange={(e) => onChange(Number(e.target.value))} title="失败后自动再试几次：网络出错会等一会儿再试，检查没通过会把输出交给它去修">
       {RETRIES.map((n) => (
         <option key={n} value={n}>
           {n ? `失败后重试 ${n} 次` : '失败不重试'}
@@ -321,7 +323,9 @@ function TimeoutSelect({ value, onChange }: { value: number; onChange: (v: numbe
 
 function ModelSelect({ tool, value, onChange, empty = '默认模型' }: { tool: UsageSource; value: string; onChange: (v: string) => void; empty?: string }) {
   const codexModels = useCodexModels()
-  const list = tool === 'codex' ? codexModels : MODELS.slice(1).map((m) => m.value)
+  const { pricing } = useApp()
+  const buddyModels = [...new Set((pricing?.models ?? []).filter((m) => m.source === 'workbuddy').map((m) => m.model))]
+  const list = tool === 'workbuddy' ? buddyModels : tool === 'codex' ? codexModels : MODELS.slice(1).map((m) => m.value)
   return (
     <select className="input" value={value} onChange={(e) => onChange(e.target.value)}>
       <option value="">{empty}</option>
@@ -336,7 +340,7 @@ function ModelSelect({ tool, value, onChange, empty = '默认模型' }: { tool: 
 
 function EffortSelect({ tool, value, onChange }: { tool: UsageSource; value: TaskEffort | ''; onChange: (v: TaskEffort | '') => void }) {
   return (
-    <select className="input" value={value} onChange={(e) => onChange(e.target.value as TaskEffort | '')} title={tool === 'codex' ? 'Codex 的 model_reasoning_effort' : 'Claude Code 的 --effort'}>
+    <select className="input" value={value} onChange={(e) => onChange(e.target.value as TaskEffort | '')} title={tool === 'codex' ? 'Codex 的 model_reasoning_effort' : `${TOOL_CLI[tool]} 的 --effort`}>
       {EFFORTS.filter((x) => tool !== 'codex' || x.value !== 'max').map((x) => (
         <option key={x.value} value={x.value}>
           {x.label}
@@ -356,6 +360,9 @@ function NewTask({ state, view }: { state: TaskQueueState; view: UsageSource | '
       saveDraft(next)
       return next
     })
+  useEffect(() => {
+    if (view !== 'all' && (d.tool ?? 'claude') !== view) set({ tool: view, permission: null, model: null, fallbackModel: '' })
+  }, [view])
   // "copy as a new task" from a card
   useEffect(() => {
     const on = (e: Event) => {
@@ -368,12 +375,14 @@ function NewTask({ state, view }: { state: TaskQueueState; view: UsageSource | '
     return () => document.removeEventListener(DRAFT_EVENT, on)
   }, [])
   const tool: UsageSource = view === 'all' ? (d.tool ?? 'claude') : view
-  const { prompt, trigger, at, repeat } = d
+  const { prompt, trigger: savedTrigger, at, repeat: savedRepeat } = d
+  const trigger = tool === 'workbuddy' && savedTrigger === 'reset' ? 'manual' : savedTrigger
+  const repeat = tool !== 'workbuddy' && savedRepeat
   const cwd = d.cwd || settings?.taskCwd || ''
-  const permission = d.permission ?? (tool === 'codex' ? settings?.codexTaskPermission : settings?.taskPermission) ?? 'inherit'
+  const permission = d.permission ?? (tool === 'workbuddy' ? 'inherit' : tool === 'codex' ? settings?.codexTaskPermission : settings?.taskPermission) ?? 'inherit'
   const perms = tool === 'codex' ? CODEX_PERMISSIONS : PERMISSIONS
   const shownPerm = perms.some((p) => p.value === permission) ? permission : 'inherit'
-  const model = d.model ?? (tool === 'codex' ? settings?.codexTaskModel : settings?.taskModel) ?? ''
+  const model = d.model ?? (tool === 'workbuddy' ? '' : tool === 'codex' ? settings?.codexTaskModel : settings?.taskModel) ?? ''
   const cont = d.continue ?? settings?.taskContinue ?? true
   const compact: CompactChoice = d.compact ?? { on: settings?.taskAutoCompact ?? true, at: settings?.taskCompactAt ?? null }
   const retries = d.retries ?? settings?.taskRetries ?? 1
@@ -428,7 +437,8 @@ function NewTask({ state, view }: { state: TaskQueueState; view: UsageSource | '
               onChange={(v) => set({ tool: v, permission: null, model: null, fallbackModel: '' })}
               options={[
                 { value: 'claude', label: 'Claude Code' },
-                { value: 'codex', label: 'Codex' }
+                { value: 'codex', label: 'Codex' },
+                { value: 'workbuddy', label: 'WorkBuddy' }
               ]}
             />
           )}
@@ -461,7 +471,7 @@ function NewTask({ state, view }: { state: TaskQueueState; view: UsageSource | '
               value={trigger}
               onChange={(v) => set({ trigger: v })}
               options={[
-                { value: 'reset', label: '下次刷新' },
+                ...(tool === 'workbuddy' ? [] : [{ value: 'reset' as const, label: '下次刷新' }]),
                 { value: 'now', label: '立即' },
                 { value: 'time', label: '指定时间' },
                 { value: 'manual', label: '先放着' }
@@ -477,15 +487,15 @@ function NewTask({ state, view }: { state: TaskQueueState; view: UsageSource | '
           <option value="">不跟在别的任务后面</option>
           {parents.map((p) => (
             <option key={p.id} value={p.id}>
-              {view === 'all' ? `[${toolOf(p) === 'codex' ? 'Codex' : 'Claude'}] ` : ''}
+              {view === 'all' ? `[${SOURCE_NAMES[toolOf(p)]}] ` : ''}
               {short(p.prompt.replace(/\s+/g, ' '), 40)} 之后
             </option>
           ))}
         </select>
-        <label className="check">
+        {tool !== 'workbuddy' && <label className="check">
           <input type="checkbox" checked={repeat} onChange={(e) => set({ repeat: e.target.checked })} />
           每次刷新都执行
-        </label>
+        </label>}
       </div>
       <div className="task-form-row">
         <span className="tg-label" title="失败后自动再试；做完后可以跑一个检查命令，没通过就把输出交给它接着修">
@@ -503,9 +513,9 @@ function NewTask({ state, view }: { state: TaskQueueState; view: UsageSource | '
       </div>
       <div className="task-form-row">
         <span className="tg-label">对话</span>
-        <label className="check" title={tool === 'codex' ? 'codex exec resume：接着这个文件夹最近的 Codex 会话' : 'claude -c --fork-session：接着这个文件夹最近的对话，分叉成新会话'}>
+        <label className="check" title={tool === 'codex' ? 'codex exec resume：接着这个文件夹最近的 Codex 会话' : `${TOOL_CLI[tool]} --continue --fork-session：接着最近的对话，分叉成新会话`}>
           <input type="checkbox" checked={cont} onChange={(e) => set({ continue: e.target.checked })} />
-          接着上次的对话（{tool === 'codex' ? 'resume' : '-c'}）
+          接着上次的对话（{tool === 'codex' ? 'resume' : '--continue'}）
         </label>
       </div>
       <div className="task-form-row">
@@ -524,7 +534,7 @@ function NewTask({ state, view }: { state: TaskQueueState; view: UsageSource | '
           ))}
         </select>
         <ModelSelect tool={tool} value={model} onChange={(v) => set({ model: v })} />
-        <span className="muted task-perm-desc">{perms.find((p) => p.value === shownPerm)?.desc}</span>
+        <span className="muted task-perm-desc">{perms.find((p) => p.value === shownPerm)?.desc.replace('Claude Code', TOOL_CLI[tool])}</span>
         <button className="btn ghost small task-more" onClick={() => set({ more: !d.more })}>
           {d.more ? '收起选项 ▴' : '更多选项 ▾'}
         </button>
@@ -548,7 +558,7 @@ function NewTask({ state, view }: { state: TaskQueueState; view: UsageSource | '
       </AnimatePresence>
       <div className="task-form-row end">
         <span className="muted" style={{ fontSize: 12 }}>
-          Ctrl+Enter 提交 · {tool === 'claude' ? '执行中额度到守卫线时会暂停；额度用完会等刷新后接着做' : 'Codex 额度用完时排队的任务会等到刷新，做到一半用完会在刷新后接着做'}
+          Ctrl+Enter 提交
         </span>
         <button className="btn primary" disabled={!prompt.trim() || !cwd.trim()} onClick={() => void submit()}>
           加入队列
@@ -619,7 +629,7 @@ function TaskEditor({ t, onClose }: { t: ScheduledTask; onClose: () => void }) {
       </div>
       <div className="task-form-row end">
         <span className="muted" style={{ fontSize: 12 }}>
-          {queued ? '保存后仍按原来的时间开始' : '改好后马上再试，或者排到下次额度刷新'}
+          {queued ? '保存后仍按原来的时间开始' : tool === 'workbuddy' ? '改好后马上再试' : '改好后马上再试，或者排到下次额度刷新'}
         </span>
         <span className="task-edit-btns">
           <button className="btn ghost small" onClick={onClose}>
@@ -631,9 +641,9 @@ function TaskEditor({ t, onClose }: { t: ScheduledTask; onClose: () => void }) {
             </button>
           ) : (
             <>
-              <button className="btn small" disabled={!p.prompt.trim()} onClick={() => save('reset')}>
+              {tool !== 'workbuddy' && <button className="btn small" disabled={!p.prompt.trim()} onClick={() => save('reset')}>
                 保存，下次刷新时做
-              </button>
+              </button>}
               <button className="btn primary small" disabled={!p.prompt.trim()} onClick={() => save('now')}>
                 保存并立即重试
               </button>
@@ -675,7 +685,7 @@ function FollowUp({ t, onClose }: { t: ScheduledTask; onClose: () => void }) {
   return (
     <div className="task-follow">
       <div className="muted">
-        接着这个任务的对话继续说，马上开始（{tool === 'codex' ? 'codex exec resume' : 'claude --resume，分叉成新会话，原对话不变'}）
+        接着这个任务的对话继续说，马上开始（{tool === 'codex' ? 'codex exec resume' : `${TOOL_CLI[tool]} --resume，分叉成新会话，原对话不变`}）
       </div>
       <textarea
         className="input task-prompt"
@@ -911,7 +921,7 @@ const TaskItem = memo(function TaskItem({ t, all, now, waiting, depth, busyLanes
               tool === 'codex' ? (
                 <SourceMark size={22} source="codex" intensity={3} />
               ) : (
-                <Starburst size={22} intensity={3} />
+                t.tool === 'workbuddy' ? <WorkBuddyMark size={22} /> : <Starburst size={22} intensity={3} />
               )
             ) : t.pending ? (
               '↻'
@@ -921,7 +931,7 @@ const TaskItem = memo(function TaskItem({ t, all, now, waiting, depth, busyLanes
           </span>
           <div className="task-item-main">
             <div className="task-item-prompt">
-              {showTool && <span className={`src-tag ${tool}`}>{tool === 'codex' ? 'Codex' : 'Claude'}</span>}
+              {showTool && <span className={`src-tag ${tool}`}>{SOURCE_NAMES[tool]}</span>}
               {t.prompt}
             </div>
             <div className="task-chips">
@@ -1007,9 +1017,9 @@ const TaskItem = memo(function TaskItem({ t, all, now, waiting, depth, busyLanes
         </div>
         {panel === 'more' && (
           <div className="task-more-row">
-            <button className="btn ghost small" onClick={() => act('requeue')}>
+            {tool !== 'workbuddy' && <button className="btn ghost small" onClick={() => act('requeue')}>
               下次刷新时再做
-            </button>
+            </button>}
             <button
               className="btn ghost small"
               onClick={() => {
@@ -1072,7 +1082,7 @@ export function TasksPage() {
     void window.api.getTasks().then(setState)
     return window.api.onTasks(setState)
   }, [])
-  const tools: UsageSource[] = source === 'all' ? ['claude', 'codex'] : [source]
+  const tools: UsageSource[] = source === 'all' ? ['claude', 'codex', 'workbuddy'] : [source]
   const all = state?.tasks ?? []
   const mine = useMemo(() => all.filter((t) => tools.includes(toolOf(t))), [all, source])
   const active = mine.filter((t) => t.status === 'running' || t.status === 'queued').sort((a, b) => a.order - b.order)
@@ -1100,7 +1110,7 @@ export function TasksPage() {
   roots.forEach((t) => walk(t, 0))
   const busyLanes = useMemo(() => new Set(all.filter((t) => t.status === 'running').map(laneOf)), [all])
   const waitingOf = (t: ScheduledTask) => state?.tools?.[toolOf(t)]?.waiting ?? (toolOf(t) === 'claude' ? (state?.waiting ?? null) : null)
-  const title = source === 'codex' ? 'Codex 刷新任务' : source === 'claude' ? 'Claude 刷新任务' : '刷新任务'
+  const title = source === 'workbuddy' ? 'WorkBuddy 任务' : source === 'codex' ? 'Codex 刷新任务' : source === 'claude' ? 'Claude 刷新任务' : '刷新任务'
   const clear = () => {
     if (!confirm(`删除 ${source === 'all' ? '' : `${TOOL_CLI[source]} 的`}全部 ${historyCount} 个历史任务和它们的日志？排队和进行中的任务不受影响。`)) return
     void window.api.clearTaskHistory(source)
@@ -1110,9 +1120,7 @@ export function TasksPage() {
       <div className="page-head">
         <div>
           <h1 className="page-title">{title}</h1>
-          <div className="page-sub">
-            提前把任务排好，5h 额度刷新时自动交给 {source === 'all' ? 'Claude Code 或 Codex' : TOOL_CLI[source]}；失败了会自动再试，做完可以跑检查、没通过就接着修；不同文件夹各开一个终端窗口同时做，同一文件夹按顺序做。也可以在 Telegram 发 /task 远程排队
-          </div>
+          <div className="page-sub">{source === 'workbuddy' ? '立即、定时或手动开始，按积分计费' : '5h 额度刷新时自动开始'}</div>
         </div>
       </div>
       {state && (

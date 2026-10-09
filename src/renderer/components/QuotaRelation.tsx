@@ -160,7 +160,6 @@ function ToolRelation({ t }: { t: QuotaCycles }) {
           </div>
         ))}
       </div>
-      <div className="qr-foot muted">7 天的读数按各窗口的 API 等价花费分摊；5 小时和 7 天额度算的是同一份用量，所以两者的比例大致固定</div>
     </div>
   )
 }

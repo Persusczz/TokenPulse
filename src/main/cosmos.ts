@@ -180,7 +180,7 @@ export function stellarType(entries: CostedEntry[], windows: Remnant[], now: num
     if (!startHour.has(d)) startHour.set(d, new Date(e.ts).getHours())
     if (e.sessionId) sessions.add(e.sessionId)
     if (e.source === 'codex') codex += tok
-    else claude += tok
+    else if ((e.source ?? 'claude') === 'claude') claude += tok
   }
   const vals = [...day.values()]
   const total = claude + codex
@@ -227,19 +227,20 @@ export function stellarType(entries: CostedEntry[], windows: Remnant[], now: num
 /** the projects of the last `days` as planets: size by tokens, orbit by how recently they were active */
 export function projectPlanets(entries: CostedEntry[], now: number, days = 30, label: (m: string) => string = (m) => m, limit = 12): ProjectPlanet[] {
   const from = now - days * 24 * HOUR
-  const by = new Map<string, { project: string; tokens: number; cost: number; sessions: Set<string>; days: Set<number>; last: number; codex: number; models: Map<string, number> }>()
+  const by = new Map<string, { project: string; tokens: number; cost: number; sessions: Set<string>; days: Set<number>; last: number; codex: number; workbuddy: number; models: Map<string, number> }>()
   for (const e of entries) {
     if (e.ts < from || e.ts > now) continue
     const tok = tokensOf(e)
     if (!tok) continue
     let p = by.get(e.project)
-    if (!p) by.set(e.project, (p = { project: e.project, tokens: 0, cost: 0, sessions: new Set(), days: new Set(), last: 0, codex: 0, models: new Map() }))
+    if (!p) by.set(e.project, (p = { project: e.project, tokens: 0, cost: 0, sessions: new Set(), days: new Set(), last: 0, codex: 0, workbuddy: 0, models: new Map() }))
     p.tokens += tok
     p.cost += e.cost.total
     if (e.sessionId) p.sessions.add(e.sessionId)
     p.days.add(startOfDay(e.ts))
     p.last = Math.max(p.last, e.ts)
     if (e.source === 'codex') p.codex += tok
+    if (e.source === 'workbuddy') p.workbuddy += tok
     const m = label(e.model)
     p.models.set(m, (p.models.get(m) ?? 0) + tok)
   }
@@ -253,7 +254,7 @@ export function projectPlanets(entries: CostedEntry[], now: number, days = 30, l
     sessions: p.sessions.size,
     activeDays: p.days.size,
     last: p.last,
-    source: p.codex > p.tokens / 2 ? 'codex' : 'claude',
+    source: p.workbuddy > Math.max(p.codex, p.tokens - p.codex - p.workbuddy) ? 'workbuddy' : p.codex > p.tokens - p.codex - p.workbuddy ? 'codex' : 'claude',
     model: [...p.models].sort((a, b) => b[1] - a[1])[0]?.[0] ?? ''
   }))
 }

@@ -1,5 +1,5 @@
 // Draws the app icons (a deep-space tile with the glowing spark, and the Codex
-// variant) on a canvas in a hidden Electron window, then writes PNG / ICO.
+// and WorkBuddy variants) on a canvas in a hidden Electron window, then writes PNG / ICO.
 // Run: npx electron scripts/render-icons.cjs   (npm run icons)
 const { app, BrowserWindow } = require('electron')
 const { mkdirSync, readFileSync, writeFileSync } = require('node:fs')
@@ -185,9 +185,35 @@ function prompt(ctx, S) {
   }
   ctx.restore()
 }
+// WorkBuddy: the W of its mark
+function wmark(ctx, S) {
+  const small = S <= 32
+  const u = (S * (small ? 0.6 : 0.5)) / 17
+  const cx = S * 0.5, cy = S * (small ? 0.5 : 0.47)
+  const pts = [[7.5, 10.5], [11, 22], [16, 14], [21, 22], [24.5, 10.5]]
+  const g = ctx.createLinearGradient(cx - S * 0.25, cy - S * 0.2, cx + S * 0.25, cy + S * 0.2)
+  g.addColorStop(0, '#e8fff6')
+  g.addColorStop(0.5, '#86e3c4')
+  g.addColorStop(1, '#2fa585')
+  ctx.save()
+  ctx.strokeStyle = g
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  ctx.lineWidth = S * (small ? 0.11 : 0.075)
+  ctx.shadowColor = 'rgba(47,190,145,0.9)'
+  ctx.shadowBlur = S * 0.07
+  for (let pass = 0; pass < 2; pass++) {
+    ctx.beginPath()
+    pts.forEach(([x, y], i) => (i ? ctx.lineTo(cx + (x - 16) * u, cy + (y - 16.25) * u) : ctx.moveTo(cx + (x - 16) * u, cy + (y - 16.25) * u)))
+    ctx.stroke()
+    ctx.shadowBlur = 0
+  }
+  ctx.restore()
+}
 const PAL = {
   claude: { bg0: '#3b2140', bg1: '#191230', bg2: '#080a18', glow: 'rgba(232,124,84,0.42)', nebula: 'rgba(132,96,255,0.28)' },
-  codex: { bg0: '#262c6e', bg1: '#121539', bg2: '#060818', glow: 'rgba(98,112,255,0.45)', nebula: 'rgba(80,200,255,0.22)' }
+  codex: { bg0: '#262c6e', bg1: '#121539', bg2: '#060818', glow: 'rgba(98,112,255,0.45)', nebula: 'rgba(80,200,255,0.22)' },
+  workbuddy: { bg0: '#16443a', bg1: '#0e2a24', bg2: '#05130f', glow: 'rgba(47,165,133,0.45)', nebula: 'rgba(120,220,255,0.2)' }
 }
 window.draw = (kind, S) => {
   const c = document.createElement('canvas')
@@ -197,9 +223,12 @@ window.draw = (kind, S) => {
   if (kind === 'claude') {
     spark(ctx, S)
     if (S >= 48) pulse(ctx, S, '#ffc6a8')
-  } else {
+  } else if (kind === 'codex') {
     prompt(ctx, S)
     if (S >= 48) pulse(ctx, S, '#b9c2ff')
+  } else {
+    wmark(ctx, S)
+    if (S >= 48) pulse(ctx, S, '#a8f0d6')
   }
   return c.toDataURL('image/png')
 }
@@ -234,6 +263,7 @@ app.whenReady().then(async () => {
   mkdirSync(join(root, 'build'), { recursive: true })
   writeFileSync(join(root, 'resources/icon.png'), await render('claude', 256))
   writeFileSync(join(root, 'resources/icon-codex.png'), await render('codex', 256))
+  writeFileSync(join(root, 'resources/icon-workbuddy.png'), await render('workbuddy', 256))
   writeFileSync(join(root, 'build/icon.png'), await render('claude', 512))
   const sizes = [16, 20, 24, 32, 40, 48, 64, 128, 256]
   const images = []
@@ -241,7 +271,7 @@ app.whenReady().then(async () => {
   writeFileSync(join(root, 'build/icon.ico'), ico(images))
   // a contact sheet for checking the small sizes by eye
   const out = process.env.TP_ICON_SHEET
-  if (out) for (const s of [16, 24, 32, 48, 256]) for (const k of ['claude', 'codex']) writeFileSync(join(out, `${k}-${s}.png`), await render(k, s))
+  if (out) for (const s of [16, 24, 32, 48, 256]) for (const k of ['claude', 'codex', 'workbuddy']) writeFileSync(join(out, `${k}-${s}.png`), await render(k, s))
   console.log('app icons written')
   app.quit()
 })

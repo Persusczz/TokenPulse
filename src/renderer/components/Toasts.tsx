@@ -110,7 +110,7 @@ export function Toasts() {
       window.api.onContextAlert((a) =>
         push({
           kind: a.window ? (a.tokens >= a.window * 0.88 ? 'alarm' : 'warn') : a.tokens >= a.warnAt * 1.5 ? 'alarm' : 'warn',
-          title: `${a.source === 'codex' ? 'Codex ' : ''}${a.project || '会话'} 上下文 ${fmtTokens(a.tokens, 0)}${a.window ? ` / ${fmtTokens(a.window, 0)}（${Math.round((a.tokens / a.window) * 100)}%）` : ''}`,
+          title: `${a.source === 'workbuddy' ? 'WorkBuddy ' : a.source === 'codex' ? 'Codex ' : ''}${a.project || '会话'} 上下文 ${fmtTokens(a.tokens, 0)}${a.window ? ` / ${fmtTokens(a.window, 0)}（${Math.round((a.tokens / a.window) * 100)}%）` : ''}`,
           sub: `每次请求都要带上它${a.growthPerRequest > 1000 ? `，还在以每次 ${fmtTokens(a.growthPerRequest, 0)} 增长` : ''} · ${a.window && a.tokens >= a.window * 0.88 ? '快到自动压缩了' : '告一段落时 /compact 一下'}`
         })
       ),

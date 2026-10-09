@@ -241,12 +241,17 @@
   color: var(--text-3);
 }
 .tl-tip {
-  position: absolute;
-  z-index: 10;
+  position: fixed;
+  z-index: 1000;
   min-width: 190px;
   transform: translate(12px, 12px);
   pointer-events: none;
 }
+.tl-tip.flip-x { transform: translate(calc(-100% - 12px), 12px); }
+.tl-tip.flip-y { transform: translate(12px, calc(-100% - 12px)); }
+.tl-tip.flip-x.flip-y { transform: translate(calc(-100% - 12px), calc(-100% - 12px)); }
+/* a hovered card rises above its neighbours, so the tips inside it are never covered */
+.card:hover { z-index: 3; }
 
 /* 模型对比 */
 .mt-wrap {

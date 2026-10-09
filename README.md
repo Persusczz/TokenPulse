@@ -4,11 +4,11 @@
 
 # TokenPulse
 
-**Claude Code 与 Codex 的 Token 用量、费用和订阅额度，一眼看清。**
+**Claude Code、Codex 与 WorkBuddy 的 Token 用量、费用、订阅额度与积分，一眼看清。**
 
-Windows 桌面应用 · 直接读取本机会话日志 · 无需账号、没有统计上报
+Windows 桌面应用 · 直接读取本机会话日志 · 无需额外注册、没有统计上报
 
-[![版本](https://img.shields.io/badge/版本-2.20.0-d97757)](https://github.com/Persusczz/TokenPulse/releases)
+[![版本](https://img.shields.io/badge/版本-2.21.0-d97757)](https://github.com/Persusczz/TokenPulse/releases)
 ![平台](https://img.shields.io/badge/平台-Windows%2010%2F11%20x64-5b8def)
 [![许可证](https://img.shields.io/badge/许可证-MIT-6aa84f)](LICENSE)
 
@@ -22,6 +22,7 @@ Windows 桌面应用 · 直接读取本机会话日志 · 无需账号、没有�
 
 - **用量与费用**：今天、7 天、30 天、本月和全部记录的 Token 与等价 API 费用，拆成输入、输出、缓存写入、缓存读取，支持美元和人民币。
 - **订阅额度**：Claude 和 Codex 各自的 5 小时、7 天额度，重置倒计时、领先或落后节奏、按当前速度预测何时用完；每个窗口用了多少 Token、花了多少钱都有账单。
+- **WorkBuddy 联动**：沿用现有概览、会话、定价、任务与设置布局；读取本地 Token、缓存、积分消耗、模型窗口与工具调用，查询国内个人账户总积分、已用与剩余，支持手动、立即和定时任务。
 - **额度守卫**：Claude Code 的 5 小时额度到阈值时暂停正在运行的任务，额度重置后自动继续。
 - **刷新任务**：提前排好任务，在下次额度刷新时交给 Claude Code 或 Codex 无人值守执行，失败自动重试，检查命令不通过就接着修。
 - **提醒与遥控**：预算、额度、额度浪费、上下文膨胀、失控会话提醒；可推送到 Telegram，并在 Telegram 里查看状态、排任务、暂停和恢复。
@@ -34,22 +35,36 @@ Windows 桌面应用 · 直接读取本机会话日志 · 无需账号、没有�
 
 | 文件 | 说明 |
 | --- | --- |
-| `TokenPulse.Setup.2.20.0.exe` | 安装版，可选择安装目录 |
-| `TokenPulse-2.20.0-portable.exe` | 便携版，下载后直接运行 |
+| `TokenPulse.Setup.2.21.0.exe` | 安装版，可选择安装目录 |
+| `TokenPulse-2.21.0-portable.exe` | 便携版，下载后直接运行 |
 
 **使用前提**
 
 - Windows 10 / 11 x64。
-- 本机用过 Claude Code 或 Codex，留有会话日志。TokenPulse 会自动找到：
+- 本机用过 Claude Code、Codex 或 WorkBuddy，留有会话日志。TokenPulse 会自动找到：
   - Claude Code：`CLAUDE_CONFIG_DIR`、`~/.claude`、`~/.config/claude` 下的 `projects` 目录；其他目录可在 **设置 → 系统与数据** 里添加。
   - Codex：`CODEX_HOME`，否则 `~/.codex`。
+  - WorkBuddy：`WORKBUDDY_CONFIG_DIR`，否则 `~/.workbuddy` 下的 `projects`；模型窗口从同目录的 `workbuddy.db` 只读获取。其他目录可在 **设置 → WorkBuddy 积分** 添加。
+  - DeepSeek Harness：自动读取 `~/.dsh/sessions` 和用户数据下的 `dsh-desktop/harness/sessions`、`@deepseek-ai/dsh-desktop/dsh-home/sessions`、`HarnessXiaoxi/engine/sessions`（Windows 为 `%APPDATA%`）。国内 `workbuddy` 提供商及保留 `cmb-` 响应标记的自定义反代自动计入 WorkBuddy，不依赖个人提供商 ID；反代改写标记时可在 **设置 → WorkBuddy 积分** 中手动指定来源。其他 Harness 数据根或 sessions 目录也可添加。
 - 查看 Claude 订阅额度需要 Claude Code 已登录；运行刷新任务需要对应的 CLI（`claude` / `codex`）已安装并登录。
 
 安装包没有代码签名，首次运行时 Windows SmartScreen 可能提示“已保护你的电脑”，点击 **更多信息 → 仍要运行** 即可。
 
-打开后侧边栏顶部可以在 **Claude / Codex / 全部** 之间切换：两个工具各有自己的图标、配色和额度，只有在“全部”里才合并显示。
+打开后侧边栏顶部可以在 **Claude / Codex / WorkBuddy / 全部** 之间切换：各工具沿用同一页面模板，拥有独立图标、配色、模型和会话；“全部”合并用量。Claude、Codex 显示订阅额度，WorkBuddy 显示本地积分消耗与账户剩余。
 
 ## 功能详解
+
+### WorkBuddy
+
+- **采集范围与设置**：账户登录与积分账本统一覆盖同一账户的已入账消耗，调用来自 WorkBuddy、Harness 或其他软件都无需为积分查询添加客户端预设。日志目录、响应识别和提供商映射收进默认折叠的「本地日志兼容读取」，兼容客户端采集可关闭，原生 WorkBuddy 记录和账户查询继续工作；关闭后不扫描自动发现的 Harness 目录，也跳过手动目录中的 Harness 压缩会话。既有采集配置保持启用。账户接口目前可靠读取积分、模型、时间；本地 Token、速率、对话和工具记录仅覆盖已支持且生成可读日志的客户端，不能保证任意软件的逐秒 Token 或会话详情。
+- **Harness 本地统计**：读取 `session.v3.jsonl.zstd` 中的 WorkBuddy 输入/输出 Token、缓存、模型、会话、用户提问、工具调用与上下文窗口，沿用概览、实时速率、会话、星空和悬浮窗。默认统计国内 `workbuddy` 提供商，另按每条响应的 `cmb-` 标记自动识别自定义反代；同一提供商的其他上游响应不会一起归入，不靠模型名或个人 ID 猜测。该标记是来源线索，不能证明账户身份；默认排除国际版 `workbuddy-ai`。自动识别可关闭，改写响应标记的反代可手动指定来源（该提供商全部调用归入 WorkBuddy）。重复响应按原始响应 ID 去重。压缩日志增量读取，未写完的压缩帧留待下次读取，文件监听遗漏时每 15 秒补扫。请求结束并写入日志后更新；速率页面每 3 秒刷新，TPM 为最近 60 秒总用量、输出 tok/s 为近 5 分钟均值，不推算尚未落盘的生成 Token。Harness 用量不报告积分时保留未知，实际扣费查看官方账本。Harness 会话不会被当作 WorkBuddy 原生 CLI 的续接目标。
+- **概览与规格**：复用 Token、缓存、趋势、项目、模型、响应速度和上下文统计。只读本机模型窗口，不猜测未报告的模型规格；API 等价费用只使用匹配的模型参考价。
+- **积分与续航**：概览的积分卡以官方账本为主，显示账户剩余、今日消耗，以及按近 30 天官方日均推算的续航（约还能用几天、哪天前后用完）；能量罐在 WorkBuddy 下按积分装，大屏模式改为账户剩余和今日消耗两个积分环，塔罗的额度牌也画积分。本地记录只在账本读不到时补位。
+- **积分与登录**：显示所选范围内已记录的实际积分、按模型消耗和每日记录，包含仅报告积分、没有 Token 字段的响应。未报告积分与零消耗分开统计。可在 **设置 → WorkBuddy 积分 → 登录 WorkBuddy** 通过腾讯官方页面授权，令牌由系统加密保存于本机；优先用此登录查询总积分、已用、剩余和账本，未登录时只读沿用本机 WorkBuddy 登录。独立登录过期时要求重新登录，避免悄悄换成另一个本机账户；退出独立登录后恢复本机来源。缓存 1 分钟，可手动刷新，查询失败保留带提示的上次结果，切换或退出账户清空旧余额。账户资源包与本地日志的统计范围不同，不要求两者相等。仅支持国内个人账户；套餐有效期可在[官方套餐与用量页面](https://www.workbuddy.cn/profile/plans-usage)查看。
+- **官方请求账本**：概览新增独立账本，约每分钟读取同一账户在今日、7 天或 30 天的逐请求积分、模型和时间。通过 buddy2api / DeepSeek Harness 使用同一账户也能显示，不要求请求写进 WorkBuddy 本地日志。账本与本地日志分开展示，不能相加；不推断 DSH 会话或任务归属。按请求 ID 去重，最多读取 20 页；未读全时明确标注已读条数与总条数，合计为部分数据。上游记录有入账延迟，非秒级推送；接口为客户端内部接口，变更或失效时显示错误，不伪造零消耗。
+- **定价**：实际消耗以响应积分为准，积分不换算成美元。API 参考费用使用精确匹配的模型价格，各行标明来源；DeepSeek V4.1 Flash / V4 Pro 使用[官方峰时价](https://api-docs.deepseek.com/quick_start/pricing/)作统一参考，谷时价格另列，不还原实际峰谷账单。其他模型从 LiteLLM 的模型提供商条目读取；未知型号保持未知，不套用聚合服务商价格或其他版本。
+- **任务**：自动寻找 `codebuddy` 或 Windows WorkBuddy 安装包自带的 CLI，也可手动指定启动器。内置 CLI 需要 Node.js 和可用的本机 CLI 登录状态，积分查询的独立登录不替换 CLI 登录。支持立即、指定时间、手动开始、会话续接/分叉、流式日志、权限、模型、检查命令和失败重试。积分不足时停止，补充后手动重试；不支持按额度刷新循环或美元花费上限。
+- **会话与工具**：读取 WorkBuddy 原生消息、用户提问、回复与工具调用，使用独立会话标识避免与其他工具混合；保留原有会话与星空交互。Harness 按会话自身的日志窗口判断上下文，不混用不同客户端的模型窗口；缓存字段缺失的响应不计入命中率，不当作零命中，Token 总量仍正常显示。
 
 ### 用量概览
 
@@ -201,7 +216,7 @@ Claude 额度有四种来源，在 **设置 → Claude 额度** 里选择：
 
 ![模型定价](docs/screenshots/pricing.jpg)
 
-费用按日志中每条响应的用量和模型价格计算。价格来自 Anthropic 官方定价页与 LiteLLM 价格表，内置一份离线价格兜底；页面列出你近 30 天在用的模型和各系列在售的最新型号，已退役的型号仍按原价计费。GPT 系列模型同样计价。
+费用按日志中每条响应的用量和模型价格计算。价格来自 Anthropic、DeepSeek 官方定价页与 LiteLLM 价格表，内置离线价格兜底；页面列出你近 30 天在用的模型，Claude/GPT 展示各系列在售的最新型号，WorkBuddy 展示已用模型的 API 参考价。WorkBuddy 模型列表按实际积分排序，未知 API 价格不影响积分统计；每条参考价可核对来源。GPT 系列模型同样计价。
 
 ### 主题包与动态背景
 
@@ -349,13 +364,14 @@ TokenPulse 不需要账号，没有任何统计上报。
 
 **读取**
 
-- Claude Code 与 Codex 的会话日志（见[使用前提](#下载与安装)）。
+- Claude Code、Codex 与 WorkBuddy 的会话日志（见[使用前提](#下载与安装)）；WorkBuddy 模型窗口仅只读查询本机 SQLite 数据库。
+- 国内个人版 WorkBuddy 的原生登录文件：在查看登录状态或账户积分时只读，只向腾讯官方积分接口发送令牌；原生令牌不另存、不刷新、不改写，也不返回渲染页面。独立浏览器登录只请求 `copilot.tencent.com` 的授权、账户、积分和账本接口；授权地址校验域名及 state，登录令牌由系统加密存入 `workbuddy-login.dat`，不保存刷新令牌，到期后重新登录；取消授权或退出后不接受迟到的登录结果。积分缓存仅在内存中。
 - `~/.claude/.credentials.json` 中的登录令牌，只用于查询订阅额度，只读，从不刷新或改写。
 - `~/.codex/auth.json` 中 Codex CLI 的登录令牌（没有在 TokenPulse 里登录 ChatGPT 时），只用于查询 Codex 额度，只读，从不刷新或改写。
 
 **写入**
 
-- `%APPDATA%\TokenPulse`：设置、历史归档、额度窗口记录、任务和成就进度；在 TokenPulse 里登录 ChatGPT 时，令牌用 Windows 数据保护加密后存在这里；下载的更新也先放在这里。
+- `%APPDATA%\TokenPulse`：设置、历史归档、额度窗口记录、任务和成就进度；在 TokenPulse 里登录 ChatGPT 或 WorkBuddy 时，令牌用 Windows 数据保护加密后存在这里；下载的更新也先放在这里。
 - `~/.claude/tokenpulse`：额度守卫与状态栏桥接的脚本和额度读数。
 - `~/.claude/settings.json`：仅在开启额度守卫或状态栏桥接时写入对应的钩子 / 状态栏项，关闭时移除并恢复原来的状态栏。
 
@@ -364,7 +380,8 @@ TokenPulse 不需要账号，没有任何统计上报。
 | 地址 | 用途 |
 | --- | --- |
 | `api.anthropic.com/api/oauth/usage` | 查询 Claude 订阅额度（可改用官方状态栏或本地估算） |
-| `platform.claude.com` 定价页、GitHub 上的 LiteLLM 价格表 | 更新模型价格 |
+| `platform.claude.com`、`api-docs.deepseek.com` 定价页、GitHub 上的 LiteLLM 价格表 | 更新模型 API 参考价格 |
+| `copilot.tencent.com/billing/meter/get-user-resource-summary`、`get-user-request-usage` | 沿用 WorkBuddy 本机登录，只读查询国内个人账户积分与逐请求账本 |
 | `api.telegram.org` | 仅在开启 Telegram 时 |
 | `chatgpt.com`、`auth.openai.com` | 读取 Codex 额度、登录 ChatGPT 时 |
 | `codex-resets.com` | Tibo 重置播报、译文和 28 天挑战（可在设置里关闭） |
@@ -387,7 +404,7 @@ node src/bridge/quota.cjs uninstall  # 撤销 install
 
 ## 本地开发
 
-需要 Node.js 与 npm。Windows 下双击根目录的 `start.bat`，或运行：
+需要 Node.js 22.15+ 与 npm（推荐 Node.js 24，本机已验证）；Harness 压缩日志使用 Node.js 内置 Zstd。Windows 下双击根目录的 `start.bat`，或运行：
 
 ```powershell
 npm ci
@@ -398,12 +415,16 @@ npm run dev
 
 ```powershell
 npm run typecheck
-npm test
+npm test -- --maxWorkers=2
 npm run build
 npm run dist -- --publish never
 ```
 
-打包结果位于 `dist/`。如果下载 Electron 失败，可设置镜像 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`；打包时下载失败可先 `npm run build`，再用已安装的 Electron 打包：`npx electron-builder --win -c.electronDist=node_modules/electron/dist`。
+Windows 下双击 `build.bat` 即可依次安装依赖、检查类型、运行测试、打包安装版和便携版，并更新 `dist/SHA256SUMS.txt`，任一步失败都会停止。结果位于 `dist/`，不会发布 Release；可直接运行 `dist/win-unpacked/TokenPulse.exe` 测试免安装目录版，或运行 `dist/TokenPulse-2.21.0-portable.exe`。
+
+构建前请关闭从 `dist/` 运行的旧测试程序，尤其是便携版；Windows 会锁定正在运行的可执行文件，无法覆盖同名输出。
+
+`start.bat` 使用增量安装保留已有 Electron 运行文件；`npm run dev`、`npm start` 和 `npm run dist` 都会先自动检查并补齐 Electron。新版 Electron 使用首次运行下载，避免 electron-vite 先读取缺失的 `path.txt` 报 `Electron uninstall`；`npm run dist` 默认复用本机 Electron 且禁用发布。如果下载失败，可设置镜像 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/` 后重试。
 
 ### 项目结构
 
@@ -412,6 +433,7 @@ npm run dist -- --publish never
 | `src/main/` | Electron 主进程：日志采集、费用与额度计算、守卫、任务、通知、Telegram、窗口管理 |
 | `src/preload/` | 主进程与界面之间的桌面接口桥接 |
 | `src/renderer/` | React 界面：页面、图表、主题场景、悬浮窗与灵动岛 |
+| `src/features/workbuddy/` | WorkBuddy 原生日志、模型窗口、积分卡片与任务 CLI 适配 |
 | `src/shared/` | 主进程与界面共用的类型、主题包定义、天文与昼夜计算 |
 | `src/bridge/` | 独立运行的脚本：额度守卫钩子、状态栏桥接、`tpq`、任务终端窗口 |
 | `tests/` | Vitest 测试 |
@@ -432,6 +454,41 @@ npx electron .
 本地日志、依赖、构建产物、环境变量文件与私钥不提交到 Git，配置示例请使用占位符。
 
 ## 更新记录
+
+### v2.21.0
+
+#### 新增
+- WorkBuddy 动效标志：边框随用量转动、呼吸，一道光沿 W 流过，新用量到来时脉冲并溅出火花；「全部」里 Codex 和 WorkBuddy 一起绕着 Claude 星芒转。窗口、任务栏和托盘也换成 WorkBuddy 自己的图标。
+- WorkBuddy 积分续航：剩余积分 ÷ 近 30 天官方日均，显示约还能用几天、哪天前后用完。
+- 大屏模式的 WorkBuddy 版：账户剩余与今日消耗两个积分环和续航，代替没有意义的 5 小时 / 7 天额度环。
+- 星空的项目星系加入 WebGL 气体层：流动的星云、电离气体丝、朦胧光晕和尘埃带；每个星系下有随旋臂转动的气体盘、发光的电离区和暗尘带，飞进星系时更清楚。
+- WorkBuddy 作为第三个来源，套用现有概览、会话、定价、任务、设置、悬浮窗和星空模板，支持全部来源合并统计。
+- 原生 JSONL 增量采集、缓存拆分、重复响应去重、积分记录和本机模型窗口读取。
+- WorkBuddy 积分概览、模型消耗和每日记录，国内个人账户总积分、已用与剩余查询，以及官方套餐入口。
+- 官方逐请求积分账本：同一账号通过反代和 DeepSeek Harness 产生的消耗也可查询，按时间与模型展示，和本地记录隔离。
+- WorkBuddy 独立浏览器登录：使用官方授权令牌查询积分与账本，系统加密保存；保留只读本机登录作为未登录时的来源。
+- Harness 自定义反代按响应标记自动识别，不依赖个人提供商 ID；同一提供商更换上游时逐条判断，保留手动归属入口。
+- Harness 压缩会话增量采集：国内 WorkBuddy 及已确认自定义反代的 Token、缓存、实时速率、模型、会话、工具与上下文接入现有模板，支持官方桌面版和小希版；会话列表标注 Harness。
+- Windows `build.bat`：检查类型、运行测试、构建本机安装版/便携版，禁用发布。
+- WorkBuddy 内置 CLI 自动发现、立即/定时/手动任务、流式执行、续接对话与积分不足停止。
+
+#### 修改
+- WorkBuddy 设置以账户积分和账本为主，客户端目录与来源映射默认折叠；新增兼容采集开关，关闭后保留原生记录及账户查询，移除「系统与数据」中的重复配置。
+- 来源筛选、模型与会话标识隔离，WorkBuddy 数据不参与 Claude/Codex 的额度、守卫或订阅回本计算。
+- 定价支持精确匹配 DeepSeek、GLM、Qwen、MiniMax、Kimi 等参考价；DeepSeek 补充官方 V4.1 Flash / V4 Pro 峰谷价格，逐模型标明来源，未匹配型号保留未知状态。
+- 修复没有常规 Token 字段但报告了积分的响应漏算；定价页以实际积分为主，API 参考费用单独显示。
+- 修复 Electron 延迟下载导致 `start.bat` / electron-vite 报 `Electron uninstall`，启动与打包前自动补齐运行文件。
+- 修正“查看套餐”入口指向官方 `/profile/plans-usage` 页面，解决旧控制台地址返回 `404 Route Not Found`。
+- WorkBuddy 积分卡与每日消耗以官方账本为主，本地记录只在账本读不到时补位；能量罐在 WorkBuddy 下按积分计算；塔罗的皇帝、倒吊人、节制、月亮牌在 WorkBuddy 下画积分。
+- 连击按工具分开计算；新用量的水滴、涟漪、脉冲和彗星只跟随正在查看的工具，「全部」里每个工具各自显示连击。
+- 删去大量说明性副标题和「点一下……」提示，卡片标题旁只保留数据。
+- Telegram：可以把消息排成 WorkBuddy 任务，排队后直接给出「现在开始」；结束的 WorkBuddy 任务按钮改为「再跑一次」。
+- 「双剑合璧」「双星系统」成就只统计 Claude Code 和 Codex。
+- 修复 WorkBuddy 原生日志的提问和回复读不出来（文本在 `input_text` / `output_text` 里，提问包在 `<user_query>` 中）；注入的提醒、后台任务通知、压缩摘要、队友消息和子代理的任务不再算作提问。
+- 修复有 WorkBuddy 项目时星空的项目星系画不出来。
+- 修复少数响应没有缓存字段时整个缓存命中率显示为「—」：现在只用报告了缓存的响应计算。
+- 修复积分每日记录跳过没有用量的日子；Harness 的工具名与 WorkBuddy 统一（`read` / `Read` 不再分成两行）。
+- 修复「今天的会话」悬停卡片被下方卡片挡住。
 
 ### v2.20.0
 - 修复 Tibo 重置播报里点时间轴上的点会一直闪、看不到帖子：以前悬停一个点就换掉下面的帖子，帖子长短一变时间轴跟着上下移动，鼠标离开圆点又换回来，来回跳。现在时间轴放在帖子上面、悬停只显示日期，点一下才切换帖子，再点一下回到最新。

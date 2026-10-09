@@ -133,9 +133,6 @@ export function AchievementSky({ list }: { list: Achievement[] }) {
       <div className="card-head">
         <div className="card-title">
           <span className="serif">成就星图</span>
-          <span className="muted" style={{ fontWeight: 400 }}>
-            每个分类是一座星座，解锁的成就点亮其中一颗星，同一座里相邻的两颗都亮了就连成线
-          </span>
         </div>
       </div>
       <svg className="sky" viewBox={`0 0 ${CELL * COLS} ${ROW * 2}`} preserveAspectRatio="xMidYMid meet">

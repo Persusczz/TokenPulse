@@ -76,6 +76,7 @@ export function CommandPalette({ pages }: { pages: { id: string; label: string; 
     const tools: [SourceView, string][] = [
       ['claude', '只看 Claude'],
       ['codex', '只看 Codex'],
+      ['workbuddy', '只看 WorkBuddy'],
       ['all', '全部工具']
     ]
     for (const [v, l] of tools) out.push({ id: `src-${v}`, group: '切换', label: l, hint: settings.sourceFilter === v ? '当前' : undefined, keys: `qh source ${v}`, run: () => save({ sourceFilter: v }) })

@@ -132,4 +132,13 @@ describe('tarot: the cards', () => {
     expect(cardFace(4, 'q', { deck })).toContain('92%')
     expect(cardBack('b', '#d97757')).not.toMatch(/NaN|undefined/)
   })
+  it('draws WorkBuddy credits on the quota cards, which have no 5-hour or 7-day windows', () => {
+    const credits = { usedPct: 48, remaining: 2998, total: 5760, today: 13.6, dailyAvg: 72, daysLeft: 41.6 }
+    const d = buildDeck(input([e(TODAY + 9 * HOUR, { source: 'workbuddy' })], { view: 'workbuddy', tool: 'workbuddy', five: null, seven: null, credits }))
+    expect(cardStory(4, d, String)[0]).toBe('WorkBuddy 积分已用 48%')
+    expect(cardStory(18, d, String)[1]).toBe('照日均约 42 天用完')
+    expect(cardFace(4, 'w', { deck: d })).toContain('WorkBuddy 积分已用')
+    expect(cardFace(4, 'w', { deck: d })).not.toContain('Claude 5 小时额度')
+    expect(cardFace(18, 'w', { deck: d })).toContain('约 42 天用完')
+  })
 })

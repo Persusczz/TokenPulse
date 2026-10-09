@@ -367,9 +367,22 @@ function PulseLine({ rate, pulse, theme }: { rate: RateStats; pulse: number; the
   )
 }
 
+/** WorkBuddy bills credits instead of 5h windows: what is left in the account */
+function WorkBuddyTile() {
+  const account = useData(() => window.api.getWorkBuddyAccount(), [], 60_000)
+  const used = account?.total ? (account.used ?? 0) / account.total : null
+  return (
+    <Tile label="WorkBuddy 账户积分" sub={used !== null ? `已用 ${Math.round(used * 100)}%${account?.plan ? ` · ${account.plan}` : ''}` : account?.error ? '账户积分暂不可用' : '正在读取…'}>
+      {account?.remaining != null ? account.remaining.toLocaleString('zh-CN', { maximumFractionDigits: 0 }) : '—'}
+      <small>剩余</small>
+    </Tile>
+  )
+}
+
 /** the 5h quota of the tool on view, and how fast it drains */
 function QuotaTile({ quota, codex, pauseAt, guardOn }: { quota: QuotaInfo | null; codex: QuotaWindow | undefined; pauseAt: number; guardOn: boolean }) {
   const source = useSource()
+  if (source === 'workbuddy') return <WorkBuddyTile />
   if (source === 'codex') {
     return (
       <Tile label="Codex 5 小时额度" sub={codex ? 'Codex 运行时更新' : '等 Codex 下次运行时更新'}>
@@ -403,6 +416,7 @@ function QuotaTile({ quota, codex, pauseAt, guardOn }: { quota: QuotaInfo | null
 }
 
 export function RateCard({ theme }: { theme: string }) {
+  const source = useSource()
   const { money, lastUpdate, quota, codexQuota, settings } = useApp()
   const rate = useData(() => window.api.getRate(), [], 3_000)
   const tokFmt = useMemo(() => (v: number) => fmtTokens(v, 1), [])
@@ -425,13 +439,14 @@ export function RateCard({ theme }: { theme: string }) {
       <div className="card-head">
         <div className="card-title">
           <span className="serif">实时速率</span>
+          {source === 'workbuddy' && <span className="muted">WorkBuddy / Harness 日志</span>}
           <span className="badge" title="速率区间按今日峰值自动定标">
             <i className="zone-dot" style={{ background: zone.color }} />
             {r && r.tokensPerMin > 0 ? zone.label : '空闲'}
           </span>
         </div>
         <span className="muted" style={{ fontSize: 12 }}>
-          最近 60 秒 · 每 3 秒刷新
+          最近 60 秒
         </span>
       </div>
       <div className="rate-body">
@@ -455,7 +470,7 @@ export function RateCard({ theme }: { theme: string }) {
           </div>
         </div>
         <div className="rate-tiles">
-          <Tile label="输出速度" values={series.output} sub="模型每秒写出的 token">
+          <Tile label="输出速度" values={series.output} sub={source === 'workbuddy' ? '近 5 分钟均值 · 响应落盘后更新' : '模型每秒写出的 token'}>
             <AnimatedNumber value={r?.outputPerSec ?? 0} format={(v) => v.toFixed(1)} />
             <small>tok/s</small>
           </Tile>

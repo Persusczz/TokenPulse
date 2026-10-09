@@ -12,7 +12,8 @@ export const ACCENT_KEYS = Object.keys(ACCENTS) as AccentKey[]
 
 /** Codex's own colour: while only Codex is on view the app wears it ([data-source='codex'] in styles.css) */
 export const CODEX_ACCENT = '#5b6cff'
+export const WORKBUDDY_ACCENT = '#2fa585'
 
 /** The accent the app shows: Codex's while Codex alone is on view, else the chosen preset */
 export const accentHex = (s: { accent: AccentKey; sourceFilter: string } | null | undefined): string =>
-  s?.sourceFilter === 'codex' ? CODEX_ACCENT : ACCENTS[s?.accent ?? 'clay']?.hex ?? ACCENTS.clay.hex
+  s?.sourceFilter === 'workbuddy' ? WORKBUDDY_ACCENT : s?.sourceFilter === 'codex' ? CODEX_ACCENT : ACCENTS[s?.accent ?? 'clay']?.hex ?? ACCENTS.clay.hex

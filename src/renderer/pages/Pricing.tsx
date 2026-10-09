@@ -5,7 +5,7 @@ import type { ModelResolution, PriceRow, PricingSource, UsageSource } from '@sha
 import { SourceMark } from '../components/CodexMark'
 import { IconAlert, IconRefresh } from '../components/Icons'
 import { Segmented } from '../components/Segmented'
-import { useApp, useSource } from '../state'
+import { useApp, useData, useSource } from '../state'
 
 const SOURCE: Record<PricingSource, string> = {
   official: '官方定价页',
@@ -33,7 +33,7 @@ const lineOf = (id: string) => (id.startsWith('claude-') ? (/^claude-([a-z]+)-/.
  * The current line-up of one tool's models: the newest of each line, and the
  * older (still sold) ones apart. Retired models are left out.
  */
-function lineup(rows: PriceRow[], tool: UsageSource): { current: PriceRow[]; older: PriceRow[] } {
+function lineup(rows: PriceRow[], tool: 'claude' | 'codex'): { current: PriceRow[]; older: PriceRow[] } {
   const mine = rows.filter((r) => (tool === 'claude' ? r.id.startsWith('claude-') : r.id.startsWith('gpt-')) && r.status !== 'retired')
   const newest = new Map<string, PriceRow>()
   for (const r of mine) {
@@ -61,15 +61,17 @@ function StatusTag({ row }: { row: PriceRow | undefined }) {
 }
 
 /** One model from the logs: its price and what it cost over 30 days */
-function UsedModel({ m, row, share, i }: { m: ModelResolution; row: PriceRow | undefined; share: number; i: number }) {
+function UsedModel({ m, row, share, i, credits }: { m: ModelResolution; row: PriceRow | undefined; share: number; i: number; credits?: number }) {
   const { money } = useApp()
   const p = (v: number) => money(v, v < 1 ? 3 : 2)
   const claude = m.model.startsWith('claude') || m.source === 'claude'
+  const workbuddy = m.source === 'workbuddy'
   return (
     <motion.div className="used-row" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}>
       <div className="used-name">
         <b>{row?.name ?? m.model}</b>
         <span className="muted mono">{m.model}</span>
+        {workbuddy && row && <button className="link-btn price-reference" title={row.priceNote} onClick={() => row.priceUrl && void window.api.openExternal(row.priceUrl)}>{row.priceSource ?? '模型 API 参考价'}</button>}
         <span className="used-tags">
           {m.estimated && (
             <span className="price-tag est" title="没有找到精确价格，按同系列最新的模型估算">
@@ -98,11 +100,12 @@ function UsedModel({ m, row, share, i }: { m: ModelResolution; row: PriceRow | u
         </div>
       )}
       <div className="used-cost">
-        <b className="tnum">{money(m.cost ?? 0)}</b>
+        <b className="tnum">{workbuddy ? (credits == null ? '—' : credits.toLocaleString('zh-CN', { maximumFractionDigits: 2 })) + ' 积分' : money(m.cost ?? 0)}</b>
         <span className="used-bar">
           <i style={{ width: `${Math.max(1.5, share * 100)}%` }} />
         </span>
         <small className="muted tnum">{fmtTokens(m.tokens ?? 0, 1)} tokens</small>
+        {workbuddy && <small className="muted tnum">{row ? `API 参考 ${money(m.cost ?? 0)}` : 'API 参考价未知'}</small>}
       </div>
     </motion.div>
   )
@@ -117,7 +120,7 @@ function PriceTable({ rows, tool }: { rows: PriceRow[]; tool: UsageSource }) {
         <tr>
           <th>模型</th>
           <th className="num">输入</th>
-          <th className="num">{tool === 'claude' ? '缓存写入' : '缓存写入'}</th>
+          {tool !== 'workbuddy' && <th className="num">缓存写入</th>}
           <th className="num">缓存读取</th>
           <th className="num">输出</th>
         </tr>
@@ -127,6 +130,7 @@ function PriceTable({ rows, tool }: { rows: PriceRow[]; tool: UsageSource }) {
           <tr key={r.id}>
             <td>
               <span className="price-name">{r.name}</span>
+              {tool === 'workbuddy' && <><button className="link-btn price-reference" onClick={() => r.priceUrl && void window.api.openExternal(r.priceUrl)}>{r.priceSource ?? '模型 API 参考价'} ↗</button><small className="price-reference">{r.priceNote}</small></>}
               <StatusTag row={r} />
               {r.fastInput !== undefined && (
                 <span className="price-tag fast" title="快速模式（研究预览）的输入 / 输出价格">
@@ -135,9 +139,9 @@ function PriceTable({ rows, tool }: { rows: PriceRow[]; tool: UsageSource }) {
               )}
             </td>
             <td className="num">{p(r.input)}</td>
-            <td className="num" title={tool === 'claude' ? `5 分钟缓存；1 小时缓存 ${p(r.cacheWrite1h)}` : 'OpenAI 不额外收缓存写入费，按输入计'}>
+            {tool !== 'workbuddy' && <td className="num" title={tool === 'claude' ? `5 分钟缓存；1 小时缓存 ${p(r.cacheWrite1h)}` : 'OpenAI 不额外收缓存写入费，按输入计'}>
               {tool === 'claude' ? p(r.cacheWrite5m) : <span className="muted">同输入</span>}
-            </td>
+            </td>}
             <td className="num">{p(r.cacheRead)}</td>
             <td className="num">{p(r.output)}</td>
           </tr>
@@ -155,7 +159,9 @@ export function Pricing() {
   const [older, setOlder] = useState(false)
   const [rules, setRules] = useState(false)
   const tool: UsageSource = source === 'all' ? pick : source
-  const tools: UsageSource[] = source === 'all' ? ['claude', 'codex'] : [source]
+  const tools: UsageSource[] = source === 'all' ? ['claude', 'codex', 'workbuddy'] : [source]
+  const creditUsage = useData(() => source === 'workbuddy' || source === 'all' ? window.api.getWorkBuddyUsage('30d') : Promise.resolve(null), [source], 30_000)
+  const creditsByModel = new Map(creditUsage?.models.map((m) => [m.rawModel, m.credits]) ?? [])
   const refresh = async () => {
     setBusy(true)
     try {
@@ -167,13 +173,17 @@ export function Pricing() {
   const spinning = busy || pricing?.refreshing
   const byId = useMemo(() => new Map((pricing?.rows ?? []).map((r) => [r.id, r])), [pricing])
   const used = useMemo(
-    () => (pricing?.models ?? []).filter((m) => tools.includes(m.source ?? 'claude') && (m.tokens ?? 0) > 0).sort((a, b) => (b.cost ?? 0) - (a.cost ?? 0)),
-    [pricing, source] // eslint-disable-line react-hooks/exhaustive-deps
+    () => (pricing?.models ?? []).filter((m) => tools.includes(m.source ?? 'claude') && ((m.tokens ?? 0) > 0 || m.source === 'workbuddy' && creditsByModel.has(m.model))).sort((a, b) => source === 'workbuddy' ? (creditsByModel.get(b.model) ?? 0) - (creditsByModel.get(a.model) ?? 0) : (b.cost ?? 0) - (a.cost ?? 0)),
+    [pricing, source, creditUsage] // eslint-disable-line react-hooks/exhaustive-deps
   )
   const priced = used.filter((m) => m.matched)
   const unpriced = used.filter((m) => !m.matched)
   const total = priced.reduce((a, m) => a + (m.cost ?? 0), 0)
-  const table = useMemo(() => lineup(pricing?.rows ?? [], tool), [pricing, tool])
+  const table = useMemo(() => {
+    if (tool !== 'workbuddy') return lineup(pricing?.rows ?? [], tool)
+    const ids = new Set((pricing?.models ?? []).filter((m) => m.source === 'workbuddy').map((m) => m.rowId))
+    return { current: (pricing?.rows ?? []).filter((r) => ids.size ? ids.has(r.id) : r.priceUrl?.includes('api-docs.deepseek.com')), older: [] }
+  }, [pricing, tool])
 
   return (
     <>
@@ -181,8 +191,8 @@ export function Pricing() {
         <div>
           <h1 className="page-title">模型定价</h1>
           <div className="page-sub">
-            每百万 Token 的价格
-            {pricing && ` · 来自${SOURCE[pricing.source]}，${new Date(pricing.fetchedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 更新`}
+            {source === 'workbuddy' ? '每百万 Token 的 API 参考价' : '每百万 Token 的价格'}
+            {pricing && source !== 'workbuddy' && ` · 来自${SOURCE[pricing.source]}，${new Date(pricing.fetchedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 更新`}
           </div>
         </div>
         <button className="btn" onClick={refresh} disabled={!!spinning}>
@@ -203,25 +213,25 @@ export function Pricing() {
           <div className="card-title">
             <span className="serif">你在用的模型</span>
             <span className="muted" style={{ fontWeight: 400 }}>
-              近 30 天 · 按费用
+              {source === 'workbuddy' ? '近 30 天 · 本地记录积分' : '近 30 天 · 按费用'}
             </span>
           </div>
-          {total > 0 && <span className="badge accent">合计 {money(total)}</span>}
+          {source === 'workbuddy' ? creditUsage?.credits != null && <span className="badge accent">合计 {creditUsage.credits.toLocaleString('zh-CN', { maximumFractionDigits: 2 })} 积分</span> : total > 0 && <span className="badge accent">{source === 'all' ? 'API 参考合计' : '合计'} {money(total)}</span>}
         </div>
         {!priced.length && !unpriced.length ? (
           <div className="empty">近 30 天没有用量</div>
         ) : (
           <div className="used-list">
-            {priced.map((m, i) => (
-              <UsedModel key={m.model} m={m} row={m.rowId ? byId.get(m.rowId) : undefined} share={total ? (m.cost ?? 0) / total : 0} i={i} />
+            {used.filter((m) => m.matched || m.source === 'workbuddy').map((m, i) => (
+              <UsedModel key={`${m.source}:${m.model}`} m={m} row={m.rowId ? byId.get(m.rowId) : undefined} credits={m.source === 'workbuddy' ? creditsByModel.get(m.model) : undefined} share={m.source === 'workbuddy' ? creditUsage?.credits ? (creditsByModel.get(m.model) ?? 0) / creditUsage.credits : 0 : total ? (m.cost ?? 0) / total : 0} i={i} />
             ))}
           </div>
         )}
         {unpriced.length > 0 && (
           <div className="used-unpriced">
-            没有公开价格、只计 Token：
+            {unpriced.some((m) => m.source === 'workbuddy') ? '没有 API 参考价：' : '没有公开价格、只计 Token：'}
             {unpriced.map((m) => (
-              <span key={m.model} className="mono">
+              <span key={`${m.source}:${m.model}`} className="mono">
                 {m.model}
                 <small className="muted"> {fmtTokens(m.tokens ?? 0, 1)}</small>
               </span>
@@ -236,9 +246,9 @@ export function Pricing() {
             <span className="title-mark small">
               <SourceMark size={18} animated={false} source={tool} />
             </span>
-            <span className="serif">{tool === 'claude' ? 'Claude 在售型号' : 'GPT 型号（Codex）'}</span>
+            <span className="serif">{tool === 'workbuddy' ? 'WorkBuddy 模型参考价' : tool === 'claude' ? 'Claude 在售型号' : 'GPT 型号（Codex）'}</span>
             <span className="muted" style={{ fontWeight: 400 }}>
-              每个系列只列最新版
+              {tool === 'workbuddy' ? '已使用的模型 · 非 WorkBuddy 实际账单' : '每个系列只列最新版'}
             </span>
           </div>
           {source === 'all' && (
@@ -251,7 +261,8 @@ export function Pricing() {
               }}
               options={[
                 { value: 'claude', label: 'Claude' },
-                { value: 'codex', label: 'GPT' }
+                { value: 'codex', label: 'GPT' },
+                { value: 'workbuddy', label: 'WorkBuddy' }
               ]}
             />
           )}
@@ -259,6 +270,7 @@ export function Pricing() {
         <div className="table-wrap">
           <PriceTable rows={table.current} tool={tool} />
         </div>
+        {tool === 'workbuddy' && !table.current.length && <div className="empty">这些模型还没有可靠的 API 参考价</div>}
         {table.older.length > 0 && (
           <>
             <button className="btn ghost small price-more" onClick={() => setOlder(!older)}>
@@ -274,7 +286,7 @@ export function Pricing() {
           </>
         )}
         <div className="price-foot">
-          <span>已退役的型号不再列出（历史用量照旧按原价计费）。</span>
+          <span>{tool === 'workbuddy' ? 'DeepSeek 为峰时价' : '已退役的型号不再列出'}</span>
           <button className="link-btn" onClick={() => setRules(!rules)}>
             {rules ? '收起计价规则' : '计价规则'}
           </button>
@@ -285,18 +297,24 @@ export function Pricing() {
               <li>费用按每条响应的输入、输出、缓存写入、缓存读取分别计价；思考 Token 算在输出里</li>
               {tool === 'claude' ? (
                 <>
-                  <li>缓存写入分 5 分钟和 1 小时两档（表里是 5 分钟价，鼠标停在价格上看 1 小时价）</li>
+                  <li>缓存写入表里是 5 分钟价，悬停看 1 小时价</li>
                   <li>
                     Web 搜索 {pricing ? money(pricing.webSearchPer1k) : '—'} / 千次；美国境内推理 × {pricing?.usGeoMultiplier ?? '—'}；快速模式按快速价计输入输出
                   </li>
                 </>
+              ) : tool === 'workbuddy' ? (
+                <>
+                  <li>实际扣费是积分；这里只是 API 参考价，未知型号不估价</li>
+                  <li>DeepSeek 峰时：工作日 UTC 01:00–04:00、06:00–10:00</li>
+                  <li>GLM、MiniMax、Kimi 等来自 LiteLLM</li>
+                </>
               ) : (
                 <>
-                  <li>GPT 价格来自 LiteLLM 价格表，是 API 等价费用；ChatGPT 套餐里的 Codex 实际不按这个收费</li>
-                  <li>OpenAI 不额外收缓存写入费；没有公开价格的新型号按最接近的 GPT 型号估算</li>
+                  <li>GPT 价格来自 LiteLLM，是 API 等价费用，不是 ChatGPT 套餐的实际扣费</li>
+                  <li>缓存写入不另收费；没有公开价格的型号按最接近的 GPT 估算</li>
                 </>
               )}
-              <li>每 24 小时自动从官方定价页更新，失败时回退到 LiteLLM 或内置快照</li>
+              <li>每 24 小时从官方定价页更新</li>
             </motion.ul>
           )}
         </AnimatePresence>

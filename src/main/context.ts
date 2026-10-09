@@ -1,6 +1,7 @@
 import type { ContextAlert, SessionContext, UsageSource } from '@shared/types'
 import type { CostedEntry } from './aggregate'
 import { lowerBound } from './rate'
+import { normalizeModelId } from './pricing/resolve'
 
 /** Everything sent with a request: new input plus what was read from or written to the cache */
 export const contextOf = (e: CostedEntry): number => e.input + e.cacheRead + e.cacheWrite5m + e.cacheWrite1h
@@ -46,7 +47,7 @@ export function sessionContext(entries: CostedEntry[], warnAt: number | WarnFor)
   const models = new Map<string, number>()
   for (const e of list) models.set(e.model, (models.get(e.model) ?? 0) + 1)
   const source = first.source ?? 'claude'
-  const line = typeof warnAt === 'number' ? { window: 0, warnAt } : warnAt(last.model, source)
+  const line = typeof warnAt === 'number' ? { window: 0, warnAt } : warnAt(last.model, source, last.sessionId)
   return {
     sessionId: first.sessionId,
     project: first.project,
@@ -77,13 +78,14 @@ export const CONTEXT_NEAR = 0.88
  * Claude model that has ever carried more than 200k tokens is a 1M one.
  */
 export function windowOf(model: string, source: UsageSource, seenMax: number, codexWindows?: Map<string, number>): number {
+  if (source === 'workbuddy') return codexWindows?.get(normalizeModelId(model)) ?? 0
   if (source === 'codex') return codexWindows?.get(model) ?? CODEX_WINDOW
   if (/\[1m\]|-1m$/i.test(model) || seenMax > CLAUDE_WINDOW) return CLAUDE_LONG_WINDOW
   return CLAUDE_WINDOW
 }
 
 /** The window and warning line for a session's model */
-export type WarnFor = (model: string, source: UsageSource) => { window: number; warnAt: number }
+export type WarnFor = (model: string, source: UsageSource, sessionId?: string) => { window: number; warnAt: number }
 
 /**
  * Every session active in the last `activeMs`, with the context of its
@@ -104,7 +106,7 @@ export function activeContexts(entries: CostedEntry[], now: number, warnFor: War
     const tokens = contextOf(last)
     const first = list[0]
     const source = last.source ?? 'claude'
-    const { window, warnAt } = warnFor(last.model, source)
+    const { window, warnAt } = warnFor(last.model, source, last.sessionId)
     out.push({
       sessionId: last.sessionId,
       project: last.project,

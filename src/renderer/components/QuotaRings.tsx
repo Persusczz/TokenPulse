@@ -222,10 +222,10 @@ function CodexQuotaCard() {
           </span>
         )}
       </div>
-      {codexQuota ? <CodexRings q={codexQuota} now={now} paceOf={(k) => paces?.find((p) => p.key === k)} /> : <div className="quota-msg">还没有读到 Codex 的额度数据：在设置 → Codex 额度里登录 ChatGPT，或运行一次 Codex</div>}
+      {codexQuota ? <CodexRings q={codexQuota} now={now} paceOf={(k) => paces?.find((p) => p.key === k)} /> : <div className="quota-msg">还没有 Codex 额度数据：在设置里登录 ChatGPT，或运行一次 Codex</div>}
       <div className="guard-strip">
         <span className="guard-dot off" />
-        额度守卫只作用于 Claude Code；Codex 到线时提醒（桌面通知、灵动岛、Telegram）
+        守卫只管 Claude Code；Codex 到线时提醒
       </div>
     </div>
   )

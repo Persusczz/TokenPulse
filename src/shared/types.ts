@@ -16,16 +16,20 @@ export interface UsageEntry {
   cacheWrite5m: number
   cacheWrite1h: number
   cacheRead: number
+  /** false when Harness did not return cache details; zero must not imply a known miss */
+  cacheReadKnown?: boolean
   webSearch: number
   speed: 'standard' | 'fast'
   geo: string | null
   /** which tool wrote it; absent = Claude Code */
   source?: UsageSource
+  /** actual WorkBuddy credits reported by the provider; absent means unknown */
+  credit?: number
   /** a subagent's request (Claude Code sidechain): its context is not the session's */
   side?: boolean
 }
 
-export type UsageSource = 'claude' | 'codex'
+export type UsageSource = 'claude' | 'codex' | 'workbuddy'
 /** what the app shows: one tool, or both together */
 export type SourceView = 'all' | UsageSource
 
@@ -149,6 +153,10 @@ export interface PriceRow {
   output: number
   fastInput?: number
   fastOutput?: number
+  /** Per-model provenance for WorkBuddy API reference prices, separate from credit billing. */
+  priceSource?: string
+  priceUrl?: string
+  priceNote?: string
   /** retired by the provider (kept so old history still prices), or only offered to some customers */
   status?: 'retired' | 'limited'
 }
@@ -229,6 +237,7 @@ export interface RangeSummary {
   totals: TokenTotals
   previous: { tokens: number; cost: number } | null
   cacheHitRate: number
+  cacheUnreported?: number
   buckets: Bucket[]
   byModel: GroupStat[]
   byProject: GroupStat[]
@@ -468,6 +477,7 @@ export interface CacheReport {
   /** all cache-write spend in the range, USD */
   writeCost: number
   hitRate: number
+  cacheUnreported?: number
   avgRebuildTokens: number
   gaps: { label: string; count: number; extra: number }[]
   sessions: { sessionId: string; project: string; rebuilds: number; extra: number; last: number }[]
@@ -973,7 +983,7 @@ export interface TaskQueueState {
   nextReset: number | null
   claude: string | null
   waiting: string | null
-  tools: Record<UsageSource, TaskToolState>
+  tools: Record<'claude' | 'codex', TaskToolState> & Partial<Record<'workbuddy', TaskToolState>>
   /** tasks open their own terminal window (Node.js found and the setting on) */
   terminal: boolean
   /** Node.js runs the terminal window; null when not found */
@@ -1130,6 +1140,8 @@ export interface TarotDeck {
   projects: { name: string; tokens: number }[]
   /** refresh tasks of the last 7 days, newest first */
   tasks: { title: string; status: string; at: number }[]
+  /** WorkBuddy bills credits instead of quota windows: its quota cards draw these */
+  credits?: { usedPct: number; remaining: number; total: number; today: number | null; dailyAvg: number | null; daysLeft: number | null } | null
 }
 
 export interface TitleCorner {
@@ -1391,6 +1403,16 @@ export interface Settings {
   pushTasks: boolean
   /** also read Codex (GPT) session logs from ~/.codex */
   codexEnabled: boolean
+  workbuddyEnabled: boolean
+  workbuddyDirs: string[]
+  /** optional client log compatibility; account billing remains independent */
+  workbuddyHarnessEnabled: boolean
+  /** user-confirmed Harness reverse-proxy provider ids, in addition to native workbuddy */
+  workbuddyHarnessProviders: string[]
+  /** recognize domestic WorkBuddy response markers in custom Harness providers */
+  workbuddyHarnessAuto: boolean
+  /** optional CodeBuddy CLI or WorkBuddy bundled launcher override */
+  workbuddyCli: string
   /** read Codex's limits from the ChatGPT account every minute (TokenPulse's login, else Codex CLI's) */
   codexUsageApi: boolean
   /** follow Tibo's Codex reset announcements and hints (codex-resets.com) on the Codex overview */
@@ -1503,9 +1525,12 @@ export interface StarMap {
 }
 
 export interface UpdateEvent {
+  /** new tokens and cost of the tools on view: what drops, ripples and combos follow */
   addedTokens: number
   addedCost: number
   at: number
+  /** new tokens per tool, on view or not */
+  bySource?: Partial<Record<UsageSource, number>>
 }
 
 export interface LoadState {
@@ -1515,6 +1540,76 @@ export interface LoadState {
   /** Codex session folders read, and their file count */
   codexDirs?: string[]
   codexFiles?: number
+  workbuddyDirs?: string[]
+  workbuddyFiles?: number
+}
+
+export interface WorkBuddyLoginState {
+  status: 'ready' | 'nologin' | 'waiting' | 'expired' | 'error'
+  source: 'tokenpulse' | 'workbuddy' | null
+  loggedIn: boolean
+  nativeLogin: boolean
+  nickname: string | null
+  error?: string
+}
+
+export interface WorkBuddyAccount {
+  status: 'ok' | 'unavailable' | 'error'
+  checkedAt: number | null
+  plan: string
+  total: number | null
+  remaining: number | null
+  used: number | null
+  packages: { code: string; total: number; remaining: number; used: number }[]
+  error?: string
+}
+
+export interface WorkBuddyUsage {
+  range: RangeKey
+  /** null when none of the responses reported credit usage */
+  credits: number | null
+  recorded: number
+  missing: number
+  lastAt: number | null
+  models: { model: string; rawModel: string; credits: number; requests: number }[]
+  daily: { day: string; credits: number; recorded: number; missing: number }[]
+}
+
+export interface WorkBuddyLedger {
+  range: 'today' | '7d' | '30d'
+  status: 'ok' | 'unavailable' | 'error'
+  checkedAt: number | null
+  credits: number | null
+  requests: number
+  reportedTotal: number
+  partial: boolean
+  models: { model: string; credits: number; requests: number }[]
+  recent: { id: string; model: string; credits: number; ts: number }[]
+  /** credits per local day of the range, oldest first */
+  daily: { day: string; credits: number; requests: number }[]
+  error?: string
+}
+
+/** WorkBuddy's credits at a glance: the account, today, the daily pace and how long the rest lasts */
+export interface WorkBuddyOutlook {
+  checkedAt: number | null
+  plan: string
+  total: number | null
+  remaining: number | null
+  used: number | null
+  /** today's credits */
+  today: number | null
+  /** credits per day over the last 30 days (7 when 30 is too many to read) */
+  dailyAvg: number | null
+  /** official request ledger, or the local logs (which miss some responses) */
+  basis: 'ledger' | 'local'
+  daysLeft: number | null
+  runsOutAt: number | null
+  /** the energy tank's size in credits: 1.5x the daily average */
+  capacity: number
+  /** today's models by credits, costliest first */
+  models: { model: string; credits: number }[]
+  error?: string
 }
 
 /** A quota window about to reset with much of it unused */
@@ -1608,6 +1703,14 @@ export interface TokenPulseApi {
   onTasks(cb: (s: TaskQueueState) => void): () => void
   pickFolder(): Promise<string | null>
   getCodexQuota(): Promise<CodexQuota | null>
+  getWorkBuddyUsage(range: RangeKey): Promise<WorkBuddyUsage>
+  getWorkBuddyAccount(refresh?: boolean): Promise<WorkBuddyAccount | null>
+  getWorkBuddyLedger(range: WorkBuddyLedger['range'], refresh?: boolean): Promise<WorkBuddyLedger | null>
+  getWorkBuddyHarnessProviders(): Promise<string[]>
+  getWorkBuddyLoginState(): Promise<WorkBuddyLoginState>
+  getWorkBuddyOutlook(refresh?: boolean): Promise<WorkBuddyOutlook | null>
+  workbuddySignIn(): Promise<{ ok: boolean; error?: string }>
+  workbuddySignOut(): Promise<void>
   onCodexQuota(cb: (q: CodexQuota | null) => void): () => void
   /** pace of the quota windows of the tools on view */
   getPace(): Promise<Pace[]>

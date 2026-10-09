@@ -16,7 +16,7 @@ const TEXT_MAX = 2400
 const ITEMS_MAX = 800
 const CHUNK = 4 << 20
 
-class Steps {
+export class Steps {
   items: DialogueItem[] = []
   private replyId: string | null = null
 

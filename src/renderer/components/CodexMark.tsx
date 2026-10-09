@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react'
 import type { Intensity, SourceView } from '@shared/types'
-import { useMotionLevel, useSource } from '../state'
+import { useHasCodex, useHasWorkBuddy, useMotionLevel, useSource } from '../state'
 import { Starburst } from './Starburst'
 import { onFrame } from '../frames'
+import { WorkBuddyMark } from '../../features/workbuddy/WorkBuddyMark'
 
 /** rotation speed (deg/s) and breathing per intensity level, like the spark's */
 const SPEED = [4, 18, 52, 130]
@@ -136,23 +137,33 @@ export function CodexMark({ size = 64, intensity = 0, pulse = 0, animated = true
 }
 
 /**
- * The mark of the tool on view: Claude's spark, Codex's knot, or for 全部 the
- * spark with the knot circling it.
+ * The mark of the tool on view: Claude's spark, Codex's knot, WorkBuddy's W, or
+ * for 全部 the spark with the other tools in use circling it, half a turn apart.
  */
 export function SourceMark({ size = 64, intensity = 0, pulse = 0, animated = true, source }: { size?: number; intensity?: Intensity; pulse?: number; animated?: boolean; source?: SourceView }) {
   const current = useSource()
+  const hasCodex = useHasCodex()
+  const hasWorkBuddy = useHasWorkBuddy()
   const s = source ?? current
+  if (s === 'workbuddy') return <WorkBuddyMark size={size} intensity={intensity} pulse={pulse} animated={animated} />
   if (s === 'codex') return <CodexMark size={size} intensity={intensity} pulse={pulse} animated={animated} />
   if (s === 'claude') return <Starburst size={size} intensity={intensity} pulse={pulse} animated={animated} />
   const small = Math.max(10, Math.round(size * 0.44))
+  const moons = hasCodex || !hasWorkBuddy ? (hasWorkBuddy ? (['codex', 'workbuddy'] as const) : (['codex'] as const)) : (['workbuddy'] as const)
   return (
     <span className="dual-mark" style={{ width: size, height: size, ['--orbit' as string]: `${Math.round(size * 0.5)}px` }}>
       <Starburst size={Math.round(size * 0.86)} intensity={intensity} pulse={pulse} animated={animated} />
-      <span className="dual-orbit" aria-hidden>
-        <span className="dual-moon">
-          <CodexMark size={small} intensity={intensity} pulse={pulse} animated={animated} />
-        </span>
-      </span>
+      {moons.map((m, i) => {
+        // the second moon runs half an orbit ahead; its own turn keeps it upright
+        const lead = i ? { animationDelay: '-4.5s' } : undefined
+        return (
+          <span key={m} className="dual-orbit" style={lead} aria-hidden>
+            <span className="dual-moon" style={lead}>
+              {m === 'codex' ? <CodexMark size={small} intensity={intensity} pulse={pulse} animated={animated} /> : <WorkBuddyMark size={small} intensity={intensity} pulse={pulse} animated={animated} />}
+            </span>
+          </span>
+        )
+      })}
     </span>
   )
 }

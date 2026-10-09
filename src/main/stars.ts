@@ -84,6 +84,7 @@ export function codingSign(entries: CostedEntry[], now: number): CodingSign {
   let dawn = 0
   let weekend = 0
   let codex = 0
+  let claude = 0
   let cost = 0
   let topCost = 0
   let read = 0
@@ -105,6 +106,7 @@ export function codingSign(entries: CostedEntry[], now: number): CodingSign {
     if (h >= 5 && h < 9) dawn += n
     if (d.getDay() === 0 || d.getDay() === 6) weekend += n
     if (e.source === 'codex') codex += n
+    if ((e.source ?? 'claude') === 'claude') claude += n
     cost += e.cost.total
     if (/opus|fable|mythos|astra|-pro\b/i.test(e.model)) topCost += e.cost.total
     read += e.cacheRead
@@ -147,7 +149,7 @@ export function codingSign(entries: CostedEntry[], now: number): CodingSign {
     { key: 'marathon', score: medianMin / 90, trait: `会话时长的中位数是 ${Math.round(medianMin)} 分钟` },
     { key: 'burst', score: peakRatio / 6, trait: `最忙的一小时是平时的 ${peakRatio.toFixed(1)} 倍` },
     { key: 'thrift', score: hit / 0.96, trait: `缓存命中率 ${(hit * 100).toFixed(1)}%` },
-    { key: 'dual', score: Math.min(share(codex), 1 - share(codex)) / 0.2, trait: `Claude 和 Codex 各占 ${pct(1 - share(codex))} / ${pct(share(codex))}` },
+    { key: 'dual', score: Math.min(share(codex), share(claude)) / 0.2, trait: `Claude 和 Codex 各占 ${pct(share(claude))} / ${pct(share(codex))}` },
     { key: 'web', score: projects.size / 6, trait: `30 天里碰过 ${projects.size} 个项目` },
     { key: 'deep', score: avgCtx / 250_000, trait: `每次请求平均带着 ${Math.round(avgCtx / 1000)}k 上下文` },
     { key: 'steady', score: longEnough ? days.size / 24 : 0, trait: `30 天里有 ${days.size} 天在用` },

@@ -411,6 +411,9 @@
 .galaxy-stage {
   position: relative;
 }
+.galaxy-gas {
+  pointer-events: none;
+}
 .galaxy-canvas,
 .planet-canvas {
   position: absolute;
@@ -475,6 +478,10 @@
 .starmap-legend i.warm {
   background: #ffcfa8;
   box-shadow: 0 0 6px #ffb48a;
+}
+.starmap-legend i.green {
+  background: #a8f0d6;
+  box-shadow: 0 0 6px #4fd6a8;
 }
 .starmap-legend i.cool {
   background: #c9d4ff;

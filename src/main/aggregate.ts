@@ -179,6 +179,8 @@ export function computeSummary(
   const projects = new Map<string, GroupStat>()
   let prevTokens = 0
   let prevCost = 0
+  let cacheUnreported = 0
+  let unreportedPrompt = 0
 
   for (const e of entries) {
     if (b.prev && e.ts >= b.prev[0] && e.ts < b.prev[1]) {
@@ -188,6 +190,10 @@ export function computeSummary(
     if (e.ts < b.start || e.ts >= b.end) continue
     const tk = tokensOf(e)
     const cw = e.cacheWrite5m + e.cacheWrite1h
+    if (e.cacheReadKnown === false) {
+      cacheUnreported++
+      unreportedPrompt += e.input + cw
+    }
     totals.input += e.input
     totals.output += e.output
     totals.cacheWrite += cw
@@ -215,7 +221,8 @@ export function computeSummary(
   }
   totals.cost = cp.total
   totals.sessions = sessions.size
-  const promptTokens = totals.input + totals.cacheWrite + totals.cacheRead
+  // responses that did not report their cache stay out of the hit rate instead of counting as misses
+  const promptTokens = totals.input + totals.cacheWrite + totals.cacheRead - unreportedPrompt
 
   return {
     range,
@@ -225,6 +232,7 @@ export function computeSummary(
     totals,
     previous: b.prev ? { tokens: prevTokens, cost: prevCost } : null,
     cacheHitRate: promptTokens ? totals.cacheRead / promptTokens : 0,
+    ...(cacheUnreported ? { cacheUnreported } : {}),
     buckets,
     byModel: [...models.values()].sort(byCost),
     byProject: topN([...projects.values()].sort(byCost), 8, '其他'),
@@ -373,7 +381,7 @@ export function computeSessions(
         cost: 0,
         reportedCost: reported.get(id) ?? null,
         context: 0,
-        ...(e.source === 'codex' ? { source: 'codex' as const } : {})
+        ...(e.source ? { source: e.source } : {})
       }
       map.set(id, s)
     }

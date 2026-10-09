@@ -2,9 +2,10 @@ import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { fmtTokens } from '@shared/format'
 import { cnCount, TOKEN_MARKS } from '@shared/milestones'
-import type { Achievement, Intensity } from '@shared/types'
-import { useApp, useData, useMotionLevel } from '../state'
+import type { Achievement, Intensity, UsageSource } from '@shared/types'
+import { TOOL_NAME, useApp, useData, useMotionLevel, useSource } from '../state'
 import { Odometer } from './Numbers'
+import { SourceMark } from './CodexMark'
 
 /**
  * Light and token effects for the main window:
@@ -289,38 +290,58 @@ export function NextMilestone({ tokens }: { tokens: number }) {
   )
 }
 
-/** Batches of new usage arriving less than a minute apart */
-export function useCombo(): number {
+export type Combo = Partial<Record<UsageSource, number>>
+
+/** Batches of new usage arriving less than a minute apart, counted for each tool on its own */
+export function useCombo(): Combo {
   const { lastUpdate } = useApp()
-  const [combo, setCombo] = useState(0)
-  const last = useRef(0)
+  const source = useSource()
+  const [combo, setCombo] = useState<Combo>({})
+  const last = useRef<Combo>({})
+  const timers = useRef(new Map<UsageSource, ReturnType<typeof setTimeout>>())
   useEffect(() => {
     if (!lastUpdate || lastUpdate.addedTokens <= 0) return
     const at = lastUpdate.at
-    setCombo((c) => (at - last.current < 60_000 ? c + 1 : 1))
-    last.current = at
-    const t = setTimeout(() => setCombo(0), 60_000)
-    return () => clearTimeout(t)
-  }, [lastUpdate])
+    const by = lastUpdate.bySource ?? (source === 'all' ? {} : { [source]: lastUpdate.addedTokens })
+    const tools = (Object.keys(by) as UsageSource[]).filter((s) => (by[s] ?? 0) > 0 && (source === 'all' || s === source))
+    if (!tools.length) return
+    setCombo((c) => {
+      const n = { ...c }
+      for (const s of tools) n[s] = at - (last.current[s] ?? 0) < 60_000 ? (c[s] ?? 0) + 1 : 1
+      return n
+    })
+    for (const s of tools) {
+      last.current[s] = at
+      clearTimeout(timers.current.get(s))
+      timers.current.set(s, setTimeout(() => setCombo((c) => ({ ...c, [s]: 0 })), 60_000))
+    }
+  }, [lastUpdate]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => timers.current.forEach((t) => clearTimeout(t)), [])
   return combo
 }
 
-export function ComboBadge({ combo }: { combo: number }) {
+/** The tool on view's combo; under 全部 one badge per tool, each with its mark */
+export function ComboBadge({ combo }: { combo: Combo }) {
+  const source = useSource()
+  const tools = (source === 'all' ? (['claude', 'codex', 'workbuddy'] as const) : [source]).filter((s) => (combo[s] ?? 0) >= 2)
   return (
     <AnimatePresence>
-      {combo >= 2 && (
-        <motion.span
-          key={combo}
-          className={`combo c${Math.min(3, Math.floor(combo / 5))}`}
-          initial={{ scale: 1.7, opacity: 0, rotate: -8 }}
-          animate={{ scale: 1, opacity: 1, rotate: 0 }}
-          exit={{ opacity: 0, scale: 0.8 }}
-          transition={{ type: 'spring', stiffness: 520, damping: 18 }}
-          title="一分钟内连续到来的用量批次"
-        >
-          连击 ×{combo}
-        </motion.span>
-      )}
+      {tools.map((s) => {
+        const n = combo[s]!
+        return (
+          <motion.span
+            key={`${s}-${n}`}
+            className={`combo c${Math.min(3, Math.floor(n / 5))} t-${s}`}
+            initial={{ scale: 1.7, opacity: 0, rotate: -8 }}
+            animate={{ scale: 1, opacity: 1, rotate: 0 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            transition={{ type: 'spring', stiffness: 520, damping: 18 }}
+            title={`${TOOL_NAME[s]} 一分钟内连续到来的用量批次`}
+          >
+            {source === 'all' ? <SourceMark size={11} animated={false} source={s} /> : '连击 '}×{n}
+          </motion.span>
+        )
+      })}
     </AnimatePresence>
   )
 }

@@ -13,6 +13,7 @@ import { writeFileAtomic } from '../atomicFile'
 import { LITELLM_URL, parseLiteLLM } from './litellm'
 import { parsePricingMarkdown } from './markdown'
 import { resolvePrice, type Resolved } from './resolve'
+import { DEEPSEEK_PRICING_URL, DEEPSEEK_ROWS, parseDeepSeekPricing } from './deepseek'
 
 export const OFFICIAL_PRICING_URL = 'https://platform.claude.com/docs/en/about-claude/pricing.md'
 const STALE_MS = 24 * 3600 * 1000
@@ -51,7 +52,7 @@ export function prettyModelName(id: string): string {
 
 export function tidy(rows: PriceRow[]): PriceRow[] {
   return rows
-    .filter((r) => !JUNK.test(r.id.replace(/^gpt-\d+\.\d+/, (v) => v.replace('.', '_'))))
+    .filter((r) => !JUNK.test(/^(deepseek|glm|qwen|hunyuan|hy\d|minimax|kimi)/.test(r.id) ? r.id.replace(/\./g, '_') : r.id.replace(/^gpt-\d+\.\d+/, (v) => v.replace('.', '_'))))
     .map((r) => {
       const out = r.status || !KNOWN_STATUS.has(r.id) ? r : { ...r, status: KNOWN_STATUS.get(r.id) }
       // LiteLLM rows are named by their raw keys
@@ -63,7 +64,7 @@ export class PricingService extends EventEmitter {
   private snap: Snapshot = {
     source: 'bundled',
     fetchedAt: BUNDLED_FETCHED_AT,
-    rows: tidy(mergeMissing(BUNDLED_ROWS, [...LEGACY_ROWS, ...GPT_ROWS])),
+    rows: tidy(mergeMissing(BUNDLED_ROWS, [...LEGACY_ROWS, ...GPT_ROWS, ...DEEPSEEK_ROWS])),
     webSearchPer1k: DEFAULT_WEB_SEARCH_PER_1K,
     usGeoMultiplier: DEFAULT_US_GEO_MULTIPLIER
   }
@@ -118,7 +119,7 @@ export class PricingService extends EventEmitter {
     try {
       const s = JSON.parse(await readFile(this.cachePath, 'utf8')) as Snapshot
       if (Array.isArray(s.rows) && s.rows.length && typeof s.fetchedAt === 'number') {
-        this.snap = { ...s, rows: tidy(mergeMissing(s.rows, [...LEGACY_ROWS, ...GPT_ROWS])) }
+        this.snap = { ...s, rows: tidy(mergeMissing(s.rows.filter((r) => !DEEPSEEK_ROWS.some((d) => d.id === r.id) || r.priceUrl === DEEPSEEK_PRICING_URL), [...LEGACY_ROWS, ...GPT_ROWS, ...DEEPSEEK_ROWS])) }
         this.index()
       }
     } catch {
@@ -177,14 +178,20 @@ export class PricingService extends EventEmitter {
       }
     } catch (e) {
       if (!next) errors.push(`LiteLLM：${(e as Error).message}`)
+      if (next) next.rows = mergeMissing(next.rows, this.snap.rows.filter((r) => r.priceSource?.startsWith('LiteLLM')))
     }
+    let deepseek = this.snap.rows.filter((r) => r.priceUrl === DEEPSEEK_PRICING_URL)
+    try {
+      deepseek = parseDeepSeekPricing(await this.getText(DEEPSEEK_PRICING_URL, 15000))
+      if (!next) next = { ...this.snap }
+    } catch { /* Keep the verified provider snapshot, never substitute aggregator prices. */ }
     if (!next) {
       this.lastError = errors.join('；')
       return
     }
     this.lastError = undefined
-    this.snap = { ...next, rows: tidy(mergeMissing(next.rows, [...LEGACY_ROWS, ...GPT_ROWS])) }
+    this.snap = { ...next, rows: tidy(mergeMissing([...deepseek, ...next.rows.filter((r) => !deepseek.some((d) => d.id === r.id))], [...LEGACY_ROWS, ...GPT_ROWS, ...DEEPSEEK_ROWS])) }
     this.index()
-    await writeFileAtomic(this.cachePath, JSON.stringify(next)).catch(() => {})
+    await writeFileAtomic(this.cachePath, JSON.stringify(this.snap)).catch(() => {})
   }
 }

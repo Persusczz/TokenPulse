@@ -48,15 +48,21 @@ import type {
   TitleCorner,
   UpdateEvent,
   UsageSource,
+  WorkBuddyOutlook,
   WasteAlert
 } from '@shared/types'
 import { computeAchievements } from './achievements'
-import { computeLive, computeRanges, computeSessions, computeSummary, dayKey, rangeBounds, startOfDay, startOfMonth, tokensOf, type CostedEntry } from './aggregate'
+import { computeLive, computeRanges, computeSessions, computeSummary, dayKey, niceCeil, rangeBounds, startOfDay, startOfMonth, tokensOf, type CostedEntry } from './aggregate'
 import { AppState } from './appState'
 import { UsageArchive } from './archive'
 import { checkBudgets, pruneFired } from './budget'
 import { diagnoseCache } from './cacheDoctor'
 import { codexDirs, codexQuota, codexRoot, CodexStore } from './collector/codex'
+import { nativeSession, workbuddyDirs, WorkBuddyStore } from '../features/workbuddy/collector'
+import { harnessDirs, isHarnessFile, isHarnessSession } from '../features/workbuddy/harness'
+import { workbuddyDialogue } from '../features/workbuddy/dialogue'
+import { findWorkBuddy } from '../features/workbuddy/tasks'
+import { workbuddyUsage } from '../features/workbuddy/usage'
 import { CodexUsageService } from './codexUsage'
 import { effectOf, ResetWatchService, type ResetNews } from './resetWatch'
 import { Updater } from './updater'
@@ -71,6 +77,9 @@ import { buildHistory, ClaudeWindowLog, estimateClaudeWindows } from './windowHi
 import { buildCycles, CYCLE_MS, type KnownWindow } from './cycles'
 import { contains, dockedPosition, hiddenPosition, MINI_MARGIN, miniSize, miniPlace, restorePosition, snapToEdge, type Dock, type Rect } from './miniGeometry'
 import { PricingService } from './pricing'
+import { WorkBuddyBilling } from '../features/workbuddy/billing'
+import { WorkBuddyLedgerService } from '../features/workbuddy/ledger'
+import { WorkBuddyLoginService } from '../features/workbuddy/auth'
 import { computeCost } from './pricing/cost'
 import { fiveHourWindow, QuotaService, sevenDayWindow } from './quota'
 import { quotaEvents, type QuotaSnapshot } from './quotaEvents'
@@ -122,6 +131,13 @@ app.setAppUserModelId(app.isPackaged ? 'com.tokenpulse.app' : process.execPath)
 const userData = app.getPath('userData')
 const settings = new SettingsStore(join(userData, 'settings.json'))
 const pricing = new PricingService(join(userData, 'pricing.json'), (url, init) => net.fetch(url, init))
+const workbuddyLogin = new WorkBuddyLoginService((url, init) => net.fetch(url, init), join(userData, 'workbuddy-login.dat'), {
+  available: () => safeStorage.isEncryptionAvailable() && (process.platform !== 'linux' || safeStorage.getSelectedStorageBackend() !== 'basic_text'),
+  seal: (s) => safeStorage.encryptString(s),
+  open: (b) => safeStorage.decryptString(b)
+})
+const workbuddyBilling = new WorkBuddyBilling((url, init) => net.fetch(url, init), () => workbuddyLogin.getAuth())
+const workbuddyLedger = new WorkBuddyLedgerService((url, init) => net.fetch(url, init), () => workbuddyLogin.getAuth())
 const archive = new UsageArchive(join(userData, 'archive.jsonl'))
 const guard = new GuardService(shotDir ? join(shotDir, 'claude') : (claudeRoots()[0] ?? join(homedir(), '.claude')))
 const quota = new QuotaService(
@@ -142,6 +158,7 @@ const tasks = new TaskService(join(userData, 'tasks.json'), join(userData, 'task
   blocker: taskBlocker,
   claude: findClaude,
   codex: findCodex,
+  workbuddy: () => findWorkBuddy(settings.value.workbuddyCli),
   node: findNode,
   terminal: () => settings.value.taskTerminal,
   lastSession: lastSessionIn,
@@ -168,13 +185,16 @@ const resetWatch = new ResetWatchService((url, init) => net.fetch(url, init as R
 
 let store = new UsageStore()
 let codex = new CodexStore()
+let workbuddy = new WorkBuddyStore()
 /** every entry, Claude Code and Codex, priced and sorted */
 let costed: CostedEntry[] = []
 let claudeCosted: CostedEntry[] = []
 let codexCosted: CostedEntry[] = []
+let workbuddyCosted: CostedEntry[] = []
 let costedRev = ''
 let dirs: string[] = []
 let codexFolders: string[] = []
+let workbuddyFolders: string[] = []
 let codexQ: CodexQuota | null = null
 let loading = true
 let mainWin: BrowserWindow | null = null
@@ -197,15 +217,16 @@ function modelLabel(model: string): string {
   return r && !r.estimated ? r.row.name.replace(/^Claude\s+/, '') : model
 }
 
-const dataRev = () => `${store.revision}:${codex.revision}`
+const dataRev = () => `${store.revision}:${codex.revision}:${workbuddy.revision}`
 
 function rebuild(): void {
   const opts = { webSearchPer1k: pricing.webSearchPer1k, usGeoMultiplier: pricing.usGeoMultiplier }
-  costed = [...store.entries.values(), ...codex.entries.values()]
+  costed = [...store.entries.values(), ...codex.entries.values(), ...workbuddy.entries.values()]
     .map((e) => ({ ...e, cost: computeCost(e, pricing.resolve(e.model)?.row ?? null, opts) }))
     .sort((a, b) => a.ts - b.ts)
-  claudeCosted = costed.filter((e) => e.source !== 'codex')
+  claudeCosted = costed.filter((e) => (e.source ?? 'claude') === 'claude')
   codexCosted = costed.filter((e) => e.source === 'codex')
+  workbuddyCosted = costed.filter((e) => e.source === 'workbuddy')
   costedRev = dataRev()
   if (settings.value.archiveEnabled) void archive.save(store.entries.values()).catch(() => {})
 }
@@ -213,29 +234,30 @@ function rebuild(): void {
 /** the tool on view: Claude, Codex, or both; Codex only when its logs are read */
 function source(): SourceView {
   const f = settings.value.sourceFilter
+  if (f === 'workbuddy' && !settings.value.workbuddyEnabled) return 'claude'
   return f === 'codex' && !settings.value.codexEnabled ? 'claude' : f
 }
 
 /** the tools on view, one by one */
 const sources = (): UsageSource[] => {
   const s = source()
-  return s === 'all' ? (settings.value.codexEnabled && codex.fileCount > 0 ? ['claude', 'codex'] : ['claude']) : [s]
+  return s === 'all' ? ['claude' as const, ...(settings.value.codexEnabled && codex.fileCount > 0 ? ['codex' as const] : []), ...(settings.value.workbuddyEnabled && workbuddy.fileCount > 0 ? ['workbuddy' as const] : [])] : [s]
 }
 
 /** what the overview, sessions, tray and floating window show: all tools, or one */
 function view(): CostedEntry[] {
   const f = source()
-  return f === 'claude' ? claudeCosted : f === 'codex' ? codexCosted : costed
+  return f === 'claude' ? claudeCosted : f === 'codex' ? codexCosted : f === 'workbuddy' ? workbuddyCosted : costed
 }
 
 /** prompts by session, rebuilt when new ones were read */
 let promptIdx: Map<string, PromptMark[]> = new Map()
 let promptKey = ''
 function prompts(): Map<string, PromptMark[]> {
-  const key = `${store.prompts.size}:${codex.prompts.size}:${store.revision}:${codex.revision}`
+  const key = `${store.prompts.size}:${codex.prompts.size}:${workbuddy.prompts.size}:${dataRev()}`
   if (key !== promptKey) {
     promptKey = key
-    promptIdx = indexPrompts([...store.prompts.values(), ...codex.prompts.values()])
+    promptIdx = indexPrompts([...store.prompts.values(), ...codex.prompts.values(), ...workbuddy.prompts.values()])
   }
   return promptIdx
 }
@@ -243,13 +265,13 @@ function prompts(): Map<string, PromptMark[]> {
 /** the prompts typed in the tools on view */
 function promptMarks(): PromptMark[] {
   const f = source()
-  return [...store.prompts.values(), ...codex.prompts.values()].filter((p) => f === 'all' || p.source === f)
+  return [...store.prompts.values(), ...codex.prompts.values(), ...workbuddy.prompts.values()].filter((p) => f === 'all' || p.source === f)
 }
 
 /** the tool calls made in the tools on view */
 function actionList(): ToolAction[] {
   const f = source()
-  return [...(f !== 'codex' ? store.actions.values() : []), ...(f !== 'claude' ? codex.actions.values() : [])]
+  return [...store.actions.values(), ...codex.actions.values(), ...workbuddy.actions.values()].filter((a) => f === 'all' || a.source === f)
 }
 
 function quotaConfig() {
@@ -262,8 +284,9 @@ function models(): { model: string; source: UsageSource; tokens: number; cost: n
   const from = Date.now() - 30 * 86_400_000
   const by = new Map<string, { model: string; source: UsageSource; tokens: number; cost: number; lastSeen: number }>()
   for (const e of costed) {
-    let m = by.get(e.model)
-    if (!m) by.set(e.model, (m = { model: e.model, source: e.source ?? 'claude', tokens: 0, cost: 0, lastSeen: 0 }))
+    const key = `${e.source ?? 'claude'}:${e.model}`
+    let m = by.get(key)
+    if (!m) by.set(key, (m = { model: e.model, source: e.source ?? 'claude', tokens: 0, cost: 0, lastSeen: 0 }))
     if (e.ts >= from) {
       m.tokens += tokensOf(e)
       m.cost += e.cost.total
@@ -274,7 +297,7 @@ function models(): { model: string; source: UsageSource; tokens: number; cost: n
 }
 
 function loadState(): LoadState {
-  return { loading, files: store.fileCount, dirs, codexDirs: codexFolders, codexFiles: codex.fileCount }
+  return { loading, files: store.fileCount, dirs, codexDirs: codexFolders, codexFiles: codex.fileCount, workbuddyDirs: workbuddyFolders, workbuddyFiles: workbuddy.fileCount }
 }
 
 function broadcast(channel: string, payload: unknown): void {
@@ -536,7 +559,7 @@ function taskCard(t: (typeof tasks.tasks)[number]): Message {
       ? [[{ text: '⏹ 停止', data: `taskstop ${id}` }, { text: '📜 日志', data: `tasklog ${id}` }, { text: '🔄', data: `e:taskcard ${id}` }]]
       : t.status === 'queued'
         ? [[{ text: '▶️ 现在开始', data: `taskstart ${id}` }, { text: '✕ 取消', data: `taskcancel ${id}` }]]
-        : [[{ text: '📜 日志', data: `tasklog ${id}` }, { text: '🔁 再次排队', data: `taskrequeue ${id}` }]]
+        : [[{ text: '📜 日志', data: `tasklog ${id}` }, t.tool === 'workbuddy' ? { text: '▶️ 再跑一次', data: `taskretry ${id}` } : { text: '🔁 再次排队', data: `taskrequeue ${id}` }]]
   return { text: lines.join('\n'), buttons }
 }
 
@@ -720,29 +743,29 @@ function whenLabel(t: number, now: number): string {
 }
 
 function cardData(v: SourceView, now = Date.now()): CardData {
-  const list = v === 'claude' ? claudeCosted : v === 'codex' ? codexCosted : costed
+  const list = v === 'claude' ? claudeCosted : v === 'codex' ? codexCosted : v === 'workbuddy' ? workbuddyCosted : costed
   const s = computeSummary(list, 'today', now, modelLabel)
   const d = new Date(now)
   const reset = (iso: string | null | undefined) => (iso ? `${whenLabel(Date.parse(iso), now)} 重置` : null)
   const quotas: CardQuota[] = []
-  if (v !== 'codex') {
+  if (v === 'claude' || v === 'all') {
     const five = fiveHourWindow(quota.info.windows)
     const week = sevenDayWindow(quota.info.windows)
     if (five) quotas.push({ label: 'Claude 5h', pct: five.utilization, reset: reset(five.resetsAt) })
     if (week) quotas.push({ label: 'Claude 7 天', pct: week.utilization, reset: reset(week.resetsAt) })
   }
-  if (v !== 'claude' && settings.value.codexEnabled) {
+  if ((v === 'codex' || v === 'all') && settings.value.codexEnabled) {
     for (const w of codexQ?.windows ?? []) quotas.push({ label: w.key === 'codex_5h' ? 'Codex 5h' : w.key === 'codex_7d' ? 'Codex 7 天' : w.label, pct: w.utilization, reset: reset(w.resetsAt) })
   }
   // the first 5-hour window, as a star
   const five = quotas.find((q) => q.label.endsWith('5h'))
   const st = five ? stageInfo(five.pct) : null
-  const working = v === 'codex' ? codexWorking() : v === 'claude' ? claudeWorking() : claudeWorking() || codexWorking()
+  const working = v === 'codex' ? codexWorking() : v === 'claude' ? claudeWorking() : v === 'workbuddy' ? workbuddyWorking() : claudeWorking() || codexWorking() || workbuddyWorking()
   const sign = codingSign(list, now)
   return {
     date: `${d.getMonth() + 1}/${d.getDate()} 周${WEEKDAY[d.getDay()]}`,
     time: hhmm(now),
-    view: v === 'all' ? (codexCosted.length ? 'Claude + Codex' : 'Claude') : toolLabel(v),
+    view: v === 'all' ? sources().map(toolLabel).join(' + ') : toolLabel(v),
     accent: accentHex({ accent: settings.value.accent, sourceFilter: v }),
     tokens: s.totals.tokens,
     cost: money(s.totals.cost),
@@ -907,23 +930,25 @@ async function resumeAll(): Promise<{ text: string; toast: string }> {
   return { text: '▶️ 已恢复，暂停中的任务会继续执行', toast: '▶️ 已恢复' }
 }
 
-function queueTask(tool: UsageSource, prompt: string): string {
+function queueTask(tool: UsageSource, prompt: string): { text: string; buttons?: Button[][] } {
   const cwd = settings.value.taskCwd || homedir()
   const s = settings.value
   const t = tasks.add({
     prompt,
     cwd,
     tool,
-    trigger: 'reset',
-    permission: tool === 'codex' ? s.codexTaskPermission : s.taskPermission,
-    model: tool === 'codex' ? s.codexTaskModel : s.taskModel,
+    trigger: tool === 'workbuddy' ? 'manual' : 'reset',
+    permission: tool === 'workbuddy' ? 'inherit' : tool === 'codex' ? s.codexTaskPermission : s.taskPermission,
+    model: tool === 'workbuddy' ? null : tool === 'codex' ? s.codexTaskModel : s.taskModel,
     continue: s.taskContinue,
     autoCompact: s.taskAutoCompact,
     compactAt: s.taskCompactAt,
     retries: s.taskRetries,
     timeoutMin: s.taskTimeoutMin
   })
-  return `📥 已排队${tool === 'codex' ? ' Codex 任务' : ''}：<b>${escapeHtml(taskTitle(prompt))}</b>\n${t.notBefore <= Date.now() + 5000 ? '额度空闲，马上开始' : `将在 ${clockOf(t.notBefore)} 额度刷新后开始`}\n目录：${escapeHtml(cwd)}`
+  const text = `📥 已排队 ${toolLabel(tool)} 任务：<b>${escapeHtml(taskTitle(prompt))}</b>\n${tool === 'workbuddy' ? '等待手动开始（积分计费）' : t.notBefore <= Date.now() + 5000 ? '额度空闲，马上开始' : `将在 ${clockOf(t.notBefore)} 额度刷新后开始`}\n目录：${escapeHtml(cwd)}`
+  // WorkBuddy has no refresh to start at: offer the start right here
+  return tool === 'workbuddy' ? { text, buttons: [[{ text: '▶️ 现在开始', data: `taskstart ${shortId(t.id)}` }, { text: '✕ 取消', data: `taskcancel ${shortId(t.id)}` }]] } : { text }
 }
 
 /** plain messages offered as tasks, by a short id (button data holds 64 bytes) */
@@ -988,13 +1013,14 @@ async function onCommand(cmd: Command): Promise<Reply> {
     case 'taskstop':
     case 'taskstart':
     case 'taskcancel':
-    case 'taskrequeue': {
+    case 'taskrequeue':
+    case 'taskretry': {
       const t = findTask(cmd.args[0])
-      const action = ({ taskstop: 'stop', taskstart: 'start', taskcancel: 'cancel', taskrequeue: 'requeue' } as const)[cmd.name]
+      const action = ({ taskstop: 'stop', taskstart: 'start', taskcancel: 'cancel', taskrequeue: 'requeue', taskretry: 'retry' } as const)[cmd.name]
       if (!t) reply = '找不到这个任务（可能已经删除）'
       else {
         await tasks.action(t.id, action)
-        const done = { stop: '⏹ 已要求停止', start: '▶️ 已开始（同一文件夹有任务在跑时会排在它后面）', cancel: '✕ 已取消', requeue: '🔁 已重新排到下次刷新' }[action]
+        const done = { stop: '⏹ 已要求停止', start: '▶️ 已开始（同一文件夹有任务在跑时会排在它后面）', cancel: '✕ 已取消', requeue: '🔁 已重新排到下次刷新', retry: '▶️ 已重新开始' }[action]
         reply = { text: `${done}：<b>${escapeHtml(taskTitle(t.prompt))}</b>`, toast: done.split('（')[0] }
       }
       break
@@ -1029,9 +1055,9 @@ async function onCommand(cmd: Command): Promise<Reply> {
     case 'task': {
       // "/task codex …" queues a Codex task
       const first = cmd.args[0]?.toLowerCase()
-      const tool: UsageSource = first === 'codex' ? 'codex' : 'claude'
-      const prompt = (first === 'codex' || first === 'claude' ? cmd.args.slice(1) : cmd.args).join(' ').trim()
-      reply = prompt ? { text: queueTask(tool, prompt), react: '✍' } : '用法：/task 任务内容（Codex 任务：/task codex 任务内容）\n例如 /task 把 tests 里失败的用例修好并跑一遍测试'
+      const tool: UsageSource = first === 'workbuddy' ? 'workbuddy' : first === 'codex' ? 'codex' : 'claude'
+      const prompt = (first === 'codex' || first === 'claude' || first === 'workbuddy' ? cmd.args.slice(1) : cmd.args).join(' ').trim()
+      reply = prompt ? { ...queueTask(tool, prompt), react: '✍' } : '用法：/task 任务内容（Codex 任务：/task codex 任务内容；WorkBuddy 任务：/task workbuddy 任务内容）\n例如 /task 把 tests 里失败的用例修好并跑一遍测试'
       break
     }
     case 'plain': {
@@ -1045,6 +1071,7 @@ async function onCommand(cmd: Command): Promise<Reply> {
       if (offered.size > 20) offered.delete(offered.keys().next().value!)
       const tools: Button[] = [{ text: '📥 排成 Claude 任务', data: `e:offer ${id} claude` }]
       if (settings.value.codexEnabled) tools.push({ text: '📥 Codex 任务', data: `e:offer ${id} codex` })
+      if (settings.value.workbuddyEnabled) tools.push({ text: '📥 WorkBuddy', data: `e:offer ${id} workbuddy` })
       reply = {
         text: `💭 「${escapeHtml(text.length > 120 ? `${text.slice(0, 119)}…` : text)}」\n要把这句话排成任务吗？下一次额度刷新时自动执行。\n想看状态的话点 🎛 面板，或者发 /help`,
         buttons: [tools, [{ text: '✕ 不用了', data: `e:offer ${id} no` }, { text: '🎛 面板', data: 'e:panel status' }]]
@@ -1060,7 +1087,7 @@ async function onCommand(cmd: Command): Promise<Reply> {
       } else if (!text) reply = '这条消息找不到了（TokenPulse 重启过），重新发一次吧'
       else {
         offered.delete(id)
-        reply = { text: queueTask(tool === 'codex' ? 'codex' : 'claude', text), toast: '📥 已排队' }
+        reply = { ...queueTask(tool === 'codex' || tool === 'workbuddy' ? tool : 'claude', text), toast: '📥 已排队' }
       }
       break
     }
@@ -1126,6 +1153,7 @@ async function onCommand(cmd: Command): Promise<Reply> {
 
 /** A tool's 5h window as the task queue sees it */
 function taskWindow(tool: UsageSource): WindowInfo {
+  if (tool === 'workbuddy') return { five: null, localEnd: null }
   if (tool === 'codex') {
     const w = codexQ?.windows.find((x) => x.key === 'codex_5h')
     return { five: w ? { pct: w.utilization, resetsAt: w.resetsAt ? Date.parse(w.resetsAt) : null } : null, localEnd: null }
@@ -1141,10 +1169,10 @@ function taskWindow(tool: UsageSource): WindowInfo {
 function lastSessionIn(tool: UsageSource, cwd: string): { id: string; at: number } | null {
   const norm = (p: string) => p.replace(/[\\/]+$/, '').toLowerCase()
   const want = norm(cwd)
-  const list = tool === 'codex' ? codexCosted : claudeCosted
+  const list = tool === 'codex' ? codexCosted : tool === 'workbuddy' ? workbuddyCosted : claudeCosted
   for (let i = list.length - 1; i >= 0; i--) {
     const e = list[i]
-    if (!e.side && e.projectPath && norm(e.projectPath) === want) return { id: e.sessionId, at: e.ts }
+    if (!e.side && !(tool === 'workbuddy' && isHarnessSession(e.sessionId)) && e.projectPath && norm(e.projectPath) === want) return { id: tool === 'workbuddy' ? nativeSession(e.sessionId) : e.sessionId, at: e.ts }
   }
   return null
 }
@@ -1153,6 +1181,7 @@ function lastSessionIn(tool: UsageSource, cwd: string): { id: string; at: number
 function taskBlocker(tool: UsageSource = 'claude'): string | null {
   const s = settings.value
   if (s.taskQueuePaused) return '任务队列已暂停'
+  if (tool === 'workbuddy') return s.workbuddyEnabled ? null : 'WorkBuddy 采集已关闭'
   if (tool === 'codex') {
     // the guard can't hold Codex; a full window would only fail the task
     const w = codexQ?.windows.find((x) => x.key === 'codex_5h')
@@ -1181,7 +1210,7 @@ function inHours(d: Date, from: string, to: string): boolean {
 
 const taskTitle = (prompt: string) => (prompt.length > 40 ? `${prompt.slice(0, 39)}…` : prompt)
 
-const toolLabel = (tool: UsageSource | undefined) => (tool === 'codex' ? 'Codex' : 'Claude')
+const toolLabel = (tool: UsageSource | undefined) => (tool === 'workbuddy' ? 'WorkBuddy' : tool === 'codex' ? 'Codex' : 'Claude')
 
 tasks.on('change', (s) => {
   broadcast('tasks:update', s)
@@ -1191,7 +1220,7 @@ tasks.on('retrying', (t) => refreshTaskCards(t.id)).on('started', (t) => {
   // one card per run, edited as it goes (a retry with another model keeps the same card)
   if (!taskCards.has(t.id)) void postTaskCard(t)
   // fresh numbers for the new window
-  if (t.tool !== 'codex') setTimeout(() => void quota.refresh(), 90_000)
+  if ((t.tool ?? 'claude') === 'claude') setTimeout(() => void quota.refresh(), 90_000)
 })
 tasks.on('finished', (t) => {
   const mins = t.startedAt && t.finishedAt ? Math.max(1, Math.round((t.finishedAt - t.startedAt) / 60_000)) : 0
@@ -1221,7 +1250,7 @@ function tasksText(): string {
   const list = s.tasks.filter((t) => t.status === 'queued' || t.status === 'running').sort((a, b) => a.order - b.order)
   if (!list.length) return '队列里没有任务。发送 /task 任务内容 就能排到下一次额度刷新'
   const parentOf = (t: (typeof list)[number]) => (t.parentId ? s.tasks.find((x) => x.id === t.parentId) : undefined)
-  const both = list.some((t) => t.tool === 'codex') && list.some((t) => t.tool !== 'codex')
+  const both = new Set(list.map((t) => t.tool ?? 'claude')).size > 1
   return [
     '📋 <b>刷新任务</b>',
     ...list.map((t) => {
@@ -1241,6 +1270,7 @@ function tasksText(): string {
 
 /** Claude's plan against Claude usage, ChatGPT's against Codex usage, or both summed up */
 function valueFor(src: SourceView) {
+  if (src === 'workbuddy') return computeValue(workbuddyCosted, Date.now(), { plan: null, priceSetting: 0, quotaHits: 0, money, source: src })
   const now = Date.now()
   const month = startOfMonth(now)
   const claudeHits = appState.hitsSince(month)
@@ -1251,7 +1281,7 @@ function valueFor(src: SourceView) {
     const claudePlan = quota.info.plan ?? 'Pro'
     const chatgpt = codexPlan ?? 'ChatGPT Plus'
     const own = settings.value.planPrice
-    return computeValue(costed, now, {
+    return computeValue(costed.filter((e) => e.source !== 'workbuddy'), now, {
       plan: `${claudePlan} + ${chatgpt}`,
       priceSetting: own !== null ? own + (PLAN_PRICES[chatgpt] ?? 20) : null,
       quotaHits: claudeHits + codexHits,
@@ -1305,7 +1335,7 @@ async function sendReport(): Promise<TelegramResult> {
 function readDeck(now = Date.now()): TarotDeck {
   const v = source()
   // the quota cards draw Claude's quota in 全部 (the guard is Claude's too)
-  const tool: UsageSource = v === 'codex' ? 'codex' : 'claude'
+  const tool: UsageSource = v === 'all' ? 'claude' : v
   const ps = paces(now)
   const p5 = ps.find((p) => p.key === `${tool}_5h`)
   const p7 = ps.find((p) => p.key === `${tool}_7d`)
@@ -1321,7 +1351,11 @@ function readDeck(now = Date.now()): TarotDeck {
     windows: windowRecords(8, [tool], now).map((w) => ({ start: w.start, end: w.end, peak: w.peak })),
     prompts: costByPrompt(view(), prompts(), startOfDay(now), now + 1, modelLabel).list,
     tasks: tasks.tasks.filter((t) => (t.tool ?? 'claude') === tool || v === 'all').map((t) => ({ prompt: t.prompt, status: t.status, finishedAt: t.finishedAt ?? null, startedAt: t.startedAt ?? null })),
-    tpm: computeRate(view(), now).tokensPerMin
+    tpm: computeRate(view(), now).tokensPerMin,
+    credits:
+      tool === 'workbuddy' && wbOutlook?.total && wbOutlook.remaining !== null
+        ? { usedPct: ((wbOutlook.used ?? wbOutlook.total - wbOutlook.remaining) / wbOutlook.total) * 100, remaining: wbOutlook.remaining, total: wbOutlook.total, today: wbOutlook.today, dailyAvg: wbOutlook.dailyAvg, daysLeft: wbOutlook.daysLeft }
+        : null
   })
 }
 
@@ -1360,6 +1394,7 @@ const clip = (s: string, n: number) => {
 }
 
 async function tarotReply(): Promise<Reply> {
+  if (source() === 'workbuddy') await workbuddyOutlook().catch(() => null)
   const d = readDeck()
   const text = [
     '🔮 <b>你的牌</b>',
@@ -1436,7 +1471,7 @@ function quotaRates(days: number, now = Date.now()): QuotaRate[] {
 /** each tool on view: its 5-hour windows of the last week and its 7-day windows of the last ten, with the usage in each */
 function quotaCycles(now = Date.now()): QuotaCycles[] {
   const ps = paces(now)
-  return sources().map((src) => {
+  return sources().filter((src) => src !== 'workbuddy').map((src) => {
     const open = (k: '5h' | '7d'): KnownWindow | null => {
       const p = ps.find((x) => x.key === `${src}_${k}`)
       return p ? { start: p.start, end: p.end, pct: p.pct, hitAt: null } : null
@@ -1510,7 +1545,7 @@ function checkRunaway(): void {
   const before = runaways.length
   runaways = runaways.filter((r) => now - r.at < 30 * 60_000 && !((dismissed.get(r.sessionId) ?? 0) > now))
   // refresh tasks are meant to burn through a fresh window unattended: not runaways
-  const taskSessions = new Set(tasks.tasks.map((t) => t.sessionId).filter(Boolean))
+  const taskSessions = new Set(tasks.tasks.map((t) => t.sessionId && (t.tool === 'workbuddy' ? `workbuddy:${t.sessionId}` : t.sessionId)).filter(Boolean))
   const fresh = detectRunaway(costed, now, { baseline: baseline.value, sensitivity: s.runawaySensitivity }).filter(
     (a) => !taskSessions.has(a.sessionId) && !((dismissed.get(a.sessionId) ?? 0) > now) && now - (runawayAt.get(a.sessionId) ?? 0) > 15 * 60_000
   )
@@ -1519,16 +1554,17 @@ function checkRunaway(): void {
     appState.bump('runaway')
     // the guard hook can only hold Claude Code sessions
     const isCodex = codex.entries.size > 0 && codexCosted.some((e) => e.sessionId === a.sessionId)
-    const held = s.runawayAction === 'pause' && !isCodex
+    const isWorkBuddy = workbuddyCosted.some((e) => e.sessionId === a.sessionId)
+    const held = s.runawayAction === 'pause' && !isCodex && !isWorkBuddy
     if (held) void guard.holdSession(a.sessionId)
     runaways = [...runaways.filter((r) => r.sessionId !== a.sessionId), { ...a, held }]
     const what =
       a.kind === 'loop'
         ? `疑似陷入循环：连续 ${a.repeats} 次相同的响应`
         : `消耗异常：5 分钟 ${money(a.cost5)} / ${cn(a.tokens5)} tokens${a.ratio ? `（平时的 ${a.ratio.toFixed(1)} 倍）` : ''}`
-    const who = `${isCodex ? 'Codex ' : ''}会话 ${a.project || a.sessionId.slice(0, 8)}`
+    const who = `${isWorkBuddy ? 'WorkBuddy ' : isCodex ? 'Codex ' : ''}会话 ${a.project || a.sessionId.slice(0, 8)}`
     notify(`${who} ${a.kind === 'loop' ? '疑似死循环' : '消耗异常'}`, `${what}${held ? '，已暂停该会话' : ''}`)
-    push('runaway', `⚠️ ${escapeHtml(who)} ${escapeHtml(what)}\n${held ? '已暂停这个会话，回复 /resume 继续' : isCodex ? '守卫无法暂停 Codex，请到 Codex 里手动停止' : '回复 /pause 暂停所有任务'}`)
+    push('runaway', `⚠️ ${escapeHtml(who)} ${escapeHtml(what)}\n${held ? '已暂停这个会话，回复 /resume 继续' : isWorkBuddy ? '请到 WorkBuddy 里手动停止' : isCodex ? '守卫无法暂停 Codex，请到 Codex 里手动停止' : '回复 /pause 暂停所有任务'}`)
   }
   if (fresh.length || runaways.length !== before) broadcast('runaway:update', runaways)
 }
@@ -1555,9 +1591,10 @@ function modelPeak(model: string): number {
 }
 
 /** a session's window and warning line: a share of the model's own window, or the fixed line */
-const warnFor: WarnFor = (model, source) => {
-  const window = windowOf(model, source, modelPeak(model), codex.contextWindows)
-  return { window, warnAt: settings.value.contextAuto ? Math.round(window * CONTEXT_SOON) : settings.value.contextWarnK * 1000 }
+const warnFor: WarnFor = (model, source, sessionId) => {
+  const windows = source === 'workbuddy' ? (sessionId && isHarnessSession(sessionId) ? workbuddy.harnessWindows.get(sessionId) : workbuddy.contextWindows) : codex.contextWindows
+  const window = windowOf(model, source, modelPeak(model), windows)
+  return { window, warnAt: settings.value.contextAuto && window > 0 ? Math.round(window * CONTEXT_SOON) : settings.value.contextWarnK * 1000 }
 }
 
 /**
@@ -1578,12 +1615,12 @@ function checkContext(): void {
     if ((contextWarned.get(a.sessionId) ?? 0) >= level) continue
     contextWarned.set(a.sessionId, level)
     broadcast('context:alert', a)
-    const who = `${a.source === 'codex' ? 'Codex ' : ''}会话 ${a.project || a.sessionId.slice(0, 8)}`
+    const who = `${toolLabel(a.source)} 会话 ${a.project || a.sessionId.slice(0, 8)}`
     const share = Math.round((a.tokens / a.window) * 100)
     notify(
       `${who} 上下文 ${fmtTokens(a.tokens, 0)} / ${fmtTokens(a.window, 0)}（${share}%）`,
       level === 2
-        ? `快到${a.source === 'codex' ? '上下文上限' : '自动压缩'}了：在合适的节点自己 /compact，比被动压缩更能留住要点`
+        ? `快到${a.source === 'claude' ? '自动压缩' : '上下文上限'}了：在合适的节点自己 /compact，比被动压缩更能留住要点`
         : `每次请求都要带上这么多 token${a.growthPerRequest > 500 ? `，还在以每次约 ${fmtTokens(a.growthPerRequest, 0)} 的速度增长` : ''}。告一段落时 /compact 一下`
     )
   }
@@ -1863,12 +1900,12 @@ async function checkWaste(): Promise<void> {
 // ---------- watching ----------
 
 /** file -> the Claude projects folder it belongs to, or '' for a Codex log */
-const pending = new Map<string, string | null>()
+const pending = new Map<string, { dir: string | null; source: UsageSource }>()
 let flushTimer: NodeJS.Timeout | null = null
 let chain: Promise<void> = Promise.resolve()
 
-function schedule(file: string, dir: string | null): void {
-  pending.set(file, dir)
+function schedule(file: string, dir: string | null, tool: UsageSource = dir === null ? 'codex' : 'claude'): void {
+  pending.set(file, { dir, source: tool })
   if (flushTimer) clearTimeout(flushTimer)
   flushTimer = setTimeout(() => {
     chain = chain.then(flush).catch(() => {})
@@ -1880,22 +1917,27 @@ async function flush(): Promise<void> {
   pending.clear()
   const target = store
   const targetCodex = codex
-  let addedTokens = 0
+  const targetWorkBuddy = workbuddy
+  const bySource: Partial<Record<UsageSource, number>> = {}
   let codexRead = false
   const keys = new Set<string>()
-  for (const [file, dir] of jobs) {
-    const added = dir === null ? ((codexRead = true), await targetCodex.readFile(file)) : await target.readFile(file, dir)
+  for (const [file, job] of jobs) {
+    const added = job.source === 'workbuddy' ? await targetWorkBuddy.readFile(file, job.dir!) : job.dir === null ? ((codexRead = true), await targetCodex.readFile(file)) : await target.readFile(file, job.dir)
     for (const e of added) {
       keys.add(e.key)
-      addedTokens += tokensOf(e)
+      const s = e.source ?? 'claude'
+      bySource[s] = (bySource[s] ?? 0) + tokensOf(e)
     }
   }
-  if (target !== store || targetCodex !== codex) return
+  if (target !== store || targetCodex !== codex || targetWorkBuddy !== workbuddy) return
   if (codexRead) syncCodexQuota()
   if (dataRev() === costedRev) return
   rebuild()
-  const addedCost = costed.reduce((s, e) => (keys.has(e.key) ? s + e.cost.total : s), 0)
-  afterDataChange({ addedTokens, addedCost, at: Date.now() })
+  // drops, ripples and combos follow the tools on view: Codex's work does not pulse the Claude view
+  const on = sources()
+  const addedTokens = on.reduce((n, s) => n + (bySource[s] ?? 0), 0)
+  const addedCost = costed.reduce((s, e) => (keys.has(e.key) && on.includes(e.source ?? 'claude') ? s + e.cost.total : s), 0)
+  afterDataChange({ addedTokens, addedCost, at: Date.now(), bySource })
 }
 
 function stopWatching(): void {
@@ -1918,10 +1960,16 @@ function startWatching(): void {
       /* polling below still covers it */
     }
   }
+  for (const d of workbuddyFolders) {
+    try { watchers.push(watch(d, { recursive: true }, (_ev, name) => {
+      if (name && (String(name).endsWith('.jsonl') || isHarnessFile(String(name)))) schedule(join(d, String(name)), d, 'workbuddy')
+    })) } catch { /* polling covers missed events */ }
+  }
   // safety net for missed events and new folders
   pollTimer = setInterval(async () => {
     for (const [f, d] of await store.changedFiles(dirs)) schedule(f, d)
     for (const f of await codex.changedFiles(codexFolders)) schedule(f, null)
+    for (const [f, d] of await workbuddy.changedFiles(workbuddyFolders)) schedule(f, d, 'workbuddy')
   }, 15_000)
 }
 
@@ -1929,17 +1977,21 @@ async function rescan(): Promise<void> {
   stopWatching()
   store = new UsageStore()
   codex = new CodexStore()
+  workbuddy = new WorkBuddyStore(['workbuddy', ...settings.value.workbuddyHarnessProviders], settings.value.workbuddyHarnessAuto, settings.value.workbuddyHarnessEnabled)
   if (settings.value.archiveEnabled) store.seed(archive.entries.values())
   dirs = projectsDirs(settings.value.extraDirs)
   codexFolders = settings.value.codexEnabled ? codexDirs() : []
+  workbuddyFolders = settings.value.workbuddyEnabled ? [...new Set([...workbuddyDirs(undefined, settings.value.workbuddyDirs), ...(settings.value.workbuddyHarnessEnabled ? harnessDirs() : [])])] : []
   loading = true
   broadcast('load:state', loadState())
   const target = store
   const targetCodex = codex
+  const targetWorkBuddy = workbuddy
   await target.scan(dirs)
   // Codex logs can run to a gigabyte; the head-only reader keeps this to seconds
   await targetCodex.scan(codexFolders)
-  if (target !== store || targetCodex !== codex) return
+  await targetWorkBuddy.scan(workbuddyFolders)
+  if (target !== store || targetCodex !== codex || targetWorkBuddy !== workbuddy) return
   rebuild()
   loading = false
   syncCodexQuota()
@@ -2498,22 +2550,92 @@ function accentRGB(): [number, number, number] {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
 }
 
+/** the daily pace changes slowly and the 30-day ledger can take many pages: read it every 10 minutes */
+let wbPace: { at: number; avg: number | null; ledger: boolean; month: boolean } = { at: 0, avg: null, ledger: false, month: false }
+/** one reading at a time, shared by every window that asks */
+let wbPaceTask: Promise<void> | null = null
+/** the latest outlook, for what is drawn synchronously (the tarot deck) */
+let wbOutlook: WorkBuddyOutlook | null = null
+
+/** WorkBuddy's credits at a glance: the official ledger first, the local logs when it can't be read */
+async function workbuddyOutlook(refresh = false): Promise<WorkBuddyOutlook | null> {
+  if (!settings.value.workbuddyEnabled) return (wbOutlook = null)
+  const now = Date.now()
+  const DAY = 86_400_000
+  const [account, today] = await Promise.all([workbuddyBilling.get(refresh), workbuddyLedger.get('today', refresh)])
+  // the days in the window, from its first day with any use (a newer account has fewer)
+  const days = (daily: { day: string; credits: number }[]) => {
+    const first = daily.find((d) => d.credits > 0)
+    if (!first) return 1
+    const [y, m, d] = first.day.split('-').map(Number)
+    return Math.max(1, (now - new Date(y, m - 1, d).getTime()) / DAY)
+  }
+  // the 30-day pace holds for 10 minutes; a fallback is tried again after one
+  if (refresh || now - wbPace.at > (wbPace.month ? 10 : 1) * 60_000) {
+    wbPaceTask ??= (async () => {
+      let pace: typeof wbPace | null = null
+      for (const range of ['30d', '7d'] as const) {
+        const l = await workbuddyLedger.get(range, refresh)
+        if (l.status === 'ok' && !l.partial && l.credits !== null) {
+          pace = { at: Date.now(), avg: l.credits / days(l.daily), ledger: true, month: range === '30d' }
+          break
+        }
+      }
+      // the local logs, once they are read
+      if (!pace && !loading) {
+        const local = workbuddyUsage(workbuddyCosted, '30d', now)
+        pace = { at: Date.now(), avg: (local.credits ?? 0) / days(local.daily), ledger: false, month: false }
+      }
+      if (pace) {
+        const fresh = wbPace.avg !== pace.avg
+        wbPace = pace
+        // the cards asked before it was read: let them ask again
+        if (fresh) broadcast('data:update', { addedTokens: 0, addedCost: 0, at: Date.now() })
+      }
+    })().finally(() => (wbPaceTask = null))
+    // the 30-day ledger can take many pages: the account and today show first, the runway follows
+    await Promise.race([wbPaceTask, new Promise((r) => setTimeout(r, wbPace.at ? 0 : 1500))])
+  }
+  const local = today.status === 'ok' ? null : workbuddyUsage(workbuddyCosted, 'today', now, modelLabel)
+  const todayCredits = today.status === 'ok' ? today.credits : local!.credits
+  const avg = wbPace.avg
+  const daysLeft = account.remaining !== null && avg && avg > 0 ? account.remaining / avg : null
+  wbOutlook = {
+    checkedAt: account.checkedAt,
+    plan: account.plan,
+    total: account.total,
+    remaining: account.remaining,
+    used: account.used,
+    today: todayCredits,
+    dailyAvg: avg,
+    basis: today.status === 'ok' && wbPace.ledger ? 'ledger' : 'local',
+    daysLeft,
+    runsOutAt: daysLeft !== null ? now + daysLeft * DAY : null,
+    capacity: niceCeil(Math.max((avg ?? 0) * 1.5, (todayCredits ?? 0) * 1.1, 1)),
+    models: (today.status === 'ok' ? today.models.map((m) => ({ ...m, model: modelLabel(m.model) })) : local!.models).slice(0, 5).map((m) => ({ model: m.model, credits: m.credits })),
+    ...(account.error ? { error: account.error } : {})
+  }
+  return wbOutlook
+}
+
 /** a response in the last two minutes */
 const claudeWorking = () => claudeCosted.length > 0 && Date.now() - claudeCosted[claudeCosted.length - 1].ts < 120_000
 const codexWorking = () => codexCosted.length > 0 && Date.now() - codexCosted[codexCosted.length - 1].ts < 120_000
+const workbuddyWorking = () => workbuddyCosted.length > 0 && Date.now() - workbuddyCosted[workbuddyCosted.length - 1].ts < 120_000
 
 /** the 5h window the tray and taskbar show: Codex's while only Codex is on view */
 function trayFive(): { utilization: number } | undefined {
-  return source() === 'codex' ? codexQ?.windows.find((w) => w.key === 'codex_5h') : fiveHourWindow(quota.info.windows)
+  return source() === 'workbuddy' ? undefined : source() === 'codex' ? codexQ?.windows.find((w) => w.key === 'codex_5h') : fiveHourWindow(quota.info.windows)
 }
 
 let windowIcon = ''
-/** The window and taskbar icon: TokenPulse's, or the Codex one while only Codex is on view */
+/** The window and taskbar icon: TokenPulse's, or the tool's own while only Codex or WorkBuddy is on view */
 function syncWindowIcon(): void {
-  const want = source() === 'codex' ? 'codex' : 'claude'
+  const s = source()
+  const want = s === 'all' ? 'claude' : s
   if (!mainWin || mainWin.isDestroyed() || want === windowIcon) return
   windowIcon = want
-  const img = nativeImage.createFromPath(iconPath(want === 'codex' ? 'icon-codex.png' : 'icon.png'))
+  const img = nativeImage.createFromPath(iconPath(want === 'claude' ? 'icon.png' : `icon-${want}.png`))
   if (!img.isEmpty()) mainWin.setIcon(img)
 }
 
@@ -2527,8 +2649,8 @@ function updateTrayIcon(): void {
   syncWindowIcon()
   const five = trayFive()
   const pct = five ? five.utilization : null
-  const paused = guard.state.paused.length > 0
-  const glyph = source() === 'codex' ? 'codex' : 'spark'
+  const paused = (source() === 'claude' || source() === 'all') && guard.state.paused.length > 0
+  const glyph = source() === 'codex' ? 'codex' : source() === 'workbuddy' ? 'workbuddy' : 'spark'
   const key = `${pct === null ? '-' : Math.round(pct)}|${paused}|${trayAngle}|${accentHex(settings.value)}|${glyph}`
   if (key !== trayKey) {
     trayKey = key
@@ -2544,7 +2666,7 @@ function updateTrayIcon(): void {
     mainWin.setOverlayIcon(paused ? badge : null, paused ? '额度守卫暂停中' : '')
   }
   const src = source()
-  const spin = (src === 'codex' ? codexWorking() : src === 'all' ? claudeWorking() || codexWorking() : claudeWorking()) && !paused
+  const spin = (src === 'workbuddy' ? workbuddyWorking() : src === 'codex' ? codexWorking() : src === 'all' ? claudeWorking() || codexWorking() || workbuddyWorking() : claudeWorking()) && !paused
   if (spin && !trayAnim) {
     trayAnim = setInterval(() => {
       trayAngle = (trayAngle + 15) % 360
@@ -2564,12 +2686,12 @@ function refreshTray(): void {
   const src = source()
   const five = trayFive()
   const lines = [
-    src === 'codex' ? 'TokenPulse · Codex' : src === 'claude' ? 'TokenPulse · Claude' : 'TokenPulse',
+    src === 'all' ? 'TokenPulse' : `TokenPulse · ${toolLabel(src)}`,
     `今日 ${fmtTokens(l.today.tokens)} tokens · ${fmtMoney(l.today.cost, settings.value)}`,
     `速率 ${fmtTokens(rate.tokensPerMin)}/分钟 · 输出 ${rate.outputPerSec.toFixed(1)} tok/s`
   ]
   if (five) lines.push(`${src === 'codex' ? 'Codex ' : ''}5h 额度 ${Math.round(five.utilization)}%`)
-  if (guard.state.paused.length) lines.push(`⏸ 守卫已暂停 ${guard.state.paused.length} 个任务`)
+  if ((src === 'claude' || src === 'all') && guard.state.paused.length) lines.push(`⏸ 守卫已暂停 ${guard.state.paused.length} 个任务`)
   const running = tasks.tasks.filter((t) => t.status === 'running')
   if (running.length) lines.push(`▶ 任务 ${running.length} 个执行中 · 已做 ${running.reduce((a, t) => a + (t.steps ?? 0), 0)} 步`)
   // Windows caps tray tooltips at 127 characters
@@ -2577,14 +2699,15 @@ function refreshTray(): void {
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: '打开 TokenPulse', click: showMain },
-      ...(settings.value.codexEnabled && codex.fileCount > 0
+      ...(settings.value.codexEnabled && codex.fileCount > 0 || settings.value.workbuddyEnabled
         ? [
             {
               label: '查看',
               submenu: (
                 [
                   ['claude', 'Claude'],
-                  ['codex', 'Codex'],
+                  ...(settings.value.codexEnabled ? [['codex', 'Codex'] as const] : []),
+                  ...(settings.value.workbuddyEnabled ? [['workbuddy', 'WorkBuddy'] as const] : []),
                   ['all', '全部（一起看）']
                 ] as const
               ).map(([value, label]): MenuItemConstructorOptions => ({
@@ -2697,12 +2820,14 @@ async function applySettings(patch: Partial<Settings>): Promise<Settings> {
   if (next.dayNight && (!prev.dayNight || next.dayPack !== prev.dayPack || next.nightPack !== prev.nightPack || JSON.stringify(next.skyPlace) !== JSON.stringify(prev.skyPlace))) {
     setTimeout(() => checkDayNight(true), 0)
   }
-  if (JSON.stringify(next.extraDirs) !== JSON.stringify(prev.extraDirs) || next.codexEnabled !== prev.codexEnabled) void rescan()
+  if (JSON.stringify(next.extraDirs) !== JSON.stringify(prev.extraDirs) || next.codexEnabled !== prev.codexEnabled || next.workbuddyEnabled !== prev.workbuddyEnabled || JSON.stringify(next.workbuddyDirs) !== JSON.stringify(prev.workbuddyDirs) || JSON.stringify(next.workbuddyHarnessProviders) !== JSON.stringify(prev.workbuddyHarnessProviders) || next.workbuddyHarnessAuto !== prev.workbuddyHarnessAuto || next.workbuddyHarnessEnabled !== prev.workbuddyHarnessEnabled) void rescan()
+  if (next.workbuddyCli !== prev.workbuddyCli) void tasks.refreshWorkBuddyCli()
   if (next.codexEnabled !== prev.codexEnabled || next.codexUsageApi !== prev.codexUsageApi) void pollCodexUsage()
   if (next.codexEnabled !== prev.codexEnabled || next.codexResetWatch !== prev.codexResetWatch || next.codexResetLang !== prev.codexResetLang) void pollResets(true)
   if (next.autoUpdate && !prev.autoUpdate) void checkForUpdate()
   // Codex switched off while it was the only thing on view
   if (!next.codexEnabled && next.sourceFilter === 'codex') return applySettings({ sourceFilter: 'all' })
+  if (!next.workbuddyEnabled && next.sourceFilter === 'workbuddy') return applySettings({ sourceFilter: 'all' })
   if (next.dailyBudget !== prev.dailyBudget || next.monthlyBudget !== prev.monthlyBudget || next.sourceFilter !== prev.sourceFilter) {
     afterDataChange({ addedTokens: 0, addedCost: 0, at: Date.now() })
   } else refreshTray()
@@ -2727,7 +2852,7 @@ function registerIpc(): void {
     for (const e of view()) if (!e.side) lastModel.set(e.sessionId, { model: e.model, source: e.source ?? 'claude' })
     return rows.map((r) => {
       const m = lastModel.get(r.sessionId)
-      return m ? { ...r, ...warnFor(m.model, m.source) } : r
+      return m ? { ...r, ...warnFor(m.model, m.source, r.sessionId) } : r
     })
   })
   ipcMain.handle('pricing:get', () => pricing.info(models()))
@@ -2783,8 +2908,9 @@ function registerIpc(): void {
     if (from && from === miniWin) miniZone.set(r)
     else if (from && from === islandWin) islandZone.set(r)
   })
-  ipcMain.handle('value', (_e, src?: SourceView) => valueFor(src === 'claude' || src === 'codex' || src === 'all' ? src : source()))
+  ipcMain.handle('value', (_e, src?: SourceView) => valueFor(src === 'claude' || src === 'codex' || src === 'workbuddy' || src === 'all' ? src : source()))
   ipcMain.handle('forecast', (_e, src?: UsageSource) => {
+    if ((src ?? source()) === 'workbuddy') return forecastWeekly(workbuddyCosted, null, Date.now())
     const pick = (w: { utilization: number; resetsAt: string | null } | undefined) => (w ? { pct: w.utilization, resetsAt: w.resetsAt ? Date.parse(w.resetsAt) : null } : null)
     if ((src ?? (source() === 'codex' ? 'codex' : 'claude')) === 'codex') return forecastWeekly(codexCosted, pick(codexQ?.windows.find((w) => w.key === 'codex_7d')), Date.now())
     return forecastWeekly(claudeCosted, pick(sevenDayWindow(quota.info.windows)), Date.now())
@@ -2865,6 +2991,25 @@ function registerIpc(): void {
   })
   ipcMain.on('island:menu', popupIslandMenu)
   ipcMain.handle('codex:quota', () => codexQ)
+  ipcMain.handle('workbuddy:usage', (_e, range: RangeKey) => workbuddyUsage(workbuddyCosted, RANGES.includes(range) ? range : 'today', Date.now(), modelLabel))
+  ipcMain.handle('workbuddy:account', (_e, refresh?: boolean) => settings.value.workbuddyEnabled ? workbuddyBilling.get(refresh === true) : null)
+  ipcMain.handle('workbuddy:ledger', (_e, range: 'today' | '7d' | '30d', refresh?: boolean) => settings.value.workbuddyEnabled ? workbuddyLedger.get(['today', '7d', '30d'].includes(range) ? range : 'today', refresh === true) : null)
+  ipcMain.handle('workbuddy:harness-providers', () => settings.value.workbuddyEnabled ? [...workbuddy.harnessProviders].sort() : [])
+  ipcMain.handle('workbuddy:login-state', () => workbuddyLogin.getState())
+  ipcMain.handle('workbuddy:outlook', (_e, refresh?: boolean) => workbuddyOutlook(refresh === true))
+  ipcMain.handle('workbuddy:sign-in', async () => {
+    const result = await workbuddyLogin.signIn((url) => shell.openExternal(url))
+    if (result.ok) {
+      workbuddyBilling.reset(); workbuddyLedger.reset(); wbPace.at = 0
+      broadcast('data:update', { addedTokens: 0, addedCost: 0, at: Date.now() })
+    }
+    return result
+  })
+  ipcMain.handle('workbuddy:sign-out', async () => {
+    await workbuddyLogin.signOut()
+    workbuddyBilling.reset(); workbuddyLedger.reset(); wbPace.at = 0
+    broadcast('data:update', { addedTokens: 0, addedCost: 0, at: Date.now() })
+  })
   ipcMain.handle('pace', () => {
     const on = sources()
     return paces().filter((p) => on.includes(p.source))
@@ -2886,6 +3031,8 @@ function registerIpc(): void {
   })
   ipcMain.handle('session:dialogue', async (_e, id: string) => {
     const sid = String(id)
+    const wb = workbuddy.filesOf(sid)
+    if (wb.length) return workbuddyDialogue(wb, sid, workbuddy.harnessProviderIds, workbuddy.harnessAuto)
     const cx = codex.fileOf(sid)
     if (cx) return codexDialogue(cx, sid)
     const files = store.filesOf(sid)
@@ -2927,7 +3074,7 @@ function registerIpc(): void {
     return tasks.state()
   })
   ipcMain.handle('tasks:clear', (_e, tool) => {
-    tasks.clearHistory(tool === 'claude' || tool === 'codex' ? tool : 'all')
+    tasks.clearHistory(tool === 'claude' || tool === 'codex' || tool === 'workbuddy' ? tool : 'all')
     return tasks.state()
   })
   ipcMain.handle('tasks:log', (_e, id: string) => tasks.log(String(id)))
@@ -2944,7 +3091,10 @@ function registerIpc(): void {
     return Number.isFinite(hz) && hz > 0 ? hz : 0
   })
   // what the page shows under the title-bar buttons, read from the real pixels (CSS gradients and cards included)
-  ipcMain.handle('tarot', () => readDeck())
+  ipcMain.handle('tarot', async () => {
+    if (source() === 'workbuddy') await workbuddyOutlook().catch(() => null)
+    return readDeck()
+  })
   ipcMain.handle('overview:calendar', () => calendarDays(view(), Date.now(), modelLabel))
   ipcMain.handle('overview:timeline', () => todaySessions(view(), Date.now(), modelLabel))
   ipcMain.handle('overview:models', (_e, range: RangeKey) => {

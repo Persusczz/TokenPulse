@@ -104,7 +104,7 @@ export function GalaxyDive({ g, sessions, sel, onSel, onHoverSession, onPulse, j
   const { money } = useApp()
   const [dlg, setDlg] = useState<{ id: string; d: Dialogue | null } | null>(null)
   const body = useRef<HTMLDivElement>(null)
-  const who = g.source === 'codex' ? 'Codex' : 'Claude'
+  const who = g.source === 'workbuddy' ? 'WorkBuddy' : g.source === 'codex' ? 'Codex' : 'Claude'
 
   const stats = useMemo(() => {
     const ps = [...g.prompts].sort((a, b) => a.ts - b.ts)
@@ -190,7 +190,6 @@ export function GalaxyDive({ g, sessions, sel, onSel, onHoverSession, onPulse, j
 
       {!cur ? (
         <div className="dv-body">
-          <div className="dv-hint">每条星链是一段对话：越靠外越新，越亮花得越多。点一段读它的内容</div>
           {list.map((s) => (
             <button key={s.id} className="dv-session" onClick={() => onSel(s.id)} onMouseEnter={() => onHoverSession(s.id)} onMouseLeave={() => onHoverSession(null)}>
               <span className="dv-session-title">{s.title}</span>

@@ -17,6 +17,7 @@ const k = (n: number) => (n >= 1e6 ? `${+(n / 1e6).toFixed(2)}M` : `${Math.round
 /** What the chosen point comes to, in tokens, for the models of the tool */
 function hint(tool: UsageSource, c: CompactChoice, codexWindow: number): string {
   const m = modeOf(c)
+  if (tool === 'workbuddy') return m === 'tokens' ? `WorkBuddy 的 --autocompact；实际阈值限制在 100K–1M Token` : 'WorkBuddy 按当前模型窗口自动压缩'
   if (m === 'off') return '上下文满了任务就停下，适合想完整保留对话的任务'
   if (m === 'auto') return tool === 'codex' ? 'Codex 自己决定，接近上下文上限时压缩' : 'Claude Code 默认：上下文满了、接口报错时才压缩'
   const v = c.at!.value
@@ -38,6 +39,7 @@ export function CompactPicker({ tool, value, onChange, codexWindow = 258_400 }: 
   const mode = modeOf(value)
   const pct = value.at?.unit === 'pct' ? value.at.value : 60
   const tokens = value.at?.unit === 'tokens' ? value.at.value : 200_000
+  const limits = tool === 'workbuddy' ? { min: 100_000, max: 1_000_000 } : COMPACT_TOKENS
   const pick = (m: Mode) => {
     if (m === 'off') onChange({ on: false, at: value.at })
     else if (m === 'auto') onChange({ on: true, at: null })
@@ -46,13 +48,13 @@ export function CompactPicker({ tool, value, onChange, codexWindow = 258_400 }: 
   }
   return (
     <span className="compact-pick">
-      <select className="input" value={tool === 'codex' && mode === 'off' ? 'auto' : mode} onChange={(e) => pick(e.target.value as Mode)}>
+      <select className="input" value={tool !== 'claude' && (mode === 'off' || tool === 'workbuddy' && mode === 'pct') ? 'auto' : mode} onChange={(e) => pick(e.target.value as Mode)}>
         <option value="auto">快满时自动压缩</option>
-        <option value="pct">上下文到百分比时压缩</option>
+        {tool !== 'workbuddy' && <option value="pct">上下文到百分比时压缩</option>}
         <option value="tokens">上下文到 Token 数时压缩</option>
         {tool === 'claude' && <option value="off">不自动压缩</option>}
       </select>
-      {mode === 'pct' && (
+      {mode === 'pct' && tool !== 'workbuddy' && (
         <span className="compact-range">
           <input
             type="range"
@@ -71,13 +73,13 @@ export function CompactPicker({ tool, value, onChange, codexWindow = 258_400 }: 
           <input
             className="input tnum"
             type="number"
-            min={COMPACT_TOKENS.min / 1000}
-            max={COMPACT_TOKENS.max / 1000}
+            min={limits.min / 1000}
+            max={limits.max / 1000}
             step={10}
             value={Math.round(tokens / 1000)}
             onChange={(e) => {
               const n = Number(e.target.value)
-              if (Number.isFinite(n) && n > 0) onChange({ on: true, at: { unit: 'tokens', value: Math.min(COMPACT_TOKENS.max, Math.max(COMPACT_TOKENS.min, Math.round(n) * 1000)) } })
+              if (Number.isFinite(n) && n > 0) onChange({ on: true, at: { unit: 'tokens', value: Math.min(limits.max, Math.max(limits.min, Math.round(n) * 1000)) } })
             }}
           />
           K

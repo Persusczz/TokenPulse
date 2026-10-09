@@ -112,7 +112,7 @@ export function useDayPalette(): void {
       return
     }
     for (const [k, v] of Object.entries(uiColors(sky))) {
-      if (source === 'codex' && /^--(accent|s1|q4|q5)/.test(k)) st.removeProperty(k)
+      if ((source === 'codex' || source === 'workbuddy') && /^--(accent|s1|q4|q5)/.test(k)) st.removeProperty(k)
       else st.setProperty(k, v)
     }
   }, [on, sky, source])

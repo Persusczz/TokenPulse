@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { DEFAULT_SETTINGS, sanitize } from '../src/main/settings'
 
 describe('settings sanitize: appearance and floating window', () => {
+  it('keeps only explicit Harness provider ids and removes duplicates', () => {
+    expect(DEFAULT_SETTINGS.workbuddyHarnessProviders).toEqual([])
+    expect(DEFAULT_SETTINGS.workbuddyHarnessAuto).toBe(true)
+    expect(DEFAULT_SETTINGS.workbuddyHarnessEnabled).toBe(true)
+    expect(sanitize({ workbuddyHarnessEnabled: false }, DEFAULT_SETTINGS).workbuddyHarnessEnabled).toBe(false)
+    expect(sanitize({ workbuddyHarnessAuto: false }, DEFAULT_SETTINGS).workbuddyHarnessAuto).toBe(false)
+    expect(sanitize({ workbuddyHarnessProviders: ['my-proxy', 'my-proxy', '', null, 42] }, DEFAULT_SETTINGS).workbuddyHarnessProviders).toEqual(['my-proxy'])
+  })
   it('accepts known values', () => {
     const s = sanitize(
       {

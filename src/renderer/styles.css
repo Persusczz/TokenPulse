@@ -642,6 +642,8 @@ select {
 .hero-label {
   font-size: 13px;
   color: var(--text-2);
+  /* combos stay on the label's line */
+  white-space: nowrap;
 }
 .hero-number {
   font-family: var(--serif);
@@ -3332,6 +3334,9 @@ html.wallpaper-root body {
   align-self: end;
   margin-bottom: 1.2em;
 }
+.credit-ring .stage-ring-center b {
+  font-size: clamp(28px, 2.5vw, 46px);
+}
 .stage-ring-label {
   font-size: 18px;
   font-weight: 600;
@@ -4531,6 +4536,12 @@ kbd {
   box-shadow: 0 2px 10px rgba(var(--accent-rgb), 0.45);
   vertical-align: 1px;
 }
+/* under 全部 each tool's combo starts in its own colour */
+.combo { gap: 4px; }
+.combo.c0.t-claude { background: linear-gradient(135deg, #f0a07c, var(--claude)); box-shadow: 0 2px 10px rgba(217, 119, 87, 0.45); }
+.combo.c0.t-codex { background: linear-gradient(135deg, var(--codex-hi), var(--codex)); box-shadow: 0 2px 10px rgba(var(--codex-rgb), 0.45); }
+.combo.c0.t-workbuddy { background: linear-gradient(135deg, var(--workbuddy-hi), var(--workbuddy)); box-shadow: 0 2px 10px rgba(var(--workbuddy-rgb), 0.45); }
+.combo svg { color: #fff; }
 .combo.c1 {
   background: linear-gradient(135deg, #f5a524, #e8590c);
   box-shadow: 0 2px 12px rgba(232, 89, 12, 0.5);
@@ -5167,6 +5178,60 @@ html:root[data-source='codex'][data-theme='dark'][data-source] {
   --q4: #7c8aff;
   --q5: #b3baff;
 }
+html:root[data-source='workbuddy'][data-theme][data-source] {
+  --accent-rgb: 47, 165, 133;
+  --accent: #2fa585;
+  --accent-strong: #20836b;
+  --accent-hi: #a5e6d2;
+  --q1: #d7f2e9;
+  --q2: #a5ddcc;
+  --q3: #6ec2a7;
+  --q4: #2fa585;
+  --q5: #207d68;
+  --s1: #2fa585;
+}
+html:root[data-source='workbuddy'][data-theme='dark'][data-source] {
+  --accent: #65caae;
+  --accent-strong: #a5e6d2;
+  --accent-rgb: 101, 202, 174;
+  --q1: #16382e;
+  --q2: #205542;
+  --q3: #2f856d;
+  --q4: #65caae;
+  --q5: #a5e6d2;
+}
+:root { --workbuddy: #2fa585; --workbuddy-rgb: 47, 165, 133; --workbuddy-hi: #9ff0d4; --workbuddy-deep: #16765f; }
+:root[data-theme='dark'] { --workbuddy: #3cc29c; --workbuddy-rgb: 60, 194, 156; }
+.workbuddy-mark, .src-tag.workbuddy { color: var(--workbuddy); }
+.src-tag.workbuddy { background: color-mix(in srgb, var(--workbuddy) 12%, transparent); }
+.wb-credit-stats { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; padding: 24px 0; }
+.wb-credit-stats > div { display: flex; flex-direction: column; gap: 8px; }
+.wb-credit-stats strong { font-size: 26px; line-height: 1.3; font-weight: 600; white-space: nowrap; }
+.wb-credit-stats strong small { display: block; margin-top: 4px; font-size: 12px; font-weight: 400; color: var(--text-2); }
+.wb-account-balance { margin-bottom: 18px; font-size: 11px; color: var(--text-2); }
+.wb-account-balance > div:first-child { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px; }
+.wb-balance-track { height: 5px; margin-top: 8px; border-radius: 4px; background: var(--border); overflow: hidden; }
+.wb-balance-track i { display: block; height: 100%; background: var(--workbuddy); }
+.wb-account-note { font-size: 11px; margin: 0 0 14px; }
+.workbuddy-ledger { margin-bottom: 16px; }
+.workbuddy-ledger .card-head, .wb-ledger-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.wb-ledger-details { margin-bottom: 16px; }
+.wb-ledger-details > div { min-width: 0; }
+.price-reference { display: block; font-size: 10px; line-height: 1.5; color: var(--text-3); white-space: normal; }
+.price-tbl .price-reference { max-width: 380px; margin-top: 4px; }
+.wb-credit-models { min-height: 70px; }
+.wb-runway { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 14px 0 6px; font-size: 13px; }
+.wb-runway > span:first-child { white-space: nowrap; }
+.wb-runway b { color: var(--workbuddy); font-weight: 650; font-size: 15px; white-space: nowrap; }
+.wb-runway .muted:last-child { flex-basis: 100%; font-size: 12px; }
+.tank-value small { font-size: 0.5em; }
+.wb-credit-model { display: flex; justify-content: space-between; gap: 16px; padding: 5px 0; font-size: 12px; }
+.wb-credit-model > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
+.wb-credit-model > span:last-child { white-space: nowrap; }
+.workbuddy-quota .quota-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 16px; }
+.workbuddy-quota .quota-foot > span { flex: 1; min-width: 0; font-size: 11px; }
+.workbuddy-quota .quota-foot .btn { flex: none; white-space: nowrap; }
+.src-switch.four { grid-template-columns: repeat(2, 1fr); }
 :root[data-source='codex'] .brand-name em {
   background: linear-gradient(100deg, var(--codex-deep) 0%, var(--codex) 35%, var(--codex-hi) 50%, var(--codex) 65%, var(--codex-deep) 100%);
   background-size: 220% 100%;
@@ -7898,3 +7963,15 @@ html:root[data-pack='paper'][data-glass] {
 .update-pill.ready:hover {
   background: rgba(var(--accent-rgb), 0.28);
 }
+
+.workbuddy-history { display: flex; flex-direction: column; }
+.wb-history-sum { font-size: 12px; color: var(--text-2); }
+.wb-history-sum b { color: var(--text); font-weight: 600; }
+.wb-history-bars { flex: 1; display: flex; align-items: stretch; gap: 8px; min-height: 180px; overflow-x: auto; padding: 12px 0; }
+.wb-history-bars.dense { gap: 3px; overflow-x: visible; }
+.wb-history-day { flex: 1; min-width: 36px; display: flex; flex-direction: column; text-align: center; font-size: 11px; }
+.wb-history-bars.dense .wb-history-day { min-width: 0; }
+.wb-history-bars.dense .wb-history-day > .muted { white-space: nowrap; overflow: visible; }
+.wb-history-value { display: block; color: var(--workbuddy); margin-bottom: 6px; }
+.wb-history-track { flex: 1; min-height: 110px; display: flex; align-items: end; justify-content: center; }
+.wb-history-track i { display: block; width: 65%; max-width: 34px; background: var(--workbuddy); border-radius: 4px 4px 0 0; opacity: 0.8; }

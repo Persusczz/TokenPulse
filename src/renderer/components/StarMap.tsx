@@ -98,6 +98,7 @@ export function StarMapCanvas(props: StarMapProps) {
       const hot = [255, 168, 120]
       const cool = [228, 236, 255]
       const blue = [140, 160, 255]
+      const green = [110, 220, 180]
       stars = m.prompts.map((p) => {
         const d = new Date(p.ts)
         const day = Math.max(0, Math.min(days - 1, Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() - m.from) / DAY)))
@@ -111,7 +112,7 @@ export function StarMapCanvas(props: StarMapProps) {
           y: PAD.t + (min / 1440) * ph,
           r: 0.8 + 2.7 * Math.min(1, k) + (k > 1 ? (k - 1) * 1.5 : 0),
           a: 0.42 + 0.58 * Math.min(1, k),
-          col: p.source === 'codex' ? mixRgb(cool, blue, Math.min(1, k) * 0.7) : mixRgb(warm, hot, Math.min(1, k) * 0.6),
+          col: p.source === 'codex' ? mixRgb(cool, blue, Math.min(1, k) * 0.7) : p.source === 'workbuddy' ? mixRgb(cool, green, Math.min(1, k) * 0.7) : mixRgb(warm, hot, Math.min(1, k) * 0.6),
           tw: hash(p.key + '~') * TAU,
           bright: k >= 0.8
         }
@@ -285,7 +286,7 @@ export function StarMapCanvas(props: StarMapProps) {
         for (const [id, list] of sessions) {
           if (list.length < 2 || id === focusSession) continue
           const off = list.every(dim)
-          ctx.strokeStyle = list[0].p.source === 'codex' ? `rgba(150,170,255,${off ? 0.04 : 0.16})` : `rgba(255,200,160,${off ? 0.04 : 0.16})`
+          ctx.strokeStyle = list[0].p.source === 'codex' ? `rgba(150,170,255,${off ? 0.04 : 0.16})` : list[0].p.source === 'workbuddy' ? `rgba(130,225,190,${off ? 0.04 : 0.16})` : `rgba(255,200,160,${off ? 0.04 : 0.16})`
           ctx.beginPath()
           list.forEach((s, i) => (i ? ctx.lineTo(s.x, s.y) : ctx.moveTo(s.x, s.y)))
           ctx.stroke()

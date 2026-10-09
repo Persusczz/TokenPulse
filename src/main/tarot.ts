@@ -29,6 +29,8 @@ export interface DeckInput {
   prompts: PromptCost[]
   tasks: { prompt: string; status: string; finishedAt: number | null; startedAt: number | null }[]
   tpm: number
+  /** WorkBuddy's account credits, which its quota cards draw */
+  credits?: TarotDeck['credits']
 }
 
 const median = (xs: number[]) => {
@@ -54,7 +56,7 @@ export function buildDeck(x: DeckInput): TarotDeck {
   let prevCost = 0
   const projects = new Map<string, number>()
   const models = new Map<string, number>()
-  const tools: Record<UsageSource, number> = { claude: 0, codex: 0 }
+  const tools: Record<UsageSource, number> = { claude: 0, codex: 0, workbuddy: 0 }
   const sessions = new Map<string, { project: string; tokens: number; end: number }>()
   for (let i = lowerBound(entries, from); i < entries.length && entries[i].ts <= now; i++) {
     const e = entries[i]
@@ -91,7 +93,7 @@ export function buildDeck(x: DeckInput): TarotDeck {
       projects.set(e.project, (projects.get(e.project) ?? 0) + tk)
       const name = x.label(e.model)
       models.set(name, (models.get(name) ?? 0) + tk)
-      tools[e.source === 'codex' ? 'codex' : 'claude'] += tk
+      tools[e.source ?? 'claude'] += tk
     } else if (e.ts > now - 14 * DAY) prevCost += e.cost.total
   }
   const record = Math.max(0, ...oldMinutes.values())
@@ -176,6 +178,7 @@ export function buildDeck(x: DeckInput): TarotDeck {
       .filter((k) => k.status === 'running' || k.status === 'queued' || (k.finishedAt ?? 0) > now - 7 * DAY)
       .sort((a, b) => (b.finishedAt ?? b.startedAt ?? now) - (a.finishedAt ?? a.startedAt ?? now))
       .slice(0, 6)
-      .map((k) => ({ title: k.prompt.replace(/\s+/g, ' ').slice(0, 40), status: k.status, at: k.finishedAt ?? k.startedAt ?? now }))
+      .map((k) => ({ title: k.prompt.replace(/\s+/g, ' ').slice(0, 40), status: k.status, at: k.finishedAt ?? k.startedAt ?? now })),
+    credits: x.credits ?? null
   }
 }

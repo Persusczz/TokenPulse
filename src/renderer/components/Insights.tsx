@@ -46,35 +46,35 @@ export function ValueCard() {
     <div className="card insight">
       <div className="card-head">
         <div className="card-title">
-          <span className="serif">订阅回本</span>
+          <span className="serif">{source === 'workbuddy' ? '本月 API 等价用量' : '订阅回本'}</span>
           {v?.plan && (
             <span className="badge accent" title={v.plan}>
               {v.source === 'all' ? v.plan.replace(/ChatGPT /g, 'GPT ') : v.plan} · ${v.planPrice}/月{v.priceDetected ? '' : '（自定义）'}
             </span>
           )}
         </div>
-        {verdict && <span className={`verdict ${verdict.cls}`}>{verdict.label}</span>}
+        {verdict && source !== 'workbuddy' && <span className={`verdict ${verdict.cls}`}>{verdict.label}</span>}
       </div>
       {v ? (
         <>
           <div className="insight-big">
             <span className="serif big-num">
-              <AnimatedNumber value={v.multiple} format={(n) => n.toFixed(1)} />
-              <small>×</small>
+              <AnimatedNumber value={source === 'workbuddy' ? v.monthCost : v.multiple} format={source === 'workbuddy' ? money : (n) => n.toFixed(1)} />
+              {source !== 'workbuddy' && <small>×</small>}
             </span>
             <span className="insight-sub">
               本月已用 <b>{money(v.monthCost)}</b> 的 API 等价额度
               <br />
-              按当前速度月底约 <b>{money(v.projectedMonthCost)}</b>（{v.projectedMultiple.toFixed(1)}×）
+              按当前速度月底约 <b>{money(v.projectedMonthCost)}</b>{source !== 'workbuddy' && `（${v.projectedMultiple.toFixed(1)}×）`}
             </span>
           </div>
           <PaybackChart v={v} />
           <div className="insight-foot">
-            <span className="legend-dash" /> 回本线 {money(v.planPrice)}
+            {source === 'workbuddy' ? 'API 参考价' : <><span className="legend-dash" /> 回本线 {money(v.planPrice)}</>}
             {v.quotaHits > 0 && <span className="muted"> · 本月 {v.quotaHits} 次触到 5h 上限</span>}
-            {v.source === 'all' && <span className="muted"> · 两份订阅合计</span>}
+            {v.source === 'all' && <span className="muted"> · Claude 与 Codex 订阅合计</span>}
           </div>
-          <div className="insight-advice">{v.advice}</div>
+          {source !== 'workbuddy' && <div className="insight-advice">{v.advice}</div>}
         </>
       ) : (
         <div className="skeleton" style={{ height: 150 }} />

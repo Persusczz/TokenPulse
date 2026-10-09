@@ -151,6 +151,12 @@ export const DEFAULT_SETTINGS: Settings = {
   codexTaskModel: null,
   pushTasks: true,
   codexEnabled: true,
+  workbuddyEnabled: true,
+  workbuddyDirs: [],
+  workbuddyHarnessEnabled: true,
+  workbuddyHarnessProviders: [],
+  workbuddyHarnessAuto: true,
+  workbuddyCli: '',
   codexUsageApi: true,
   codexResetWatch: true,
   codexResetNotify: true,
@@ -203,6 +209,9 @@ const BOOLS = [
   'taskAutoCompact',
   'taskTerminal',
   'codexEnabled',
+  'workbuddyEnabled',
+  'workbuddyHarnessEnabled',
+  'workbuddyHarnessAuto',
   'codexUsageApi',
   'codexResetWatch',
   'codexResetNotify',
@@ -255,7 +264,10 @@ export function sanitize(raw: any, base: Settings): Settings {
   if (Number.isFinite(raw.backdropVivid)) s.backdropVivid = clamp2(raw.backdropVivid, 0.2, 1)
   if (typeof raw.glassCards === 'boolean') s.glassCards = raw.glassCards
   if (typeof raw.lightFx === 'boolean') s.lightFx = raw.lightFx
-  if (oneOf(raw.sourceFilter, ['all', 'claude', 'codex'])) s.sourceFilter = raw.sourceFilter
+  if (oneOf(raw.sourceFilter, ['all', 'claude', 'codex', 'workbuddy'])) s.sourceFilter = raw.sourceFilter
+  if (Array.isArray(raw.workbuddyDirs)) s.workbuddyDirs = raw.workbuddyDirs.filter((d: unknown) => typeof d === 'string' && d.trim())
+  if (Array.isArray(raw.workbuddyHarnessProviders)) s.workbuddyHarnessProviders = [...new Set<string>(raw.workbuddyHarnessProviders.filter((d: unknown) => typeof d === 'string' && d.trim()))]
+  if (typeof raw.workbuddyCli === 'string') s.workbuddyCli = raw.workbuddyCli.trim()
   if ([15, 30, 60].includes(raw.wasteLeadMin)) s.wasteLeadMin = raw.wasteLeadMin
   if (oneOf(raw.themePack, PACKS)) s.themePack = raw.themePack
   if (oneOf(raw.dayPack, PACKS)) s.dayPack = raw.dayPack

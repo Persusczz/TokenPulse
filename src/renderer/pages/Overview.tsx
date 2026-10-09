@@ -31,6 +31,7 @@ import { RunawayBanner } from '../components/RunawayBanner'
 import { Segmented } from '../components/Segmented'
 import { StatTile } from '../components/StatTile'
 import { useApp, useData, useHasCodex, useIntroDone, useSource } from '../state'
+import { credit, WorkBuddyCard, WorkBuddyHistory, WorkBuddyLedgerCard } from '../../features/workbuddy'
 
 const RANGE_NAME: Record<RangeKey, string> = { today: '今日', '7d': '近 7 天', '30d': '近 30 天', month: '本月', all: '全部时间' }
 const PREV_NAME: Record<RangeKey, string> = { today: '较昨日同期', '7d': '较前 7 天', '30d': '较前 30 天', month: '较上月同期', all: '' }
@@ -95,8 +96,8 @@ function useStoredRange(): [RangeKey, (r: RangeKey) => void] {
   return [range, set]
 }
 
-const TITLE: Record<SourceView, string> = { claude: 'Claude 用量', codex: 'Codex 用量', all: '用量概览' }
-const SCANNING: Record<SourceView, string> = { claude: '正在扫描 Claude Code 日志…', codex: '正在扫描 Codex 会话日志…', all: '正在扫描 Claude Code 与 Codex 日志…' }
+const TITLE: Record<SourceView, string> = { claude: 'Claude 用量', codex: 'Codex 用量', workbuddy: 'WorkBuddy 用量', all: '用量概览' }
+const SCANNING: Record<SourceView, string> = { claude: '正在扫描 Claude Code 日志…', codex: '正在扫描 Codex 会话日志…', workbuddy: '正在扫描 WorkBuddy 会话日志…', all: '正在扫描各工具的会话日志…' }
 
 export function Overview({ theme }: { theme: string }) {
   const { money, lastUpdate, load, settings } = useApp()
@@ -127,7 +128,10 @@ export function Overview({ theme }: { theme: string }) {
   }, [summary])
 
   const t = intro ? summary?.totals : undefined
-  const level = live ? live.today.cost / live.capacity : 0
+  // WorkBuddy's tank holds credits: today's against 1.5x a usual day
+  const wb = useData(() => (source === 'workbuddy' ? window.api.getWorkBuddyOutlook() : Promise.resolve(null)), [source, lastUpdate?.at], 60_000)
+  const wbTank = source === 'workbuddy' && wb?.today != null
+  const level = wbTank ? wb.today! / wb.capacity : live ? live.today.cost / live.capacity : 0
   const intensity = (live?.intensity ?? 0) as Intensity
   const rate = useData(() => window.api.getRate(), [source], 5_000)
   const hot = intensity >= 2 ? ' flow-border' : ''
@@ -152,7 +156,7 @@ export function Overview({ theme }: { theme: string }) {
 
   return (
     <>
-      {source !== 'codex' && <GuardBanner />}
+      {(source === 'claude' || source === 'all') && <GuardBanner />}
       <RunawayBanner />
       <ContextBanner />
       <div className="page-head">
@@ -166,8 +170,8 @@ export function Overview({ theme }: { theme: string }) {
           <div className="page-sub">
             {load?.loading
               ? SCANNING[source]
-              : `${fmtInt(liveData?.totalEntries ?? 0)} 条响应 · ${source === 'codex' ? `${load?.codexFiles ?? 0} 个 Codex 会话文件` : source === 'claude' ? `${load?.files ?? 0} 个会话文件` : `${(load?.files ?? 0) + (load?.codexFiles ?? 0)} 个会话文件（Claude ${load?.files ?? 0} · Codex ${load?.codexFiles ?? 0}）`}` +
-                (overview?.archived && source !== 'codex' ? ` · 已归档 ${fmtInt(overview.archived)} 条` : '')}
+              : `${fmtInt(liveData?.totalEntries ?? 0)} 条响应 · ${source === 'workbuddy' ? `${load?.workbuddyFiles ?? 0} 个 WorkBuddy 会话文件` : source === 'codex' ? `${load?.codexFiles ?? 0} 个 Codex 会话文件` : source === 'claude' ? `${load?.files ?? 0} 个会话文件` : `${(load?.files ?? 0) + (load?.codexFiles ?? 0) + (load?.workbuddyFiles ?? 0)} 个会话文件（Claude ${load?.files ?? 0} · Codex ${load?.codexFiles ?? 0} · WorkBuddy ${load?.workbuddyFiles ?? 0}）`}` +
+                (overview?.archived && (source === 'claude' || source === 'all') ? ` · 已归档 ${fmtInt(overview.archived)} 条` : '')}
           </div>
           <div className="page-actions">
             <button className="btn small" onClick={() => setPoster(true)}>
@@ -194,21 +198,28 @@ export function Overview({ theme }: { theme: string }) {
             <div className="card-title">
               <span className="serif">今日能量罐</span>
             </div>
-            <span className="badge" title={live?.capacityFromBudget ? '来自设置中的每日预算' : '近 30 天活跃日均费用 × 1.5'}>
-              {live?.capacityFromBudget ? '预算' : '自适应'}
+            <span className="badge" title={wbTank ? '近 30 天日均积分 × 1.5' : live?.capacityFromBudget ? '来自设置中的每日预算' : '近 30 天活跃日均费用 × 1.5'}>
+              {!wbTank && live?.capacityFromBudget ? '预算' : '自适应'}
             </span>
           </div>
           <div style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column' }}>
             <EnergyTank level={level} intensity={intensity} pour={pour} theme={theme} />
             <div className={`tank-overlay${level > 0.72 ? ' on-liquid' : ''}`}>
-              <div className="tank-value">{live ? money(live.today.cost) : '—'}</div>
-              <div className="tank-pct">{live ? `${level > 9.99 ? '>999' : Math.round(level * 100)}% / ${money(live.capacity)}` : ''}</div>
+              <div className="tank-value">{wbTank ? <>{credit(wb.today!)}<small> 积分</small></> : live ? money(live.today.cost) : '—'}</div>
+              <div className="tank-pct">{wbTank ? `${level > 9.99 ? '>999' : Math.round(level * 100)}% / ${credit(wb.capacity)}` : live ? `${level > 9.99 ? '>999' : Math.round(level * 100)}% / ${money(live.capacity)}` : ''}</div>
             </div>
           </div>
-          <div className="tank-foot">
-            <span>本月 {live ? money(live.monthCost) : '—'}</span>
-            <span title="近 30 天有用量的日子（不含今天）平均每天的费用">日均 {live && live.dailyAvgCost > 0 ? money(live.dailyAvgCost) : '—'}</span>
-          </div>
+          {wbTank ? (
+            <div className="tank-foot">
+              <span>剩余 {wb.remaining != null ? credit(Math.round(wb.remaining)) : '—'}</span>
+              <span>日均 {wb.dailyAvg ? credit(wb.dailyAvg) : '—'}</span>
+            </div>
+          ) : (
+            <div className="tank-foot">
+              <span>本月 {live ? money(live.monthCost) : '—'}</span>
+              <span title="近 30 天有用量的日子（不含今天）平均每天的费用">日均 {live && live.dailyAvgCost > 0 ? money(live.dailyAvgCost) : '—'}</span>
+            </div>
+          )}
         </div>
 
         <div className={`card hero${hot}`}>
@@ -232,11 +243,12 @@ export function Overview({ theme }: { theme: string }) {
                 {summary && summary.range === range && <span className="hero-span">{spanText(summary.start, Math.min(summary.end, Date.now() + 1))}</span>}
                 <ComboBadge combo={combo} />
               </div>
-              <div className="hero-number" ref={numRef}>
+              <div className="hero-number" ref={numRef} style={source === 'workbuddy' && t && t.tokens >= 1e9 ? { fontSize: 32 } : undefined}>
                 <Odometer text={t ? fmtInt(t.tokens) : '0'} />
               </div>
               <div className="hero-cost">
                 <Odometer text={t ? money(t.cost) : money(0)} />
+                {source === 'workbuddy' && <span className="badge">API 参考费用</span>}
                 {summary?.previous && t && <Delta cur={t.cost} prev={summary.previous.cost} label={PREV_NAME[range]} />}
                 {range === 'today' && live && <VsUsualChip today={live.today.cost} avg={live.dailyAvgCost} />}
               </div>
@@ -281,33 +293,35 @@ export function Overview({ theme }: { theme: string }) {
           </div>
         </div>
 
-        <QuotaCard />
+        {source === 'workbuddy' ? <WorkBuddyCard /> : <QuotaCard />}
       </div>
 
-      <CyclesCard />
+      {source !== 'workbuddy' && <CyclesCard />}
+      {source === 'all' && settings?.workbuddyEnabled && <WorkBuddyCard />}
+      {(source === 'workbuddy' || source === 'all' && settings?.workbuddyEnabled) && <WorkBuddyLedgerCard />}
 
-      {source !== 'claude' && hasCodex && settings?.codexResetWatch && (
+      {(source === 'codex' || source === 'all') && hasCodex && settings?.codexResetWatch && (
         <>
           <ResetWatchCard />
           <TiboChallengeCard />
         </>
       )}
 
-      <QuotaRelationCard />
+      {source !== 'workbuddy' && <QuotaRelationCard />}
 
       <RateCard theme={theme} />
 
       <TimelineCard />
 
       {/* the quota: will it last, and the week day by day */}
-      <div className="grid-2 quota-row">
+      {source !== 'workbuddy' && <div className="grid-2 quota-row">
         <QuotaOutlookCard />
         <DailyQuotaCard />
-      </div>
+      </div>}
 
       <div className="grid-2 prompt-row">
         <PromptsCard range={range} />
-        <WindowHistoryCard />
+        {source === 'workbuddy' ? <WorkBuddyHistory /> : <WindowHistoryCard />}
       </div>
 
       <div className="grid-2 race-row">
@@ -331,8 +345,8 @@ export function Overview({ theme }: { theme: string }) {
         <StatTile
           label="缓存命中率"
           value={intro ? (summary?.cacheHitRate ?? 0) : 0}
-          format={(v) => fmtPct(v, 1)}
-          sub="缓存读取 / 全部输入"
+          format={(v) => (summary?.cacheUnreported && summary.cacheUnreported >= summary.totals.messages ? '—' : fmtPct(v, 1))}
+          sub={summary?.cacheUnreported ? `另 ${fmtInt(summary.cacheUnreported)} 次未报告缓存` : '缓存读取 / 全部输入'}
         />
         <StatTile
           label="缓存为你省下"

@@ -9,6 +9,7 @@ import { RewindTag, useQuotaMotion } from '../components/QuotaMotion'
 import { ArcMotion } from '../components/QuotaRings'
 import { SourceMark } from '../components/CodexMark'
 import { clock, countdown, useApp, useData, useNow, useSource, useToolQuotas } from '../state'
+import { credit, runwayText } from '../../features/workbuddy'
 
 const INTENSITY: Record<Intensity, string> = { 0: '平静', 1: '活跃', 2: '火热', 3: '燃烧中' }
 
@@ -84,6 +85,30 @@ function StageRing({ w, label, guardAt, now, pace, tint }: { w: QuotaWindow | nu
   )
 }
 
+/** WorkBuddy has no 5h / 7d windows: its credits as rings in its own colour */
+function CreditRing({ share, value, label, sub, foot }: { share: number; value: string; label: string; sub: string; foot?: string }) {
+  const R = 92
+  const C = 2 * Math.PI * R
+  const p = Math.max(0, Math.min(1, share))
+  return (
+    <div className="stage-ring stage-panel credit-ring">
+      <div className="stage-ring-svg">
+        <svg viewBox="0 0 220 220" style={{ transform: 'rotate(-90deg)' }}>
+          <circle cx="110" cy="110" r={R} fill="none" stroke="var(--surface-2)" strokeWidth="16" />
+          <circle cx="110" cy="110" r={R} fill="none" stroke="var(--workbuddy)" strokeWidth="16" strokeLinecap="round" strokeDasharray={C} strokeDashoffset={C * (1 - p)} style={{ transition: 'stroke-dashoffset 1.2s ease', filter: 'drop-shadow(0 0 10px var(--workbuddy))' }} />
+        </svg>
+        <div className="stage-ring-center">
+          <b className="serif">{value}</b>
+          <small>积分</small>
+        </div>
+      </div>
+      <div className="stage-ring-label">{label}</div>
+      <div className="stage-ring-sub">{sub}</div>
+      {foot && <div className="stage-pace even">{foot}</div>}
+    </div>
+  )
+}
+
 /** Full-screen dashboard for a second display */
 export function Stage({ theme, paint }: { theme: string; paint: string }) {
   const { money, quota, codexQuota, lastUpdate } = useApp()
@@ -93,6 +118,7 @@ export function Stage({ theme, paint }: { theme: string; paint: string }) {
   const other = tools[1]
   const live = useData(() => window.api.getLive(), [source], 5_000)
   const rate = useData(() => window.api.getRate(), [source], 3_000)
+  const wb = useData(() => (source === 'workbuddy' ? window.api.getWorkBuddyOutlook() : Promise.resolve(null)), [source, lastUpdate?.at], 60_000)
   const forecast = useData(() => window.api.getForecast(main?.source ?? 'claude'), [main?.source, quota?.fetchedAt, codexQuota?.updatedAt], 60_000)
   const paces = useData(() => window.api.getPace(), [source, quota?.fetchedAt, codexQuota?.updatedAt], 60_000)
   const paceOf = (s: string, k: '5h' | '7d') => paces?.find((p) => p.key === `${s}_${k}`)
@@ -150,7 +176,7 @@ export function Stage({ theme, paint }: { theme: string; paint: string }) {
             <Odometer text={fmtInt(live?.today.tokens ?? 0)} />
           </div>
           <div className="stage-cost">
-            <span className="serif">{money(live?.today.cost ?? 0)}</span>
+            <span className="serif">{source === 'workbuddy' && wb?.today != null ? `${credit(wb.today)} 积分` : money(live?.today.cost ?? 0)}</span>
             <span className={`intensity l${intensity}`}>
               <i />
               {INTENSITY[intensity]}
@@ -175,11 +201,25 @@ export function Stage({ theme, paint }: { theme: string; paint: string }) {
       </section>
 
       <section className="stage-row">
+        {source === 'workbuddy' ? (
+          <>
+            <CreditRing
+              share={wb?.total ? (wb.used ?? 0) / wb.total : 0}
+              value={wb?.remaining != null ? Math.round(wb.remaining).toLocaleString('zh-CN') : '—'}
+              label="账户剩余"
+              sub={wb?.total ? `${wb.plan || '资源包'} · 已用 ${Math.round(((wb.used ?? 0) / wb.total) * 100)}%` : '—'}
+            />
+            <CreditRing share={wb?.today != null ? wb.today / wb.capacity : 0} value={wb?.today != null ? credit(wb.today) : '—'} label="今日消耗" sub={wb?.dailyAvg ? `日均 ${credit(wb.dailyAvg)}` : '—'} />
+          </>
+        ) : (
+          <>
         <StageRing w={main?.five} label={other ? 'Claude 5 小时' : `${source === 'codex' ? 'Codex ' : ''}5 小时额度`} guardAt={main?.pauseAt ?? null} now={now} pace={main && paceOf(main.source, '5h')} />
         {other ? (
           <StageRing w={other.five} label="Codex 5 小时" guardAt={null} now={now} pace={paceOf('codex', '5h')} tint="var(--codex)" />
         ) : (
           <StageRing w={main?.seven} label={`${source === 'codex' ? 'Codex ' : ''}7 天额度`} guardAt={null} now={now} pace={main && paceOf(main.source, '7d')} />
+        )}
+          </>
         )}
         <div className="stage-stats stage-panel">
           <div>
@@ -196,6 +236,13 @@ export function Stage({ theme, paint }: { theme: string; paint: string }) {
             <span>近 1 小时</span>
             <b className="serif">{money(rate?.costPerHour ?? 0)}</b>
           </div>
+          {source === 'workbuddy' ? (
+            <div>
+              <span>续航</span>
+              <b className="serif">{wb?.daysLeft != null ? (wb.daysLeft < 1 ? '<1' : Math.round(wb.daysLeft)) : '—'}</b>
+              <small>{wb ? (wb.daysLeft != null ? `天 · ${runwayText(wb).split(' · ')[1] ?? ''}` : runwayText(wb)) : ''}</small>
+            </div>
+          ) : (
           <div>
             <span>{other ? `${name(main!.source)} 7 天预测` : '7 天预测'}</span>
             <b className={`serif${forecast && forecast.projectedPct >= 100 ? ' hot' : ''}`}>
@@ -203,6 +250,7 @@ export function Stage({ theme, paint }: { theme: string; paint: string }) {
             </b>
             <small>{forecast?.etaFull ? `照此 ${new Date(forecast.etaFull).toLocaleString('zh-CN', { weekday: 'short', hour: '2-digit', minute: '2-digit' })} 用完` : '到重置时'}</small>
           </div>
+          )}
         </div>
       </section>
       <footer className="stage-hint">Esc 退出大屏</footer>
