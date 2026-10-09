@@ -8,7 +8,7 @@
 
 Windows 桌面应用 · 直接读取本机会话日志 · 无需额外注册、没有统计上报
 
-[![版本](https://img.shields.io/badge/版本-2.21.0-d97757)](https://github.com/Persusczz/TokenPulse/releases)
+[![版本](https://img.shields.io/badge/版本-2.22.0-d97757)](https://github.com/Persusczz/TokenPulse/releases)
 ![平台](https://img.shields.io/badge/平台-Windows%2010%2F11%20x64-5b8def)
 [![许可证](https://img.shields.io/badge/许可证-MIT-6aa84f)](LICENSE)
 
@@ -35,8 +35,8 @@ Windows 桌面应用 · 直接读取本机会话日志 · 无需额外注册、�
 
 | 文件 | 说明 |
 | --- | --- |
-| `TokenPulse.Setup.2.21.0.exe` | 安装版，可选择安装目录 |
-| `TokenPulse-2.21.0-portable.exe` | 便携版，下载后直接运行 |
+| `TokenPulse.Setup.2.22.0.exe` | 安装版，可选择安装目录 |
+| `TokenPulse-2.22.0-portable.exe` | 便携版，下载后直接运行 |
 
 **使用前提**
 
@@ -455,7 +455,7 @@ npx electron .
 
 ## 更新记录
 
-### v2.22.0（未发布）
+### v2.22.0
 
 #### 新增
 - 额度窗口账单多了「占 7 天」：每个 5 小时窗口用掉了所在那周 7 天额度的百分比，每周重置处有分隔线，并给出满窗口约占多少。
