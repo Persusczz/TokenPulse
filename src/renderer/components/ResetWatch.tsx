@@ -38,7 +38,7 @@ export function ago(t: number, now: number): string {
 const days = (ms: number) => (ms / DAY).toFixed(ms < 10 * DAY ? 1 : 0)
 export const openLink = (url: string) => void window.api.openExternal(url)
 
-const KIND = (p: CodexResetPost) => (p.observed ? '未发帖' : p.kind === 'banked' ? '存入重置' : '常规重置')
+const KIND = (p: CodexResetPost) => (p.observed ? '未重置' : p.kind === 'banked' ? '存入重置' : '常规重置')
 
 /** the tracker's state, kept current */
 export function useCodexResets(): [CodexResets | null, (r: CodexResets) => void] {

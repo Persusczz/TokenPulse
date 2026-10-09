@@ -8,7 +8,7 @@
 
 Windows 桌面应用 · 直接读取本机会话日志 · 无需额外注册、没有统计上报
 
-[![版本](https://img.shields.io/badge/版本-2.23.0-d97757)](https://github.com/Persusczz/TokenPulse/releases)
+[![版本](https://img.shields.io/badge/版本-2.23.1-d97757)](https://github.com/Persusczz/TokenPulse/releases)
 ![平台](https://img.shields.io/badge/平台-Windows%2010%2F11%20x64-5b8def)
 [![许可证](https://img.shields.io/badge/许可证-MIT-6aa84f)](LICENSE)
 
@@ -35,8 +35,8 @@ Windows 桌面应用 · 直接读取本机会话日志 · 无需额外注册、�
 
 | 文件 | 说明 |
 | --- | --- |
-| `TokenPulse.Setup.2.23.0.exe` | 安装版，可选择安装目录 |
-| `TokenPulse-2.23.0-portable.exe` | 便携版，下载后直接运行 |
+| `TokenPulse.Setup.2.23.1.exe` | 安装版，可选择安装目录 |
+| `TokenPulse-2.23.1-portable.exe` | 便携版，下载后直接运行 |
 
 **使用前提**
 
@@ -102,7 +102,7 @@ Claude 与 Codex 各自的每个 5 小时窗口、每个 7 天窗口用了多少
 Codex 负责人 Tibo（[@thsottiaux](https://x.com/thsottiaux)）不定期在 X 上宣布重置 Codex 额度。Codex 概览里的这张卡片跟着他的帖子：
 
 - 顶部是现在的状态：在暗示重置（附可能性和时间）、已宣布等待生效、刚刚重置，或者已经多少天没重置；旁边是距上次和平均间隔的对比。
-- 中间是最近 12 周的每一次重置，叠在你自己每周的 7 天额度上；悬停一个点看日期，点一下在下面查看那次的帖子，再点一下回到最新。
+- 中间是最近 12 周的每一次重置，叠在你自己每周的 7 天额度上；实心圈显示「常规重置」、空心圈显示「存入重置」、虚线圈显示「未重置」。悬停一个点看日期，点一下在下面查看那次的帖子，再点一下回到最新。
 - 下面是那条帖子本身，可以直接打开原帖；再往下是你自己的账户：重置前 7 天额度用到了多少、7 天窗口有没有跟着重新开始，以及账户里存着几次可以自己用的重置。
 - 帖子可以切换成 简体 / 繁體 / 日本語 / 한국어（该站提供的译文），或者看 原文；每条帖子上也能随时切回原文。
 - Tibo 宣布、预告或暗示重置时弹出系统通知，开着 Telegram 额度推送时也发到手机（设置 → Codex 额度 → Tibo 重置播报 / 重置提醒 / 帖子语言）。
@@ -420,7 +420,7 @@ npm run build
 npm run dist -- --publish never
 ```
 
-Windows 下双击 `build.bat` 即可依次安装依赖、检查类型、运行测试、打包安装版和便携版，并更新 `dist/SHA256SUMS.txt`，任一步失败都会停止。结果位于 `dist/`，不会发布 Release；可直接运行 `dist/win-unpacked/TokenPulse.exe` 测试免安装目录版，或运行 `dist/TokenPulse-2.23.0-portable.exe`。
+Windows 下双击 `build.bat` 即可依次安装依赖、检查类型、运行测试、打包安装版和便携版，并更新 `dist/SHA256SUMS.txt`，任一步失败都会停止。结果位于 `dist/`，不会发布 Release；可直接运行 `dist/win-unpacked/TokenPulse.exe` 测试免安装目录版，或运行 `dist/TokenPulse-2.23.1-portable.exe`。
 
 构建前请关闭从 `dist/` 运行的旧测试程序，尤其是便携版；Windows 会锁定正在运行的可执行文件，无法覆盖同名输出。
 
@@ -454,6 +454,11 @@ npx electron .
 本地日志、依赖、构建产物、环境变量文件与私钥不提交到 Git，配置示例请使用占位符。
 
 ## 更新记录
+
+### v2.23.1
+
+#### 修复
+- Codex 概览的 Tibo 重置播报：第三种虚线圈的文案由「未发帖」改为「未重置」，同步修正时间轴悬浮提示、帖子标签与无障碍标签。
 
 ### v2.23.0
 
