@@ -1,6 +1,6 @@
 import type { UsageSource } from '@shared/types'
 import { escapeHtml, type Button } from './telegram'
-import { esc, lighten, level, rng, SANS, starPath } from './tgCard'
+import { esc, lighten, level, rng, SANS, toolMark } from './tgCard'
 
 /**
  * Publishing a task from Telegram: one message, like the app's task form. A
@@ -195,14 +195,6 @@ export function draftStep(d: TaskDraft, action: string, arg: string | undefined,
 export const PANEL_W = 1080
 export const PANEL_H = 680
 
-/** the tool's mark at (x, y) */
-function mark(tool: UsageSource, x: number, y: number, accent: string, hi: string): string {
-  if (tool === 'claude') return `<path d="${starPath(x, y, 30, 8, 8)}" fill="${accent}" filter="url(#glow)" opacity="0.8"/><path d="${starPath(x, y, 28, 8, 8)}" fill="${hi}"/>`
-  const tile = `<rect x="${x - 28}" y="${y - 28}" width="56" height="56" rx="15" fill="none" stroke="${hi}" stroke-width="3.5"/>`
-  if (tool === 'codex') return `${tile}<path d="M${x - 14} ${y - 9}l10 9l-10 9" fill="none" stroke="${hi}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><path d="M${x + 1} ${y + 11}h13" stroke="${hi}" stroke-width="4" stroke-linecap="round"/>`
-  return `${tile}<path d="M${x - 16} ${y - 10}l7 21l9-15l9 15l7-21" fill="none" stroke="${hi}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>`
-}
-
 /** the quota and the next refresh of one tool, the way the task page shows it */
 export function taskPanelSvg(g: ToolGlance, plan: string, now: number): string {
   const W = PANEL_W
@@ -307,7 +299,7 @@ export function taskPanelSvg(g: ToolGlance, plan: string, now: number): string {
 ${stars}
 <rect x="20" y="20" width="${W - 40}" height="${H - 40}" rx="40" fill="none" stroke="rgba(255,255,255,0.09)" stroke-width="2"/>
 
-${mark(g.tool, 96, 96, accent, hi)}
+${toolMark(g.tool, 96, 96, 30, accent, hi)}
 <text x="146" y="92" font-size="38" font-weight="700" fill="#fff">发布任务</text>
 <text x="146" y="130" font-size="24" fill="${hi}">${esc(g.name)}${g.credits ? ' · 积分' : ' · 下一次 5h 刷新'}</text>
 <text x="1010" y="92" text-anchor="end" font-size="28" font-weight="600" fill="rgba(255,255,255,0.85)">${d.getMonth() + 1}/${d.getDate()} ${hhmm(now)}</text>

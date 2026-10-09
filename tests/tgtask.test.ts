@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { CODEX_KNOT } from '../src/shared/codexKnot'
 import { draftButtons, draftCaption, draftStep, planText, taskPanelSvg, type DraftEnv, type TaskDraft, type ToolGlance } from '../src/main/tgTask'
 
 const NOW = Date.UTC(2026, 9, 9, 6, 0)
@@ -118,5 +119,8 @@ describe('task panel in Telegram', () => {
     expect(wb).toContain('2,998')
     expect(wb).toContain('剩余积分')
     expect(wb).toContain('约 33 天')
+    // each tool under its own mark: Codex's knot, not a terminal tile
+    expect(taskPanelSvg(glance({ tool: 'codex', name: 'Codex' }), '马上开始', NOW)).toContain(CODEX_KNOT)
+    expect(svg).not.toContain(CODEX_KNOT)
   })
 })

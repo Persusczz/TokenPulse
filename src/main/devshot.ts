@@ -608,6 +608,46 @@ export async function runDevShots(dir: string, main: BrowserWindow, mini: Browse
     return
   }
 
+  // Codex's mark: the hero at rest and in motion, a pulse, the title, the sidebar and the moon under 全部
+  if (process.env.TP_SHOTS === 'codexmark') {
+    main.webContents.setBackgroundThrottling(false)
+    await main.webContents.insertCSS('.celebrate, .toasts, .toast { display: none !important }')
+    await set({ sourceFilter: 'codex', codexEnabled: true, theme: 'dark', themePack: 'none', motion: 'standard', telegramEnabled: false, autoUpdate: false })
+    await js(clickSel('.nav-item', 0))
+    await wait(3000)
+    const hero = async () => {
+      const r = await js(rectOf('.hero-mark'))
+      return r ? { x: r.x - 30, y: r.y - 30, width: r.width + 60, height: r.height + 60 } : null
+    }
+    for (let i = 0; i < 4; i++) {
+      await shot(main, `mark-hero-${i}`, await hero())
+      await wait(260)
+    }
+    // new Codex usage: the bump, the ring and the sparks
+    const burst = () => main.webContents.send('data:update', { addedTokens: 90_000, addedCost: 0.2, at: Date.now(), bySource: { codex: 90_000 } })
+    burst()
+    await wait(120)
+    await shot(main, 'mark-pulse-0', await hero())
+    await wait(160)
+    await shot(main, 'mark-pulse-1', await hero())
+    await wait(220)
+    await shot(main, 'mark-pulse-2', await hero())
+    await shot(main, 'mark-top', { x: 0, y: 0, width: 900, height: 330 })
+    await wait(1500)
+    await set({ theme: 'light' })
+    await wait(2500)
+    await shot(main, 'mark-hero-light', await hero())
+    await set({ theme: 'dark', sourceFilter: 'all' })
+    await wait(2000)
+    await shot(main, 'mark-all', await hero())
+    await set({ sourceFilter: 'codex', motion: 'off' })
+    await wait(3500)
+    await shot(main, 'mark-still', await hero())
+    await set({ motion: 'standard' })
+    done()
+    return
+  }
+
   // publishing a task from Telegram (the panel's pictures and captions), and the bill's "占 7 天" view
   if (process.env.TP_SHOTS === 'taskpanel') {
     type Tg = { onCommand: (c: import('./telegram').Command) => Promise<import('./telegram').Reply> }

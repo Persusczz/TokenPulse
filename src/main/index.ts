@@ -770,6 +770,7 @@ function cardData(v: SourceView, now = Date.now()): CardData {
     date: `${d.getMonth() + 1}/${d.getDate()} 周${WEEKDAY[d.getDay()]}`,
     time: hhmm(now),
     view: v === 'all' ? sources().map(toolLabel).join(' + ') : toolLabel(v),
+    tool: v,
     accent: accentHex({ accent: settings.value.accent, sourceFilter: v }),
     tokens: s.totals.tokens,
     cost: money(s.totals.cost),

@@ -8,7 +8,7 @@
 
 Windows 桌面应用 · 直接读取本机会话日志 · 无需额外注册、没有统计上报
 
-[![版本](https://img.shields.io/badge/版本-2.22.0-d97757)](https://github.com/Persusczz/TokenPulse/releases)
+[![版本](https://img.shields.io/badge/版本-2.23.0-d97757)](https://github.com/Persusczz/TokenPulse/releases)
 ![平台](https://img.shields.io/badge/平台-Windows%2010%2F11%20x64-5b8def)
 [![许可证](https://img.shields.io/badge/许可证-MIT-6aa84f)](LICENSE)
 
@@ -35,8 +35,8 @@ Windows 桌面应用 · 直接读取本机会话日志 · 无需额外注册、�
 
 | 文件 | 说明 |
 | --- | --- |
-| `TokenPulse.Setup.2.22.0.exe` | 安装版，可选择安装目录 |
-| `TokenPulse-2.22.0-portable.exe` | 便携版，下载后直接运行 |
+| `TokenPulse.Setup.2.23.0.exe` | 安装版，可选择安装目录 |
+| `TokenPulse-2.23.0-portable.exe` | 便携版，下载后直接运行 |
 
 **使用前提**
 
@@ -420,7 +420,7 @@ npm run build
 npm run dist -- --publish never
 ```
 
-Windows 下双击 `build.bat` 即可依次安装依赖、检查类型、运行测试、打包安装版和便携版，并更新 `dist/SHA256SUMS.txt`，任一步失败都会停止。结果位于 `dist/`，不会发布 Release；可直接运行 `dist/win-unpacked/TokenPulse.exe` 测试免安装目录版，或运行 `dist/TokenPulse-2.22.0-portable.exe`。
+Windows 下双击 `build.bat` 即可依次安装依赖、检查类型、运行测试、打包安装版和便携版，并更新 `dist/SHA256SUMS.txt`，任一步失败都会停止。结果位于 `dist/`，不会发布 Release；可直接运行 `dist/win-unpacked/TokenPulse.exe` 测试免安装目录版，或运行 `dist/TokenPulse-2.23.0-portable.exe`。
 
 构建前请关闭从 `dist/` 运行的旧测试程序，尤其是便携版；Windows 会锁定正在运行的可执行文件，无法覆盖同名输出。
 
@@ -454,6 +454,12 @@ npx electron .
 本地日志、依赖、构建产物、环境变量文件与私钥不提交到 Git，配置示例请使用占位符。
 
 ## 更新记录
+
+### v2.23.0
+
+#### 修改
+- Codex 的标志换成 OpenAI 的结：形状照原图标，颜色是 Codex 的蓝紫渐变；随用量转动、呼吸，颜色在几股带子间流动，一道光扫过带子、亮点沿边缘跑，中间的六边形像核心一样发光；新用量到来时弹一下、放出光环和火花。小尺寸只保留转动和光晕，浅色主题用更深的蓝，关闭动效时显示静止的标志。
+- Telegram 的任务发布面板和 Codex 今日卡片也用这个结，代替原来的 `>_`。
 
 ### v2.22.0
 

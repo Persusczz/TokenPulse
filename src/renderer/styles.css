@@ -5155,6 +5155,15 @@ kbd {
   --codex: #7c8aff;
   --codex-rgb: 124, 138, 255;
 }
+/* the Codex mark's bright end and its highlights: softer on a light page, where white light washes it out */
+:root {
+  --codex-mark-hi: #3aa6e8;
+  --codex-mark-shine: 0.5;
+}
+:root[data-theme='dark'] {
+  --codex-mark-hi: var(--codex-hi);
+  --codex-mark-shine: 1;
+}
 /* Codex alone on view: the whole app wears Codex's blue-violet (beats accent presets and packs) */
 html:root[data-source='codex'][data-theme][data-source] {
   --accent-rgb: 91, 108, 255;

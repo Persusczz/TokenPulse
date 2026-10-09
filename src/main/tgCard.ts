@@ -1,3 +1,4 @@
+import { CODEX_CORE, CODEX_KNOT } from '@shared/codexKnot'
 import { cn } from './report'
 
 /** The "today" card sent to Telegram as a picture: an SVG drawn here, turned into a JPEG by cardRender */
@@ -20,6 +21,8 @@ export interface CardData {
   time: string
   /** "Claude", "Codex" or "Claude + Codex" */
   view: string
+  /** whose mark heads the card: Claude's spark (also for all of them), Codex's knot, WorkBuddy's W */
+  tool?: 'claude' | 'codex' | 'workbuddy' | 'all'
   accent: string
   tokens: number
   /** formatted, "$106.06" */
@@ -95,6 +98,28 @@ const FLARE_SPOTS = [
   [470, 1352],
   [40, 210]
 ]
+
+/**
+ * A tool's mark of radius r at (x, y), for the pictures sent to Telegram:
+ * Claude's spark, Codex's knot in its gradient over a glow, WorkBuddy's W in
+ * a rounded tile. Uses the picture's own `glow` filter.
+ */
+export function toolMark(tool: 'claude' | 'codex' | 'workbuddy' | 'all', x: number, y: number, r: number, accent: string, hi: string): string {
+  if (tool === 'codex') {
+    const k = ((2 * r) / 24).toFixed(4)
+    const at = `translate(${x - r} ${y - r}) scale(${k})`
+    return `<defs><linearGradient id="knotFill" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#9ee7ff"/><stop offset="0.55" stop-color="#7c8aff"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient><radialGradient id="knotCore"><stop offset="0" stop-color="#fff"/><stop offset="0.5" stop-color="#9ee7ff"/><stop offset="1" stop-color="#7c8aff" stop-opacity="0"/></radialGradient></defs>
+<g filter="url(#glow)" opacity="0.75"><path d="${CODEX_KNOT}" transform="${at}" fill="${accent}"/></g>
+<polygon points="${CODEX_CORE}" transform="translate(${x} ${y}) scale(${k})" fill="url(#knotCore)"/>
+<path d="${CODEX_KNOT}" transform="${at}" fill="url(#knotFill)"/>`
+  }
+  if (tool === 'workbuddy') {
+    const s = r * 0.93
+    const u = r / 30
+    return `<rect x="${x - s}" y="${y - s}" width="${2 * s}" height="${2 * s}" rx="${(s * 0.54).toFixed(1)}" fill="none" stroke="${hi}" stroke-width="${(3.5 * u).toFixed(2)}"/><path d="M${x - 16 * u} ${y - 10 * u}l${7 * u} ${21 * u}l${9 * u} ${-15 * u}l${9 * u} ${15 * u}l${7 * u} ${-21 * u}" fill="none" stroke="${hi}" stroke-width="${(4 * u).toFixed(2)}" stroke-linecap="round" stroke-linejoin="round"/>`
+  }
+  return `<path d="${starPath(x, y, r * 1.06, r * 0.28, 8)}" fill="${accent}" filter="url(#glow)" opacity="0.8"/><path d="${starPath(x, y, r, r * 0.28, 8)}" fill="${hi}"/>`
+}
 
 export const level = (pct: number) => (pct >= 90 ? ['#ff5d6c', '#ff9aa5'] : pct >= 70 ? ['#ffb547', '#ffd88f'] : ['#3ddc97', '#9ff5cf'])
 
@@ -253,8 +278,7 @@ export function cardSvg(d: CardData, at?: CardMoment): string {
 ${stars}
 <rect x="24" y="24" width="${W - 48}" height="${H - 48}" rx="46" fill="none" stroke="rgba(255,255,255,0.09)" stroke-width="2"/>
 
-<path d="${starPath(98, 112, 34, 9, 8)}" fill="${accent}" filter="url(#glow)" opacity="0.8"/>
-<path d="${starPath(98, 112, 32, 9, 8)}" fill="${accentHi}"/>
+${toolMark(d.tool ?? 'all', 98, 112, 32, accent, accentHi)}
 <text x="150" y="116" font-size="40" font-weight="700" fill="#fff">TokenPulse</text>
 <text x="150" y="154" font-size="25" fill="${accentHi}">今日卡片 · ${esc(d.view)}</text>
 <text x="1000" y="108" text-anchor="end" font-size="30" font-weight="600" fill="rgba(255,255,255,0.85)">${esc(d.date)}</text>
